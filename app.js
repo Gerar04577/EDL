@@ -71,6 +71,7 @@ async function ecranAccueil() {
     </div>`;
 
   if (E.connecte) {
+    html += `<button class="secondaire" id="btn-comparer">Comparer avec OneDrive</button>`;
     html += `<button class="secondaire" id="btn-deconnexion">Se déconnecter</button>`;
   }
 
@@ -79,6 +80,7 @@ async function ecranAccueil() {
 
   if ($("btn-connexion")) $("btn-connexion").onclick = () => seConnecter();
   if ($("btn-deconnexion")) $("btn-deconnexion").onclick = () => seDeconnecter();
+  if ($("btn-comparer")) $("btn-comparer").onclick = () => ecranComparaison();
   if ($("btn-nouvelle")) $("btn-nouvelle").onclick = () => ecranType();
   if ($("btn-reprendre")) $("btn-reprendre").onclick = () => ecranVisiteReprise(enCours);
 }
@@ -477,6 +479,92 @@ function dessinerPiece() {
 
   $("btn-retour").onclick = () => ecranVisiteReprise(VISITE);
   majCompteurAttente();
+}
+
+// --- Comparaison avec OneDrive -------------------------------------------
+
+const ETIQUETTES = {
+  complet: { texte: "complet", classe: "ok" },
+  incomplet: { texte: "incomplet", classe: "ko" },
+  manquant: { texte: "dossier absent", classe: "ko" },
+  ambigu: { texte: "à trancher", classe: "attention" },
+  sans_locataire: { texte: "sans locataire", classe: "ko" },
+  vide_normal: { texte: "inoccupé", classe: "gris" },
+  erreur: { texte: "erreur", classe: "ko" },
+};
+
+async function ecranComparaison() {
+  E.ecran = "comparaison";
+  titre("Comparaison avec OneDrive", "Contrôle des 50 unités");
+  vue(`<p class="note" id="progres">Lecture de OneDrive en cours…</p>`);
+
+  let r;
+  try {
+    r = await comparerAvecOneDrive(nom => {
+      const p = $("progres");
+      if (p) p.textContent = "Lecture de " + nom + "…";
+    });
+  } catch (e) {
+    vue(`<div class="erreur"><strong>Comparaison impossible</strong>${echapper(e.message)}</div>
+         <button class="secondaire" id="btn-retour">Retour</button>`);
+    $("btn-retour").onclick = () => ecranAccueil();
+    return;
+  }
+
+  const b = r.bilan;
+  const anomalies = b.incomplet + b.manquant + b.ambigu + b.sans_locataire + b.erreur;
+
+  let html = `<div class="bloc"><h2>Bilan</h2>
+    <div class="ligne"><span>Unités contrôlées</span><span class="val">${b.total}</span></div>
+    <div class="ligne"><span>Dossiers complets</span><span class="val ok">${b.complet}</span></div>
+    <div class="ligne"><span>Unités inoccupées</span><span class="val">${b.vide_normal}</span></div>
+    <div class="ligne"><span>À traiter</span><span class="val ${anomalies ? "ko" : "ok"}">${anomalies}</span></div>
+    ${r.genere_le ? `<p class="note">Liste exportée le ${new Date(r.genere_le).toLocaleString("fr-BE")}</p>` : ""}
+    </div>`;
+
+  r.resultats.forEach(bloc => {
+    if (bloc.erreur) {
+      html += `<div class="bloc"><h2>${echapper(bloc.immeuble)}</h2>
+        <div class="erreur">${echapper(bloc.erreur)}</div></div>`;
+      return;
+    }
+    const aTraiter = bloc.lignes.filter(l =>
+      ["incomplet", "manquant", "ambigu", "sans_locataire", "erreur"].includes(l.statut)).length;
+
+    html += `<div class="bloc"><h2>${echapper(bloc.immeuble)} — dossier « ${echapper(bloc.dossier_onedrive)} »${
+      aTraiter ? " · " + aTraiter + " à traiter" : ""}</h2>`;
+
+    bloc.lignes.forEach(l => {
+      const e = ETIQUETTES[l.statut] || ETIQUETTES.erreur;
+      html += `<div class="comp ${l.statut === "complet" || l.statut === "vide_normal" ? "" : "comp-alerte"}">
+        <div class="ligne"><span>${echapper(l.designation)}</span>
+          <span class="val ${e.classe}">${e.texte}</span></div>`;
+      if (l.dossier_unite) {
+        html += `<p class="note">dossier : ${echapper(l.dossier_unite)}`;
+        if (l.dossier_courant) html += ` › ${echapper(l.dossier_courant)}`;
+        if (l.statut === "complet") html += ` › EDLE ✓ EDLS ✓`;
+        html += `</p>`;
+      }
+      if (l.candidats && l.candidats.length)
+        html += `<p class="note">candidats : ${echapper(l.candidats.join(" ou "))}</p>`;
+      if (l.message) html += `<p class="note">${echapper(l.message)}</p>`;
+      if (l.statut === "incomplet" && l.sous_dossiers)
+        html += `<p class="note">présents : ${echapper(l.sous_dossiers.join(", ") || "aucun")}</p>`;
+      if (l.dossiers_locataires && l.dossiers_locataires.length > 1)
+        html += `<p class="note">${l.dossiers_locataires.length} dossiers locataires : ${
+          echapper(l.dossiers_locataires.join(", "))}</p>`;
+      html += `</div>`;
+    });
+
+    if (bloc.extras.length)
+      html += `<p class="note">Dossiers sans unité correspondante — normal, ce ne sont pas des logements : ${
+        echapper(bloc.extras.join(", "))}</p>`;
+    html += `</div>`;
+  });
+
+  html += `<button class="secondaire" id="btn-retour">Retour à l'accueil</button>`;
+  vue(html);
+  $("btn-retour").onclick = () => ecranAccueil();
 }
 
 // --- Démarrage -----------------------------------------------------------
