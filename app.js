@@ -348,26 +348,135 @@ async function lancerVisite() {
   }
 }
 
-// --- Visite en cours (aboutissement de l'étape 3) ------------------------
+// --- Visite en cours -----------------------------------------------------
 
-function ecranVisiteReprise(visite) {
+let VISITE = null;
+
+async function ecranVisiteReprise(visite) {
+  VISITE = visite;
   E.ecran = "visite";
-  titre(visite.bien.unite_source, visite.type + " — visite en cours");
-  vue(`<div class="bloc"><h2>Visite préparée</h2>
-      <div class="ligne"><span>Identifiant</span><span class="val">${echapper(visite.visit_id)}</span></div>
-      <div class="ligne"><span>Locataire</span><span class="val">${echapper(visite.bien.dossier_locataire_onedrive)}</span></div>
-      <div class="ligne"><span>Pièces</span><span class="val">${visite.pieces.length}</span></div>
-      <div class="ligne"><span>Preneurs</span><span class="val">${visite.parties.preneurs.length}</span></div>
-      <div class="ligne"><span>Chiffrage</span><span class="val">${visite.options.chiffrage_actif ? "oui" : "non"}</span></div>
+  titre(visite.bien.unite_source, visite.type + " — " + visite.bien.dossier_locataire_onedrive);
+
+  const parPiece = {};
+  visite.photos.forEach(p => { parPiece[p.rattachement] = (parPiece[p.rattachement] || 0) + 1; });
+
+  vue(`<div class="barre" id="barre-attente">…</div>
+    <div class="bloc"><h2>Pièces</h2>
+      ${visite.pieces.map(p => {
+        const n = parPiece[p.piece_id] || 0;
+        const c = p.constatations.length;
+        return `<button class="choix" data-piece="${p.piece_id}">${echapper(p.libelle)}
+          <span class="droite">${n} photo${n > 1 ? "s" : ""}${c ? " · " + c + " constat" + (c > 1 ? "s" : "") : ""}</span></button>`;
+      }).join("")}
     </div>
-    <div class="bloc"><h2>Pièces à parcourir</h2>
-      ${visite.pieces.map(p => `<div class="ligne"><span>${echapper(p.libelle)}</span>
-        <span class="val" style="color:#8a8a8a">à faire</span></div>`).join("")}
-    </div>
-    <div class="avert"><strong>Étape suivante</strong>
-      La capture des photos et la saisie des constats arrivent à l'étape 4.</div>
     <button class="secondaire" id="btn-accueil">Retour à l'accueil</button>`);
+
+  $("vue").querySelectorAll("[data-piece]").forEach(b =>
+    b.onclick = () => ecranPiece(b.getAttribute("data-piece")));
   $("btn-accueil").onclick = () => ecranAccueil();
+  majCompteurAttente();
+}
+
+// --- Écran d'une pièce ---------------------------------------------------
+
+async function ecranPiece(pieceId) {
+  E.ecran = "piece";
+  E.piece = pieceId;
+  VISITE = (await lireVisite(VISITE.visit_id)) || VISITE;
+  const piece = VISITE.pieces.find(p => p.piece_id === pieceId);
+  titre(piece.libelle, VISITE.bien.unite_source);
+  dessinerPiece();
+}
+
+function dessinerPiece() {
+  const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
+  const photos = VISITE.photos.filter(p => p.rattachement === E.piece);
+
+  vue(`<div class="barre" id="barre-attente">…</div>
+
+    <div class="bloc"><h2>Repérage</h2>
+      <p class="note">Depuis l'entrée de la pièce : mur de face, de gauche,
+      de droite, arrière.</p></div>
+
+    <div class="bloc"><h2>Constatations</h2>
+      ${piece.constatations.length
+        ? piece.constatations.map((c, i) => `<div class="constat">
+            <p>${echapper(c.texte)}</p>
+            <p class="note">${c.etat || "état non précisé"} · ${c.proprete || "propreté non précisée"}
+            <button class="lien" data-suppr="${i}">supprimer</button></p></div>`).join("")
+        : `<p class="note">Aucune constatation.</p>`}
+      <textarea id="saisie" rows="3" placeholder="Décris ce que tu vois. Micro du clavier disponible."></textarea>
+      <div class="segments" id="seg-etat">
+        ${["neuf","bon_etat","usage","degrade"].map(v =>
+          `<button class="seg" data-etat="${v}">${v.replace("_"," ")}</button>`).join("")}
+      </div>
+      <div class="segments" id="seg-proprete">
+        ${["propre","a_nettoyer","sale"].map(v =>
+          `<button class="seg" data-proprete="${v}">${v.replace("_"," ")}</button>`).join("")}
+      </div>
+      <button id="btn-ajouter-constat">Ajouter la constatation</button>
+    </div>
+
+    <div class="bloc"><h2>${photos.length} photo${photos.length > 1 ? "s" : ""}</h2>
+      ${photos.length ? photos.map(p => `<div class="ligne">
+          <span>${echapper(p.nom_fichier)}</span>
+          <span class="val ${p.statut_transfert === "confirme" ? "ok" : "ko"}">${
+            p.statut_transfert === "confirme" ? "enregistrée" : "en attente"}</span></div>`).join("")
+        : `<p class="note">Aucune photo.</p>`}
+      <input type="file" accept="image/*" capture="environment" id="appareil" class="cache">
+      <button id="btn-photo">Prendre une photo</button>
+    </div>
+
+    <button class="secondaire" id="btn-retour">Retour aux pièces</button>`);
+
+  E.etat = null; E.proprete = null;
+
+  $("vue").querySelectorAll("[data-etat]").forEach(b => b.onclick = () => {
+    E.etat = b.getAttribute("data-etat");
+    $("vue").querySelectorAll("[data-etat]").forEach(x => x.className = "seg");
+    b.className = "seg actif";
+  });
+  $("vue").querySelectorAll("[data-proprete]").forEach(b => b.onclick = () => {
+    E.proprete = b.getAttribute("data-proprete");
+    $("vue").querySelectorAll("[data-proprete]").forEach(x => x.className = "seg");
+    b.className = "seg actif";
+  });
+  $("vue").querySelectorAll("[data-suppr]").forEach(b => b.onclick = async () => {
+    const i = parseInt(b.getAttribute("data-suppr"), 10);
+    VISITE = await modifierVisite(VISITE.visit_id, v => {
+      v.pieces.find(x => x.piece_id === E.piece).constatations.splice(i, 1);
+    }) || VISITE;
+    dessinerPiece();
+  });
+
+  $("btn-ajouter-constat").onclick = async () => {
+    const texte = $("saisie").value.trim();
+    if (!texte) return;
+    VISITE = await modifierVisite(VISITE.visit_id, v => {
+      const pc = v.pieces.find(x => x.piece_id === E.piece);
+      pc.constatations.push({ texte, etat: E.etat, proprete: E.proprete });
+    }) || VISITE;
+    await deposerFichierVisite(VISITE);
+    dessinerPiece();
+  };
+
+  $("btn-photo").onclick = () => $("appareil").click();
+  $("appareil").onchange = async (ev) => {
+    const fichier = ev.target.files && ev.target.files[0];
+    if (!fichier) return;
+    $("btn-photo").disabled = true;
+    $("btn-photo").textContent = "Enregistrement…";
+    try {
+      await ajouterPhoto(VISITE, E.piece, fichier);
+    } catch (e) {
+      avert(`<div class="erreur"><strong>Photo non enregistrée</strong>${echapper(e.message)}</div>`);
+    }
+    VISITE = (await lireVisite(VISITE.visit_id)) || VISITE;
+    dessinerPiece();
+  };
+
+  $("btn-retour").onclick = () => ecranVisiteReprise(VISITE);
+  majCompteurAttente();
 }
 
 // --- Démarrage -----------------------------------------------------------
@@ -396,6 +505,11 @@ async function demarrer() {
 
   await journaliser("demarrage", { version: CONFIG.version_app, installee: E.installee });
   await ecranAccueil();
+
+  // la file se vide en continu, dès qu'il y a du réseau
+  window.addEventListener("online", () => lancerFile());
+  setInterval(() => lancerFile(), 20000);
+  lancerFile();
 }
 
 document.addEventListener("DOMContentLoaded", demarrer);

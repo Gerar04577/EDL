@@ -54,6 +54,18 @@ async function enregistrerVisite(visite) {
   return _promesse(s.put(visite));
 }
 
+/* Modification atomique : on relit toujours la version en base avant
+   d'appliquer un changement. Sans cela, l'objet gardé en mémoire par
+   l'écran écrase les confirmations d'envoi écrites par la file. */
+async function modifierVisite(visitId, mutation) {
+  const s = await _transaction("visites", "readwrite");
+  const visite = await _promesse(s.get(visitId));
+  if (!visite) return null;
+  mutation(visite);
+  await _promesse(s.put(visite));
+  return visite;
+}
+
 async function lireVisite(visitId) {
   const s = await _transaction("visites", "readonly");
   return _promesse(s.get(visitId));
@@ -76,12 +88,14 @@ async function mettreEnFile(element) {
   return _promesse(s.put(element));
 }
 
+/* Triée par horodatage : les photos partent dans l'ordre où elles ont été
+   prises. Sans ce tri, l'ordre suivrait l'identifiant, qui est aléatoire. */
 async function photosEnAttente(visitId) {
   const s = await _transaction("photos_en_attente", "readonly");
   const toutes = await _promesse(s.getAll());
-  return toutes.filter(p =>
-    p.statut_transfert === "en_attente" && (!visitId || p.visit_id === visitId)
-  );
+  return toutes
+    .filter(p => p.statut_transfert === "en_attente" && (!visitId || p.visit_id === visitId))
+    .sort((a, b) => String(a.horodatage).localeCompare(String(b.horodatage)));
 }
 
 async function nombreEnAttente() {
