@@ -86,14 +86,31 @@ async function ajouterPhoto(visite, rattachement, fichier) {
     horodatage: new Date().toISOString(),
     description: "", description_source: null,
   };
+  /* La numérotation ne doit JAMAIS revenir en arrière : compter les photos
+     présentes réutiliserait le numéro d'une photo retirée, et le nouveau
+     fichier écraserait un fichier existant dans OneDrive. On conserve donc
+     un compteur qui ne décroît pas, par pièce. */
   const aJour = await modifierVisite(visite.visit_id, v => {
-    const numero = v.photos.filter(p => p.rattachement === rattachement).length + 1;
+    if (!v.photo_seq) v.photo_seq = {};
+    if (v.photo_seq[rattachement] === undefined) {
+      // reprise d'une visite antérieure : on repart du plus grand numéro utilisé
+      let max = 0;
+      v.photos.filter(x => x.rattachement === rattachement).forEach(x => {
+        const m = String(x.nom_fichier || "").match(/_(\d{3})_/);
+        if (m) max = Math.max(max, parseInt(m[1], 10));
+      });
+      v.photo_seq[rattachement] = max;
+    }
+    const numero = v.photo_seq[rattachement] + 1;
+    v.photo_seq[rattachement] = numero;
     entree.nom_fichier = nomFichierPhoto(v, rattachement, numero);
     v.photos.push(entree);
   });
   if (aJour) visite.photos = aJour.photos;
   else {
-    const numero = visite.photos.filter(p => p.rattachement === rattachement).length + 1;
+    if (!visite.photo_seq) visite.photo_seq = {};
+    const numero = (visite.photo_seq[rattachement] || 0) + 1;
+    visite.photo_seq[rattachement] = numero;
     entree.nom_fichier = nomFichierPhoto(visite, rattachement, numero);
     visite.photos.push(entree);
     await enregistrerVisite(visite);
@@ -173,8 +190,11 @@ async function traiterFile() {
     if (visitesTouchees.size > 0 && (await nombreEnAttente()) === 0) {
       for (const id of visitesTouchees) {
         const v = await lireVisite(id);
-        if (v) { _dernierePhotoSauvee = v.photos.filter(p => p.statut_transfert === "confirme").length;
-                 await deposerFichierVisite(v); }
+        if (v) {
+          _dernierePhotoSauvee[v.visit_id] =
+            v.photos.filter(p => p.statut_transfert === "confirme").length;
+          await deposerFichierVisite(v);
+        }
       }
     }
   }
@@ -205,34 +225,76 @@ async function majPhotoDansVisite(visitId, photoId, itemId) {
 
 /* Sauvegarde continue du fichier de visite, pour rendre possible
    la reprise depuis un autre appareil. */
-let _dernierePhotoSauvee = 0;
+/* Un compteur PAR VISITE : un compteur unique se désynchronisait dès
+   que deux visites étaient ouvertes en même temps. */
+const _dernierePhotoSauvee = {};
 
 async function peutEtreSauvegarder(visite) {
   const confirmees = visite.photos.filter(p => p.statut_transfert === "confirme").length;
-  if (confirmees - _dernierePhotoSauvee >= CONFIG.sauvegarde.intervalle_photos) {
-    _dernierePhotoSauvee = confirmees;
+  const precedent = _dernierePhotoSauvee[visite.visit_id] || 0;
+  if (confirmees - precedent >= CONFIG.sauvegarde.intervalle_photos) {
+    _dernierePhotoSauvee[visite.visit_id] = confirmees;
     await deposerFichierVisite(visite);
   }
 }
 
+/* Dépôt immédiat, à appeler quand on quitte un écran ou qu'on clôture :
+   la minuterie de cinq secondes ne doit jamais être le seul déclencheur. */
+async function deposerMaintenant(visite) {
+  if (typeof _minuterieDepot !== "undefined" && _minuterieDepot) {
+    clearTimeout(_minuterieDepot); _minuterieDepot = null;
+  }
+  return deposerFichierVisite(visite);
+}
+
 async function deposerFichierVisite(visite) {
   try {
-    const nom = (visite.statut === "signee" ? "" : CONFIG.sauvegarde.prefixe_brouillon) +
+    /* Le préfixe disparaît dès que la visite n'est plus en cours.
+       Tester "signee" seul laissait un brouillon éternel après clôture. */
+    const enCours = visite.statut === "en_cours" || !visite.statut;
+    const nom = (enCours ? CONFIG.sauvegarde.prefixe_brouillon : "") +
                 `visite_${visite.visit_id}.json`;
     const d = visite.bien;
     const chemin = d.dossier_cible_drive_id
-      ? `/drives/${d.dossier_cible_drive_id}/items/${d.dossier_cible_item_id}:/${nom}:/content`
-      : `/me/drive/items/${d.dossier_cible_item_id}:/${nom}:/content`;
+      ? `/drives/${d.dossier_cible_drive_id}/items/${d.dossier_cible_item_id}:/${
+          encodeURIComponent(nom)}:/content`
+      : `/me/drive/items/${d.dossier_cible_item_id}:/${encodeURIComponent(nom)}:/content`;
     const res = await appelGraph(chemin, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(visite, null, 1),
     });
     if (!res.ok) throw new Error(await detailErreur(res));
-    await journaliser("visite_sauvegardee", { visit_id: visite.visit_id });
+    await journaliser("visite_sauvegardee", { visit_id: visite.visit_id, nom });
+    if (!enCours) await supprimerBrouillon(visite);
     return true;
   } catch (e) {
     await journaliser("sauvegarde_echouee", String(e && e.message));
+    return false;
+  }
+}
+
+/* À la clôture, l'ancien fichier préfixé n'a plus lieu d'être :
+   sans cela, le dossier contiendrait un brouillon et un définitif. */
+async function supprimerBrouillon(visite) {
+  try {
+    const d = visite.bien;
+    const nom = CONFIG.sauvegarde.prefixe_brouillon + `visite_${visite.visit_id}.json`;
+    const chemin = d.dossier_cible_drive_id
+      ? `/drives/${d.dossier_cible_drive_id}/items/${d.dossier_cible_item_id}:/${
+          encodeURIComponent(nom)}:/content`
+      : `/me/drive/items/${d.dossier_cible_item_id}:/${encodeURIComponent(nom)}:/content`;
+    const info = await appelGraph(chemin.replace(":/content", ""));
+    if (!info.ok) return false;
+    const item = await info.json();
+    const suppr = await appelGraph(
+      d.dossier_cible_drive_id ? `/drives/${d.dossier_cible_drive_id}/items/${item.id}`
+                               : `/me/drive/items/${item.id}`,
+      { method: "DELETE" });
+    await journaliser("brouillon_supprime", { ok: suppr.ok });
+    return suppr.ok;
+  } catch (e) {
+    await journaliser("brouillon_suppression_echouee", String(e && e.message));
     return false;
   }
 }

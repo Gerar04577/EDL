@@ -4,7 +4,10 @@
 
 var CONFIG = {
 
-  version_app: "0.6.0",
+  version_app: "0.6.3",
+
+  // Identité du bailleur, reprise dans chaque état des lieux
+  bailleur: "GERARD Jean-Marc",
   version_schema: "1.0",
 
   // --- Microsoft Entra ---------------------------------------------------

@@ -68,12 +68,16 @@ async function listerDossiersLocataires(refUnite) {
   if (plate) {
     return [{ nom: "(dossier de l'unité)", ref: refUnite, modifie_le: null, plate: true }];
   }
-  return enfants.map(e => ({
+  /* Le dossier le plus probable est proposé en tête de liste, mais
+     l'utilisateur garde le dernier mot : il choisit lui-même à l'écran. */
+  const liste = enfants.map(e => ({
     nom: e.name,
     ref: refDe(e, refUnite.driveId),
     modifie_le: e.lastModifiedDateTime || null,
     plate: false,
   }));
+  return liste.sort((a, b) =>
+    String(b.modifie_le || "").localeCompare(String(a.modifie_le || "")));
 }
 
 /* Étape 3 — le sous-dossier EDLE ou EDLS.
@@ -202,7 +206,7 @@ async function creerVisite(param) {
     },
 
     parties: {
-      bailleur: "GERARD Jean-Marc",
+      bailleur: CONFIG.bailleur,
       bailleur_represente_par: param.operateur || null,
       preneurs: (param.preneurs || []).map(nom => ({
         nom_complet: nom,
@@ -221,6 +225,7 @@ async function creerVisite(param) {
 
     pieces: construirePieces(param.composition),
     photos: [],
+    photo_seq: {},
     compteurs: {
       electricite: { bi_horaire: param.reglages.electricite_bi_horaire,
                      numero: null, index_unique: null, index_jour: null,

@@ -63,6 +63,17 @@ async function approuverCorrespondance(immeubleId, designation, dossierUnite, op
 }
 
 async function retirerCorrespondance(immeubleId, designation) {
+  /* Une visite en cours peut s'appuyer sur cette correspondance :
+     la retirer la laisserait sans destination. */
+  if (typeof visitesEnCours === "function") {
+    const ouvertes = await visitesEnCours();
+    const conflit = ouvertes.find(v => v.bien && v.bien.immeuble_id === immeubleId
+                                    && v.bien.unite_source === designation);
+    if (conflit) {
+      throw new Error(`Impossible : une visite est en cours sur cette unité (${
+        conflit.type}, commencée le ${new Date(conflit.date_debut).toLocaleString("fr-BE")}).`);
+    }
+  }
   await chargerCorrespondances();
   delete _correspondances.unites[cleUnite(immeubleId, designation)];
   await enregistrerCorrespondances();

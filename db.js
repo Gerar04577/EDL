@@ -58,12 +58,30 @@ async function enregistrerVisite(visite) {
    d'appliquer un changement. Sans cela, l'objet gardé en mémoire par
    l'écran écrase les confirmations d'envoi écrites par la file. */
 async function modifierVisite(visitId, mutation) {
-  const s = await _transaction("visites", "readwrite");
-  const visite = await _promesse(s.get(visitId));
-  if (!visite) return null;
-  mutation(visite);
-  await _promesse(s.put(visite));
-  return visite;
+  /* Deux transactions distinctes plutôt qu'une seule maintenue ouverte :
+     Safari referme une transaction devenue inactive entre deux tours de
+     boucle, ce qui produirait un enregistrement silencieusement perdu.
+     Les écritures sont sérialisées par une file d'attente interne. */
+  return _enFile(async () => {
+    const lecture = await _transaction("visites", "readonly");
+    const visite = await _promesse(lecture.get(visitId));
+    if (!visite) return null;
+    mutation(visite);
+    const ecriture = await _transaction("visites", "readwrite");
+    await _promesse(ecriture.put(visite));
+    // relecture de contrôle : on ne renvoie que ce qui est réellement écrit
+    const verif = await _transaction("visites", "readonly");
+    return _promesse(verif.get(visitId));
+  });
+}
+
+/* File d'attente : deux modifications simultanées de la même visite ne
+   peuvent pas s'écraser mutuellement. */
+let _chaine = Promise.resolve();
+function _enFile(tache) {
+  const suivant = _chaine.then(tache, tache);
+  _chaine = suivant.catch(() => {});
+  return suivant;
 }
 
 async function lireVisite(visitId) {
@@ -76,9 +94,51 @@ async function listerVisites() {
   return _promesse(s.getAll());
 }
 
-async function visiteEnCours() {
+async function visitesEnCours() {
   const toutes = await listerVisites();
-  return toutes.find(v => v.statut === "en_cours") || null;
+  return toutes.filter(v => v.statut === "en_cours")
+    .sort((a, b) => String(b.date_debut).localeCompare(String(a.date_debut)));
+}
+
+async function visiteEnCours() {
+  return (await visitesEnCours())[0] || null;
+}
+
+async function visitesTerminees() {
+  const toutes = await listerVisites();
+  return toutes.filter(v => v.statut !== "en_cours")
+    .sort((a, b) => String(b.date_debut).localeCompare(String(a.date_debut)));
+}
+
+/* Suppression complète : la visite ET les photos restées en file.
+   Les fichiers déjà déposés dans OneDrive ne sont pas touchés. */
+async function supprimerVisite(visitId) {
+  return _enFile(async () => {
+    /* Une transaction par opération : une boucle d'attentes à l'intérieur
+       d'une même transaction est refermée par Safari en cours de route. */
+    const lecture = await _transaction("photos_en_attente", "readonly");
+    const toutes = await _promesse(lecture.getAll());
+    const aSupprimer = toutes.filter(p => p.visit_id === visitId).map(p => p.photo_id);
+    for (const id of aSupprimer) {
+      const s = await _transaction("photos_en_attente", "readwrite");
+      await _promesse(s.delete(id));
+    }
+    const sv = await _transaction("visites", "readwrite");
+    await _promesse(sv.delete(visitId));
+    return true;
+  });
+}
+
+/* Retire une photo de la visite et de la file. */
+async function retirerPhoto(visitId, photoId) {
+  await _enFile(async () => {
+    const sp = await _transaction("photos_en_attente", "readwrite");
+    await _promesse(sp.delete(photoId));
+  });
+  return modifierVisite(visitId, v => {
+    const i = v.photos.findIndex(p => p.photo_id === photoId);
+    if (i >= 0) v.photos.splice(i, 1);
+  });
 }
 
 // --- File d'attente des photos -------------------------------------------
@@ -106,34 +166,60 @@ async function nombreEnAttente() {
    est libérée, et uniquement si Microsoft a bien renvoyé un identifiant. */
 async function confirmerTransfert(photoId, onedriveItemId) {
   if (!onedriveItemId) throw new Error("Confirmation refusée : aucun identifiant OneDrive");
-  const s = await _transaction("photos_en_attente", "readwrite");
-  const element = await _promesse(s.get(photoId));
-  if (!element) return null;
-  element.statut_transfert = "confirme";
-  element.onedrive_item_id = onedriveItemId;
-  element.blob = null;              // la copie locale est libérée
-  element.confirme_le = new Date().toISOString();
-  return _promesse(s.put(element));
+  return _enFile(async () => {
+    const lecture = await _transaction("photos_en_attente", "readonly");
+    const element = await _promesse(lecture.get(photoId));
+    if (!element) return null;
+    element.statut_transfert = "confirme";
+    element.onedrive_item_id = onedriveItemId;
+    element.blob = null;              // la copie locale est libérée
+    element.confirme_le = new Date().toISOString();
+    const ecriture = await _transaction("photos_en_attente", "readwrite");
+    return _promesse(ecriture.put(element));
+  });
 }
 
 async function incrementerTentative(photoId, message) {
-  const s = await _transaction("photos_en_attente", "readwrite");
-  const element = await _promesse(s.get(photoId));
-  if (!element) return null;
-  element.tentatives = (element.tentatives || 0) + 1;
-  element.derniere_erreur = message || null;
-  return _promesse(s.put(element));
+  return _enFile(async () => {
+    const lecture = await _transaction("photos_en_attente", "readonly");
+    const element = await _promesse(lecture.get(photoId));
+    if (!element) return null;
+    element.tentatives = (element.tentatives || 0) + 1;
+    element.derniere_erreur = message || null;
+    const ecriture = await _transaction("photos_en_attente", "readwrite");
+    return _promesse(ecriture.put(element));
+  });
 }
 
 // --- Journal technique ---------------------------------------------------
 
+/* Le journal est plafonné : sans cela il grossit indéfiniment,
+   quelques milliers d'entrées après une saison de rotations. */
+const JOURNAL_MAX = 500;
+let _journalDepuisPurge = 0;
+
 async function journaliser(evenement, detail) {
   const s = await _transaction("journal", "readwrite");
-  return _promesse(s.add({
+  const r = await _promesse(s.add({
     horodatage: new Date().toISOString(),
     evenement,
     detail: detail || null,
   }));
+  if (++_journalDepuisPurge >= 100) { _journalDepuisPurge = 0; purgerJournal(); }
+  return r;
+}
+
+async function purgerJournal() {
+  try {
+    const lecture = await _transaction("journal", "readonly");
+    const cles = await _promesse(lecture.getAllKeys());
+    if (cles.length <= JOURNAL_MAX) return;
+    const aEffacer = cles.slice(0, cles.length - JOURNAL_MAX);
+    for (const k of aEffacer) {
+      const s = await _transaction("journal", "readwrite");
+      await _promesse(s.delete(k));
+    }
+  } catch (_) { /* le journal n'est jamais bloquant */ }
 }
 
 async function lireJournal(limite) {
@@ -144,12 +230,27 @@ async function lireJournal(limite) {
 
 // --- Identifiants --------------------------------------------------------
 
-/* Générés localement, AVANT tout appel réseau, et jamais modifiés ensuite. */
+/* Générés localement, AVANT tout appel réseau, et jamais modifiés ensuite.
+
+   Six caractères aléatoires donnaient environ une chance sur sept de
+   produire deux identifiants identiques quelque part dans l'année, ce
+   qui écraserait une photo en file. On utilise donc le générateur
+   cryptographique du navigateur, douze caractères, plus un compteur
+   qui garantit l'unicité au sein d'une même session. */
+let _compteurId = 0;
+
 function nouvelIdentifiant(prefixe) {
-  const d = new Date();
-  const jour = d.toISOString().slice(0, 10).replace(/-/g, "");
-  const alea = Math.random().toString(16).slice(2, 8);
-  return `${prefixe}_${jour}_${alea}`;
+  const jour = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  let alea;
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    const t = new Uint8Array(6);
+    crypto.getRandomValues(t);
+    alea = Array.from(t).map(x => x.toString(16).padStart(2, "0")).join("");
+  } else {
+    alea = (Math.random().toString(16) + "000000000000").slice(2, 14);
+  }
+  const suite = (++_compteurId).toString(36);
+  return `${prefixe}_${jour}_${alea}${suite}`;
 }
 
 // --- Diagnostic ----------------------------------------------------------

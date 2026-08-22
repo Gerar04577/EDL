@@ -35,16 +35,24 @@ async function ecranAccueil() {
   E.ecran = "accueil";
   titre("EDL — État des Lieux", E.connecte ? nomUtilisateur() : "Non connecté");
 
-  const enCours = await visiteEnCours();
+  const ouvertes = await visitesEnCours();
+  const terminees = await visitesTerminees();
   const attente = await nombreEnAttente();
 
   let html = "";
 
-  if (enCours) {
-    html += `<div class="avert"><strong>Visite interrompue</strong>
-      ${echapper(enCours.bien.unite_source)} — ${enCours.type}, commencée le
-      ${new Date(enCours.date_debut).toLocaleString("fr-BE")}.
-      <button id="btn-reprendre">Reprendre cette visite</button></div>`;
+  if (ouvertes.length) {
+    html += `<div class="bloc"><h2>${ouvertes.length} visite${
+      ouvertes.length > 1 ? "s" : ""} en cours</h2>` +
+      ouvertes.map((v, i) => `<div class="comp comp-alerte">
+        <div class="ligne"><span>${echapper(v.bien.unite_source)}</span>
+          <span class="val">${v.type}</span></div>
+        <p class="note">commencée le ${new Date(v.date_debut).toLocaleString("fr-BE")} ·
+          ${v.photos.length} photo${v.photos.length > 1 ? "s" : ""} ·
+          ${v.pieces.reduce((n, p) => n + p.constatations.length, 0)} constatation(s)</p>
+        <button class="mini" data-reprendre="${i}">Reprendre</button>
+        <button class="mini secondaire" data-abandonner="${i}">Abandonner</button>
+      </div>`).join("") + `</div>`;
   }
 
   html += `<div class="bloc"><h2>Nouvelle visite</h2>`;
@@ -59,6 +67,16 @@ async function ecranAccueil() {
   }
   html += `</div>`;
 
+  if (terminees.length) {
+    html += `<div class="bloc"><h2>${terminees.length} visite${
+      terminees.length > 1 ? "s terminées" : " terminée"}</h2>` +
+      terminees.slice(0, 8).map((v, i) => `<div class="ligne">
+        <span>${echapper(v.bien.unite_source)} — ${v.type}</span>
+        <span class="val gris">${new Date(v.date_debut).toLocaleDateString("fr-BE")}</span>
+      </div>`).join("") +
+      `<button class="mini secondaire" id="btn-purge">Effacer les visites terminées</button></div>`;
+  }
+
   html += `<div class="bloc"><h2>État</h2>
     <div class="ligne"><span>Compte</span><span class="val ${E.connecte ? "ok" : "ko"}">${
       E.connecte ? echapper(nomUtilisateur()) : "non connecté"}</span></div>
@@ -66,8 +84,6 @@ async function ecranAccueil() {
       E.installee ? "ok" : "ko"}">${E.installee ? "oui" : "non"}</span></div>
     <div class="ligne"><span>Photos en attente d'envoi</span><span class="val ${
       attente ? "ko" : "ok"}">${attente}</span></div>
-    <div class="ligne"><span>Liste des locataires</span><span class="val">${
-      E.liste ? E.liste.total_unites + " unités" : "non chargée"}</span></div>
     </div>`;
 
   if (E.connecte) {
@@ -82,7 +98,48 @@ async function ecranAccueil() {
   if ($("btn-deconnexion")) $("btn-deconnexion").onclick = () => seDeconnecter();
   if ($("btn-comparer")) $("btn-comparer").onclick = () => ecranComparaison();
   if ($("btn-nouvelle")) $("btn-nouvelle").onclick = () => ecranType();
-  if ($("btn-reprendre")) $("btn-reprendre").onclick = () => ecranVisiteReprise(enCours);
+
+  $("vue").querySelectorAll("[data-reprendre]").forEach(b => b.onclick = () =>
+    ecranVisiteReprise(ouvertes[parseInt(b.getAttribute("data-reprendre"), 10)]));
+
+  $("vue").querySelectorAll("[data-abandonner]").forEach(b => b.onclick = () =>
+    ecranAbandon(ouvertes[parseInt(b.getAttribute("data-abandonner"), 10)]));
+
+  if ($("btn-purge")) $("btn-purge").onclick = async () => {
+    const b = $("btn-purge");
+    b.disabled = true; b.textContent = "Effacement…";
+    try {
+      for (const v of terminees) await supprimerVisite(v.visit_id);
+    } catch (e) {
+      await journaliser("purge_echouee", String(e && e.message));
+    }
+    await ecranAccueil();
+  };
+}
+
+function ecranAbandon(visite) {
+  titre("Abandonner la visite", visite.bien.unite_source);
+  vue(`<div class="avert"><strong>Cette visite sera effacée de l'appareil</strong>
+      ${visite.photos.length} photo(s) et
+      ${visite.pieces.reduce((n, p) => n + p.constatations.length, 0)} constatation(s).<br><br>
+      Les fichiers déjà déposés dans OneDrive ne sont PAS supprimés :
+      à toi de les effacer si besoin.</div>
+    <button id="btn-confirmer">Oui, abandonner cette visite</button>
+    <button class="secondaire" id="btn-annuler">Annuler</button>`);
+  $("btn-confirmer").onclick = async () => {
+    $("btn-confirmer").disabled = true;
+    try {
+      await supprimerVisite(visite.visit_id);
+      await journaliser("visite_abandonnee", { visit_id: visite.visit_id });
+    } catch (e) {
+      vue(`<div class="erreur"><strong>Abandon impossible</strong>${echapper(e.message)}</div>
+           <button class="secondaire" id="btn-retour">Retour</button>`);
+      $("btn-retour").onclick = () => ecranAccueil();
+      return;
+    }
+    await ecranAccueil();
+  };
+  $("btn-annuler").onclick = () => ecranAccueil();
 }
 
 // --- 1. Type de visite ---------------------------------------------------
@@ -154,17 +211,17 @@ async function ecranDossier(designation) {
   catch (e) { return erreurEcran(e.message, () => ecranUnite(E.brouillon.immeuble_id)); }
 
   if (r.statut === "approuve_absent") {
-    return erreurEcran(
+    return erreurEcran({ html:
       `Le dossier approuvé « ${echapper(r.attendu)} » n'existe plus dans « ${
-        echapper(imm.dossier_onedrive)} ».<br><br>Passe par « Comparer avec OneDrive » pour le redésigner.`,
+        echapper(imm.dossier_onedrive)} ».<br><br>Passe par « Comparer avec OneDrive » pour le redésigner.` },
       () => ecranUnite(E.brouillon.immeuble_id));
   }
 
   if (r.statut === "introuvable") {
-    return erreurEcran(
+    return erreurEcran({ html:
       `Aucun dossier ne correspond à « ${echapper(designation)} » dans « ${
         echapper(imm.dossier_onedrive)} ».<br><br>Dossiers présents : ${
-        echapper((r.tous || []).join(", "))}`,
+        echapper((r.tous || []).join(", "))}` },
       () => ecranUnite(E.brouillon.immeuble_id));
   }
 
@@ -196,9 +253,9 @@ async function suiteDossier(nomUnite, refUnite) {
   catch (e) { return erreurEcran(e.message, () => ecranUnite(E.brouillon.immeuble_id)); }
 
   if (locs.length === 0) {
-    return erreurEcran(
+    return erreurEcran({ html:
       `Le dossier « ${echapper(nomUnite)} » ne contient aucun dossier locataire.
-       L'application ne crée pas de dossier : crée-le dans OneDrive, puis reviens.`,
+       L'application ne crée pas de dossier : crée-le dans OneDrive, puis reviens.` },
       () => ecranUnite(E.brouillon.immeuble_id));
   }
 
@@ -229,10 +286,10 @@ async function verifierCible(locataire) {
   catch (e) { return erreurEcran(e.message, () => ecranUnite(E.brouillon.immeuble_id)); }
 
   if (c.statut === "absent") {
-    return erreurEcran(
+    return erreurEcran({ html:
       `Le dossier « ${echapper(c.attendu)} » n'existe pas chez ${echapper(locataire.nom)}.<br><br>
        Présents : ${echapper(c.presents.join(", ") || "aucun")}.<br><br>
-       L'application ne crée pas de dossier. Crée-le dans OneDrive avant de commencer.`,
+       L'application ne crée pas de dossier. Crée-le dans OneDrive avant de commencer.` },
       () => ecranUnite(E.brouillon.immeuble_id));
   }
 
@@ -241,8 +298,12 @@ async function verifierCible(locataire) {
   ecranComposition();
 }
 
+/* Le message peut venir de Microsoft et contenir un nom de dossier :
+   l'échappement est fait ICI, une fois pour toutes. Les appelants
+   passent du texte brut ; ceux qui veulent du HTML utilisent {html:...}. */
 function erreurEcran(message, retour) {
-  vue(`<div class="erreur"><strong>Impossible de continuer</strong>${message}</div>
+  const corps = (message && message.html) ? message.html : echapper(message);
+  vue(`<div class="erreur"><strong>Impossible de continuer</strong>${corps}</div>
        <button class="secondaire" id="btn-retour">Retour</button>`);
   $("btn-retour").onclick = retour;
 }
@@ -362,7 +423,7 @@ async function lancerVisite() {
     const visite = await creerVisite(b);
     ecranVisiteReprise(visite);
   } catch (e) {
-    erreurEcran("Création impossible : " + echapper(e.message), () => ecranOptions());
+    erreurEcran("Création impossible : " + e.message, () => ecranOptions());
   }
 }
 
@@ -387,12 +448,83 @@ async function ecranVisiteReprise(visite) {
           <span class="droite">${n} photo${n > 1 ? "s" : ""}${c ? " · " + c + " constat" + (c > 1 ? "s" : "") : ""}</span></button>`;
       }).join("")}
     </div>
+    <button id="btn-cloturer">Terminer la visite</button>
     <button class="secondaire" id="btn-accueil">Retour à l'accueil</button>`);
 
   $("vue").querySelectorAll("[data-piece]").forEach(b =>
     b.onclick = () => ecranPiece(b.getAttribute("data-piece")));
-  $("btn-accueil").onclick = () => ecranAccueil();
+  $("btn-cloturer").onclick = () => ecranCloture(VISITE);
+  $("btn-accueil").onclick = async () => {
+    await deposerMaintenant(VISITE);
+    ecranAccueil();
+  };
   majCompteurAttente();
+}
+
+// --- Clôture d'une visite ------------------------------------------------
+
+async function ecranCloture(visite) {
+  E.ecran = "cloture";
+  const attente = await nombreEnAttente();
+  const constats = visite.pieces.reduce((n, p) => n + p.constatations.length, 0);
+  const piecesVides = visite.pieces.filter(p =>
+    p.constatations.length === 0 &&
+    !visite.photos.some(ph => ph.rattachement === p.piece_id));
+
+  titre("Terminer la visite", visite.bien.unite_source);
+
+  let html = `<div class="bloc"><h2>Récapitulatif</h2>
+    <div class="ligne"><span>Type</span><span class="val">${visite.type}</span></div>
+    <div class="ligne"><span>Locataire</span><span class="val">${
+      echapper(visite.bien.dossier_locataire_onedrive)}</span></div>
+    <div class="ligne"><span>Photos</span><span class="val">${visite.photos.length}</span></div>
+    <div class="ligne"><span>Constatations</span><span class="val">${constats}</span></div>
+    <div class="ligne"><span>Photos en attente d'envoi</span><span class="val ${
+      attente ? "ko" : "ok"}">${attente}</span></div>
+    </div>`;
+
+  if (piecesVides.length) {
+    html += `<div class="avert"><strong>${piecesVides.length} pièce${
+      piecesVides.length > 1 ? "s" : ""} sans photo ni constatation</strong>
+      ${piecesVides.map(p => echapper(p.libelle)).join(", ")}</div>`;
+  }
+
+  if (attente > 0) {
+    html += `<div class="erreur"><strong>Clôture impossible</strong>
+      ${attente} photo(s) ne sont pas encore enregistrées dans OneDrive.
+      Reviens quand le réseau sera disponible : la barre doit être verte.</div>
+      <button disabled>Terminer la visite</button>`;
+  } else {
+    html += `<button id="btn-confirmer">Terminer et déposer le dossier</button>`;
+  }
+  html += `<button class="secondaire" id="btn-retour">Retour</button>`;
+  vue(html);
+
+  if ($("btn-confirmer")) $("btn-confirmer").onclick = async () => {
+    $("btn-confirmer").disabled = true;
+    $("btn-confirmer").textContent = "Dépôt en cours…";
+    let aJour = null, ok = false;
+    try {
+      aJour = await modifierVisite(visite.visit_id, v => {
+        v.statut = "terminee";
+        v.date_cloture = new Date().toISOString();
+      });
+      ok = await deposerMaintenant(aJour || visite);
+    } catch (e) {
+      vue(`<div class="erreur"><strong>Clôture impossible</strong>${echapper(e.message)}</div>
+           <button class="secondaire" id="btn-retour">Retour</button>`);
+      $("btn-retour").onclick = () => ecranVisiteReprise(visite);
+      return;
+    }
+    await journaliser("visite_terminee", { visit_id: visite.visit_id, depot: ok });
+    vue(`<div class="succes">Visite terminée${
+      ok ? " et dossier déposé dans OneDrive." : "."}</div>
+      ${ok ? "" : `<div class="avert"><strong>Dépôt non confirmé</strong>
+        Le dossier sera redéposé au prochain retour du réseau.</div>`}
+      <button id="btn-accueil">Retour à l'accueil</button>`);
+    $("btn-accueil").onclick = () => ecranAccueil();
+  };
+  $("btn-retour").onclick = () => ecranVisiteReprise(visite);
 }
 
 // --- Écran d'une pièce ---------------------------------------------------
@@ -455,10 +587,12 @@ function dessinerPiece(message) {
     </div>
 
     <div class="bloc"><h2>${photos.length} photo${photos.length > 1 ? "s" : ""}</h2>
-      ${photos.length ? photos.map(p => `<div class="ligne">
-          <span>${echapper(p.nom_fichier)}</span>
+      ${photos.length ? photos.map(p => `<div class="constat">
+          <div class="ligne"><span>${echapper(p.nom_fichier)}</span>
           <span class="val ${p.statut_transfert === "confirme" ? "ok" : "ko"}">${
-            p.statut_transfert === "confirme" ? "enregistrée" : "en attente"}</span></div>`).join("")
+            p.statut_transfert === "confirme" ? "enregistrée" : "en attente"}</span></div>
+          <p class="note"><button class="lien" data-suppr-photo="${
+            echapper(p.photo_id)}">retirer de l'état des lieux</button></p></div>`).join("")
         : `<p class="note">Aucune photo.</p>`}
       <input type="file" accept="image/*" capture="environment" id="appareil" class="cache">
       <button id="btn-photo">Prendre une photo</button>
@@ -468,8 +602,12 @@ function dessinerPiece(message) {
 
   const champ = $("saisie");
 
+  /* Un constat peut se limiter à « bon état / propre », sans commentaire :
+     c'est même le cas le plus fréquent. Le bouton s'active donc dès qu'il
+     y a du texte, OU un état, OU une propreté. */
   function majBouton() {
-    $("btn-ajouter-constat").disabled = champ.value.trim().length === 0;
+    const vide = champ.value.trim().length === 0 && !E.etat && !E.proprete;
+    $("btn-ajouter-constat").disabled = vide;
   }
   champ.oninput = () => { E.brouillonTexte = champ.value; majBouton(); };
   majBouton();
@@ -481,6 +619,7 @@ function dessinerPiece(message) {
       E[cle] = (E[cle] === v) ? null : v;
       $("vue").querySelectorAll("[data-" + cle + "]").forEach(x =>
         x.className = "seg" + (x.getAttribute("data-" + cle) === E[cle] ? " actif" : ""));
+      majBouton();
     });
   };
   brancherSegments("etat");
@@ -499,9 +638,13 @@ function dessinerPiece(message) {
 
   $("vue").querySelectorAll("[data-suppr]").forEach(b => b.onclick = async () => {
     const i = parseInt(b.getAttribute("data-suppr"), 10);
-    VISITE = await modifierVisite(VISITE.visit_id, v => {
-      v.pieces.find(x => x.piece_id === E.piece).constatations.splice(i, 1);
-    }) || VISITE;
+    try {
+      VISITE = await modifierVisite(VISITE.visit_id, v => {
+        v.pieces.find(x => x.piece_id === E.piece).constatations.splice(i, 1);
+      }) || VISITE;
+    } catch (e) {
+      return dessinerPiece("Suppression impossible : " + e.message);
+    }
     E.indexEdition = null;
     programmerDepot();
     dessinerPiece("Constatation supprimée");
@@ -509,14 +652,21 @@ function dessinerPiece(message) {
 
   $("btn-ajouter-constat").onclick = async () => {
     const texte = champ.value.trim();
-    if (!texte) return;
+    if (!texte && !E.etat && !E.proprete) return;
     const enEdition = E.indexEdition !== null && E.indexEdition !== undefined;
     const i = E.indexEdition;
-    VISITE = await modifierVisite(VISITE.visit_id, v => {
-      const pc = v.pieces.find(x => x.piece_id === E.piece);
-      const entree = { texte, etat: E.etat, proprete: E.proprete };
-      if (enEdition) pc.constatations[i] = entree; else pc.constatations.push(entree);
-    }) || VISITE;
+    const bouton = $("btn-ajouter-constat");
+    bouton.disabled = true;
+    try {
+      VISITE = await modifierVisite(VISITE.visit_id, v => {
+        const pc = v.pieces.find(x => x.piece_id === E.piece);
+        const entree = { texte, etat: E.etat, proprete: E.proprete };
+        if (enEdition) pc.constatations[i] = entree; else pc.constatations.push(entree);
+      }) || VISITE;
+    } catch (e) {
+      bouton.disabled = false;
+      return dessinerPiece("Enregistrement impossible : " + e.message);
+    }
     E.brouillonTexte = ""; E.etat = null; E.proprete = null; E.indexEdition = null;
     programmerDepot();
     dessinerPiece(enEdition ? "Constatation modifiée" : "Constatation enregistrée");
@@ -526,6 +676,19 @@ function dessinerPiece(message) {
     E.brouillonTexte = ""; E.etat = null; E.proprete = null; E.indexEdition = null;
     dessinerPiece();
   };
+
+  $("vue").querySelectorAll("[data-suppr-photo]").forEach(b => b.onclick = async () => {
+    const id = b.getAttribute("data-suppr-photo");
+    b.disabled = true;
+    try {
+      VISITE = await retirerPhoto(VISITE.visit_id, id) || VISITE;
+    } catch (e) {
+      return dessinerPiece("Retrait impossible : " + e.message);
+    }
+    await journaliser("photo_retiree", { photo_id: id });
+    programmerDepot();
+    dessinerPiece("Photo retirée — le fichier reste dans OneDrive");
+  });
 
   $("btn-photo").onclick = () => $("appareil").click();
   $("appareil").onchange = async (ev) => {
@@ -543,8 +706,9 @@ function dessinerPiece(message) {
     dessinerPiece("Photo enregistrée");
   };
 
-  $("btn-retour").onclick = () => {
+  $("btn-retour").onclick = async () => {
     E.brouillonTexte = ""; E.etat = null; E.proprete = null; E.indexEdition = null;
+    await deposerMaintenant(VISITE);
     ecranVisiteReprise(VISITE);
   };
   majCompteurAttente();

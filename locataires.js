@@ -5,6 +5,8 @@
    ils n'ont rien à faire dans un état des lieux. */
 
 let _locatairesCache = null;
+let _locatairesLuLe = 0;
+const DUREE_CACHE_MS = 10 * 60 * 1000;   // dix minutes
 
 /* Descend un chemin relatif à « Mes fichiers », segment par segment,
    PAR IDENTIFIANT. Jamais par chemin texte : voir graph.js. */
@@ -44,7 +46,8 @@ function decouperPreneurs(champ) {
 }
 
 async function chargerLocataires(forcer) {
-  if (_locatairesCache && !forcer) return _locatairesCache;
+  const perime = (Date.now() - _locatairesLuLe) > DUREE_CACHE_MS;
+  if (_locatairesCache && !forcer && !perime) return _locatairesCache;
 
   const { ref } = await descendreChemin(CONFIG.onedrive.chemin_liste_locataires);
   const brut = await telechargerJson(ref);
@@ -68,6 +71,7 @@ async function chargerLocataires(forcer) {
     });
   });
 
+  _locatairesLuLe = Date.now();
   _locatairesCache = {
     genere_le: brut.genereLe || null,
     mois: brut.mois || null,
