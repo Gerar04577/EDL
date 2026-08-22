@@ -73,6 +73,139 @@ function correspondanceApprouvee(immeubleId, designation) {
   return _correspondances.unites[cleUnite(immeubleId, designation)] || null;
 }
 
+/* ---- Évaluation d'une unité --------------------------------------------
+
+   Le niveau « dossier locataire » est OPTIONNEL : dans certaines unités,
+   EDLE et EDLS sont placés directement sous le dossier de l'unité.
+   Les deux structures sont acceptées. */
+
+const DOSSIERS_DOCUMENTS = ["EDLE", "EDLS", "BAIL", "SAMADHI"];
+
+function estDossierDocument(nom) {
+  return DOSSIERS_DOCUMENTS.includes(String(nom || "").trim().toUpperCase());
+}
+
+async function evaluerUnite(imm, unite, dossiers, noms, refImmeuble, utilises) {
+  const ligne = {
+    designation: unite.designation,
+    locataire: unite.locataire,
+    inoccupe: unite.inoccupe,
+    dossier_unite: null,
+    statut: "manquant",
+    ambigu: false,
+    candidats: [],
+    dossiers_locataires: [],
+    edle: null,
+    edls: null,
+    message: null,
+  };
+
+  const approuvee = correspondanceApprouvee(imm.immeuble_id, unite.designation);
+  let r;
+  if (approuvee && noms.includes(approuvee.dossier_unite)) {
+    r = { trouve: approuvee.dossier_unite, candidats: [], ambigu: false };
+    ligne.approuvee = true;
+    ligne.approuve_le = approuvee.approuve_le;
+  } else if (approuvee) {
+    ligne.statut = "approuve_absent";
+    ligne.message = `le dossier approuvé « ${approuvee.dossier_unite} » n'existe plus`;
+    ligne.candidats_libres = noms;
+    return ligne;
+  } else {
+    r = trouverDossierUnite(unite.designation, noms);
+    ligne.approuvee = false;
+  }
+
+  if (r.ambigu) {
+    ligne.statut = "ambigu";
+    ligne.ambigu = true;
+    ligne.candidats = r.candidats;
+    ligne.message = "plusieurs dossiers possibles — à trancher";
+    ligne.candidats_libres = noms;
+    if (utilises) r.candidats.forEach(c => utilises.add(c));
+    return ligne;
+  }
+  if (!r.trouve) {
+    ligne.message = "aucun dossier correspondant — à désigner";
+    ligne.candidats_libres = noms;
+    return ligne;
+  }
+
+  ligne.dossier_unite = r.trouve;
+  if (utilises) utilises.add(r.trouve);
+  const elUnite = dossiers.find(e => e.name === r.trouve);
+  const refUnite = refDe(elUnite, refImmeuble.driveId);
+
+  let sousUnite = [];
+  try {
+    sousUnite = (await enfantsDeRef(refUnite)).filter(e => e.folder || e.remoteItem);
+  } catch (e) {
+    ligne.statut = "erreur";
+    ligne.message = e.message;
+    return ligne;
+  }
+
+  /* Structure PLATE : EDLE et EDLS directement sous l'unité. */
+  const plate = sousUnite.some(e => estDossierDocument(e.name));
+  let contenants;
+
+  if (plate) {
+    ligne.structure = "plate";
+    contenants = sousUnite;
+    ligne.dossier_courant = null;
+  } else {
+    ligne.structure = "par_locataire";
+    const locs = sousUnite;
+    ligne.dossiers_locataires = locs.map(e => e.name);
+    if (locs.length === 0) {
+      ligne.statut = unite.inoccupe ? "vide_normal" : "sans_locataire";
+      ligne.message = unite.inoccupe
+        ? "unité inoccupée, aucun dossier locataire"
+        : "aucun dossier locataire alors que l'unité est occupée";
+      return ligne;
+    }
+    const courant = locs.slice().sort((a, b) =>
+      String(b.lastModifiedDateTime || "").localeCompare(String(a.lastModifiedDateTime || "")))[0];
+    ligne.dossier_courant = courant.name;
+    try {
+      contenants = (await enfantsDeRef(refDe(courant, refUnite.driveId)))
+        .filter(e => e.folder || e.remoteItem);
+    } catch (e) {
+      ligne.statut = "erreur";
+      ligne.message = e.message;
+      return ligne;
+    }
+  }
+
+  const nomsSous = contenants.map(e => String(e.name || "").trim().toUpperCase());
+  ligne.edle = nomsSous.includes(CONFIG.onedrive.sous_dossier_edle);
+  ligne.edls = nomsSous.includes(CONFIG.onedrive.sous_dossier_edls);
+  ligne.sous_dossiers = contenants.map(e => e.name);
+
+  if (ligne.edle && ligne.edls) {
+    ligne.statut = "complet";
+  } else {
+    ligne.statut = "incomplet";
+    const manque = [];
+    if (!ligne.edle) manque.push("EDLE");
+    if (!ligne.edls) manque.push("EDLS");
+    ligne.message = "dossier manquant : " + manque.join(" et ");
+  }
+  return ligne;
+}
+
+/* Réévaluation d'une seule unité, pour éviter de reparcourir les sept
+   immeubles après chaque approbation. */
+async function reevaluerUnite(immeubleId, designation) {
+  const liste = await chargerLocataires();
+  const imm = liste.immeubles.find(i => i.immeuble_id === immeubleId);
+  const unite = imm.unites.find(u => u.designation === designation);
+  const refImmeuble = await obtenirRefImmeuble(immeubleId);
+  const dossiers = (await enfantsDeRef(refImmeuble)).filter(e => e.folder || e.remoteItem);
+  const noms = dossiers.map(e => e.name);
+  return evaluerUnite(imm, unite, dossiers, noms, refImmeuble, null);
+}
+
 /* ---- Comparaison ------------------------------------------------------- */
 
 async function comparerAvecOneDrive(surProgres) {
@@ -107,104 +240,7 @@ async function comparerAvecOneDrive(surProgres) {
     const utilises = new Set();
 
     for (const unite of imm.unites) {
-      const ligne = {
-        designation: unite.designation,
-        locataire: unite.locataire,
-        inoccupe: unite.inoccupe,
-        dossier_unite: null,
-        statut: "manquant",
-        ambigu: false,
-        candidats: [],
-        dossiers_locataires: [],
-        edle: null,
-        edls: null,
-        message: null,
-      };
-
-      /* Une correspondance approuvée fait foi : aucun calcul. */
-      const approuvee = correspondanceApprouvee(imm.immeuble_id, unite.designation);
-      let r;
-      if (approuvee && noms.includes(approuvee.dossier_unite)) {
-        r = { trouve: approuvee.dossier_unite, candidats: [], ambigu: false };
-        ligne.approuvee = true;
-        ligne.approuve_le = approuvee.approuve_le;
-      } else if (approuvee) {
-        // le dossier approuvé a disparu ou a été renommé
-        ligne.statut = "approuve_absent";
-        ligne.message = `le dossier approuvé « ${approuvee.dossier_unite} » n'existe plus`;
-        ligne.candidats_libres = noms;
-        bloc.lignes.push(ligne);
-        continue;
-      } else {
-        r = trouverDossierUnite(unite.designation, noms);
-        ligne.approuvee = false;
-      }
-
-      if (r.ambigu) {
-        ligne.statut = "ambigu";
-        ligne.ambigu = true;
-        ligne.candidats = r.candidats;
-        ligne.message = "plusieurs dossiers possibles — à trancher";
-        ligne.candidats_libres = noms;
-        bloc.lignes.push(ligne);
-        r.candidats.forEach(c => utilises.add(c));
-        continue;
-      }
-      if (!r.trouve) {
-        ligne.message = "aucun dossier correspondant — à désigner";
-        ligne.candidats_libres = noms;
-        bloc.lignes.push(ligne);
-        continue;
-      }
-
-      ligne.dossier_unite = r.trouve;
-      utilises.add(r.trouve);
-      const elUnite = dossiers.find(e => e.name === r.trouve);
-      const refUnite = refDe(elUnite, refImmeuble.driveId);
-
-      // niveau locataire
-      let locs = [];
-      try {
-        locs = await listerDossiersLocataires(refUnite);
-      } catch (e) {
-        ligne.statut = "erreur";
-        ligne.message = e.message;
-        bloc.lignes.push(ligne);
-        continue;
-      }
-      ligne.dossiers_locataires = locs.map(l => l.nom);
-
-      if (locs.length === 0) {
-        ligne.statut = unite.inoccupe ? "vide_normal" : "sans_locataire";
-        ligne.message = unite.inoccupe
-          ? "unité inoccupée, aucun dossier locataire"
-          : "aucun dossier locataire alors que l'unité est occupée";
-        bloc.lignes.push(ligne);
-        continue;
-      }
-
-      /* Le dossier de travail est le plus récemment modifié : c'est celui
-         du locataire en place. Les anciens restent listés pour information. */
-      const courant = locs.slice().sort((a, b) =>
-        String(b.modifie_le || "").localeCompare(String(a.modifie_le || "")))[0];
-      ligne.dossier_courant = courant.nom;
-
-      const sous = await enfantsDeRef(courant.ref);
-      const nomsSous = sous.filter(e => e.folder || e.remoteItem)
-        .map(e => (e.name || "").trim().toUpperCase());
-      ligne.edle = nomsSous.includes(CONFIG.onedrive.sous_dossier_edle);
-      ligne.edls = nomsSous.includes(CONFIG.onedrive.sous_dossier_edls);
-      ligne.sous_dossiers = sous.filter(e => e.folder || e.remoteItem).map(e => e.name);
-
-      if (ligne.edle && ligne.edls) {
-        ligne.statut = "complet";
-      } else {
-        ligne.statut = "incomplet";
-        const manque = [];
-        if (!ligne.edle) manque.push("EDLE");
-        if (!ligne.edls) manque.push("EDLS");
-        ligne.message = "dossier manquant : " + manque.join(" et ");
-      }
+      const ligne = await evaluerUnite(imm, unite, dossiers, noms, refImmeuble, utilises);
       bloc.lignes.push(ligne);
     }
 

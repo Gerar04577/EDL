@@ -522,6 +522,18 @@ async function ecranComparaison(silencieux) {
   dessinerComparaison();
 }
 
+function recalculerBilan() {
+  const b = { total: 0, complet: 0, incomplet: 0, manquant: 0, ambigu: 0,
+              sans_locataire: 0, vide_normal: 0, erreur: 0,
+              approuve_absent: 0, approuvees: 0 };
+  COMP.resultats.forEach(bloc => bloc.lignes.forEach(l => {
+    b.total++;
+    if (b[l.statut] !== undefined) b[l.statut]++;
+    if (l.approuvee) b.approuvees++;
+  }));
+  COMP.bilan = b;
+}
+
 function dessinerComparaison() {
   const r = COMP, b = r.bilan;
   const aTraiter = b.incomplet + b.manquant + b.ambigu + b.sans_locataire
@@ -561,6 +573,7 @@ function dessinerComparaison() {
         html += `<p class="note">${echapper(l.dossier_unite)}`;
         if (l.dossier_courant) html += ` › ${echapper(l.dossier_courant)}`;
         if (l.statut === "complet") html += ` › EDLE ✓ EDLS ✓`;
+        if (l.structure === "plate") html += ` <span class="gris">(sans dossier locataire)</span>`;
         html += `</p>`;
       }
       if (l.message) html += `<p class="note">${echapper(l.message)}</p>`;
@@ -597,23 +610,38 @@ function dessinerComparaison() {
     return { bloc: COMP.resultats[ib], ligne: COMP.resultats[ib].lignes[il] };
   };
 
+  /* Après une approbation, seule l'unité concernée est réévaluée :
+     reparcourir les sept immeubles prendrait plusieurs secondes. */
+  async function majUneLigne(cle, action) {
+    const [ib, il] = cle.split(":").map(Number);
+    const bloc = COMP.resultats[ib];
+    const ligne = bloc.lignes[il];
+    await action(bloc, ligne);
+    const nouvelle = await reevaluerUnite(bloc.immeuble_id, ligne.designation);
+    bloc.lignes[il] = nouvelle;
+    recalculerBilan();
+    dessinerComparaison();
+  }
+
   $("vue").querySelectorAll("[data-approuver]").forEach(btn => btn.onclick = async () => {
-    const { bloc, ligne } = ligneDe(btn.getAttribute("data-approuver"));
     btn.disabled = true; btn.textContent = "Enregistrement…";
     try {
-      await approuverCorrespondance(bloc.immeuble_id, ligne.designation,
-                                    ligne.dossier_unite, nomUtilisateur());
-      await ecranComparaison(true);
+      await majUneLigne(btn.getAttribute("data-approuver"), (bloc, ligne) =>
+        approuverCorrespondance(bloc.immeuble_id, ligne.designation,
+                                ligne.dossier_unite, nomUtilisateur()));
     } catch (e) {
       btn.textContent = "Échec : " + e.message; btn.disabled = false;
     }
   });
 
   $("vue").querySelectorAll("[data-retirer]").forEach(btn => btn.onclick = async () => {
-    const { bloc, ligne } = ligneDe(btn.getAttribute("data-retirer"));
-    btn.disabled = true;
-    await retirerCorrespondance(bloc.immeuble_id, ligne.designation);
-    await ecranComparaison(true);
+    btn.disabled = true; btn.textContent = "…";
+    try {
+      await majUneLigne(btn.getAttribute("data-retirer"), (bloc, ligne) =>
+        retirerCorrespondance(bloc.immeuble_id, ligne.designation));
+    } catch (e) {
+      btn.textContent = "Échec : " + e.message; btn.disabled = false;
+    }
   });
 
   $("vue").querySelectorAll("[data-designer]").forEach(btn => btn.onclick = () => {
@@ -638,7 +666,11 @@ function ecranDesignation(bloc, ligne) {
     vue(`<p class="note">Enregistrement…</p>`);
     try {
       await approuverCorrespondance(bloc.immeuble_id, ligne.designation, nom, nomUtilisateur());
-      await ecranComparaison(true);
+      const ib = COMP.resultats.indexOf(bloc);
+      const il = bloc.lignes.indexOf(ligne);
+      bloc.lignes[il] = await reevaluerUnite(bloc.immeuble_id, ligne.designation);
+      recalculerBilan();
+      dessinerComparaison();
     } catch (e) {
       vue(`<div class="erreur"><strong>Échec</strong>${echapper(e.message)}</div>
            <button class="secondaire" id="btn-retour">Retour</button>`);

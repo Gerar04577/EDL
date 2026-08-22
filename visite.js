@@ -56,17 +56,24 @@ async function resoudreDossierUnite(immeubleId, designation) {
   return { statut: "introuvable", nom: null, ref: null, candidats: [], tous: noms };
 }
 
-/* Étape 2 — les dossiers locataires présents sous l'unité.
-   Lus, jamais déduits de la liste Gestion Loyers. */
+/* Étape 2 — le contenu du dossier d'unité.
+   Deux structures existent dans l'arborescence réelle :
+   soit un dossier par locataire, soit EDLE et EDLS directement sous l'unité.
+   Dans le second cas, on renvoie l'unité elle-même comme contenant. */
 async function listerDossiersLocataires(refUnite) {
-  const enfants = await enfantsDeRef(refUnite);
-  return enfants
-    .filter(e => e.folder || e.remoteItem)
-    .map(e => ({
-      nom: e.name,
-      ref: refDe(e, refUnite.driveId),
-      modifie_le: e.lastModifiedDateTime || null,
-    }));
+  const enfants = (await enfantsDeRef(refUnite)).filter(e => e.folder || e.remoteItem);
+  const documents = ["EDLE", "EDLS", "BAIL", "SAMADHI"];
+  const plate = enfants.some(e => documents.includes(String(e.name || "").trim().toUpperCase()));
+
+  if (plate) {
+    return [{ nom: "(dossier de l'unité)", ref: refUnite, modifie_le: null, plate: true }];
+  }
+  return enfants.map(e => ({
+    nom: e.name,
+    ref: refDe(e, refUnite.driveId),
+    modifie_le: e.lastModifiedDateTime || null,
+    plate: false,
+  }));
 }
 
 /* Étape 3 — le sous-dossier EDLE ou EDLS.
