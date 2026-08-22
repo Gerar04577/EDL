@@ -15,105 +15,75 @@
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    padding: calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
+    padding: calc(20px + env(safe-area-inset-top)) 20px calc(32px + env(safe-area-inset-bottom));
     font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    color: #1a1a1a;
-    background: #f7f6f3;
+    color: #1a1a1a; background: #f7f6f3;
   }
-  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
-  .sous { color: #6b6b6b; font-size: 14px; margin: 0 0 28px; }
-  .bloc {
-    background: #fff;
-    border: 1px solid #e3e0da;
-    border-radius: 12px;
-    padding: 16px 18px;
-    margin-bottom: 14px;
-  }
-  .bloc h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em;
+  h1 { font-size: 21px; margin: 0 0 2px; letter-spacing: -0.01em; }
+  .sous { color: #6b6b6b; font-size: 14px; margin: 0 0 24px; }
+  .bloc { background: #fff; border: 1px solid #e3e0da; border-radius: 12px;
+          padding: 16px 18px; margin-bottom: 14px; }
+  .bloc h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em;
              color: #8a8a8a; margin: 0 0 10px; font-weight: 600; }
   .ligne { display: flex; justify-content: space-between; gap: 16px;
-           padding: 6px 0; border-bottom: 1px solid #f0eeea; }
+           padding: 7px 0; border-bottom: 1px solid #f0eeea; }
   .ligne:last-child { border-bottom: 0; }
   .ligne span:first-child { color: #4a4a4a; }
   .val { font-weight: 600; text-align: right; }
   .ok { color: #1f7a4d; }
   .ko { color: #b03030; }
-  .avert {
-    background: #fdf3e3;
-    border: 1px solid #e8d5ac;
-    border-radius: 12px;
-    padding: 16px 18px;
-    margin-bottom: 14px;
+  .note { color: #8a8a8a; font-size: 13px; margin: 10px 0 0; }
+  button {
+    width: 100%; padding: 14px; margin-top: 10px; font-size: 16px; font-weight: 600;
+    border-radius: 10px; border: 1px solid #1f4e5f; background: #1f4e5f; color: #fff;
+    -webkit-appearance: none;
   }
+  button.secondaire { background: #fff; color: #1f4e5f; }
+  button:disabled { opacity: 0.4; }
+  .avert { background: #fdf3e3; border: 1px solid #e8d5ac; border-radius: 12px;
+           padding: 16px 18px; margin-bottom: 14px; }
   .avert strong { display: block; margin-bottom: 6px; }
-  .pied { color: #9a9a9a; font-size: 13px; text-align: center; margin-top: 24px; }
+  .pied { color: #9a9a9a; font-size: 13px; text-align: center; margin-top: 22px; }
 </style>
 </head>
 <body>
 
 <h1>EDL — État des Lieux</h1>
-<p class="sous">Page de départ. Aucune fonction active à ce stade.</p>
+<p class="sous">Socle technique. Aucune visite possible à ce stade.</p>
 
 <div id="avertissement"></div>
 
 <div class="bloc">
-  <h2>Diagnostic de l'appareil</h2>
-  <div class="ligne"><span>Installée sur l'écran d'accueil</span><span class="val" id="d-installee">…</span></div>
-  <div class="ligne"><span>Connexion sécurisée (HTTPS)</span><span class="val" id="d-https">…</span></div>
-  <div class="ligne"><span>Base locale (IndexedDB)</span><span class="val" id="d-idb">…</span></div>
-  <div class="ligne"><span>Stockage persistant accordé</span><span class="val" id="d-persist">…</span></div>
-  <div class="ligne"><span>Réseau</span><span class="val" id="d-reseau">…</span></div>
+  <h2>Compte Microsoft</h2>
+  <div class="ligne"><span>Connexion</span><span class="val" id="d-compte">…</span></div>
+  <button id="btn-connexion">Se connecter à OneDrive</button>
+  <button id="btn-deconnexion" class="secondaire" style="display:none;">Se déconnecter</button>
 </div>
 
 <div class="bloc">
-  <h2>Adresse à déclarer dans Entra</h2>
-  <div class="ligne"><span>URI de redirection</span><span class="val" id="d-url" style="word-break:break-all">…</span></div>
+  <h2>Accès à l'arborescence</h2>
+  <div id="resultat-onedrive"><p class="note">Non testé.</p></div>
+  <button id="btn-test-onedrive" disabled>Tester l'accès aux sept immeubles</button>
 </div>
 
-<p class="pied">Version 0.2 — page de départ, étape 0.1</p>
+<div class="bloc">
+  <h2>Diagnostic de l'appareil</h2>
+  <div class="ligne"><span>Installée sur l'écran d'accueil</span><span class="val" id="d-installee">…</span></div>
+  <div class="ligne"><span>Connexion sécurisée</span><span class="val" id="d-https">…</span></div>
+  <div class="ligne"><span>Base locale</span><span class="val" id="d-idb">…</span></div>
+  <div class="ligne"><span>Stockage persistant</span><span class="val" id="d-persist">…</span></div>
+  <div class="ligne"><span>Espace disponible</span><span class="val" id="d-espace">…</span></div>
+  <div class="ligne"><span>Réseau</span><span class="val" id="d-reseau">…</span></div>
+  <div class="ligne"><span>Version</span><span class="val" id="d-version">…</span></div>
+</div>
 
-<script>
-(function () {
-  var poser = function (id, texte, bon) {
-    var e = document.getElementById(id);
-    e.textContent = texte;
-    if (bon === true) e.className = 'val ok';
-    if (bon === false) e.className = 'val ko';
-  };
+<p class="pied">Étape 2 — socle technique</p>
 
-  var installee = window.navigator.standalone === true ||
-                  (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
-  poser('d-installee', installee ? 'oui' : 'non', installee);
-
-  var https = location.protocol === 'https:';
-  poser('d-https', https ? 'oui' : 'non', https);
-
-  poser('d-idb', ('indexedDB' in window) ? 'disponible' : 'absente', ('indexedDB' in window));
-
-  poser('d-reseau', navigator.onLine ? 'en ligne' : 'hors ligne', navigator.onLine);
-
-  // L'adresse exacte à recopier dans le portail Entra, sans paramètres.
-  var url = location.origin + location.pathname;
-  poser('d-url', url);
-
-  if (navigator.storage && navigator.storage.persist) {
-    navigator.storage.persisted().then(function (deja) {
-      if (deja) { poser('d-persist', 'oui', true); return; }
-      navigator.storage.persist().then(function (accorde) {
-        poser('d-persist', accorde ? 'oui' : 'non (à revoir une fois installée)', accorde);
-      });
-    });
-  } else {
-    poser('d-persist', 'non géré', false);
-  }
-
-  if (!installee) {
-    document.getElementById('avertissement').innerHTML =
-      '<div class="avert"><strong>À installer sur l\'écran d\'accueil</strong>' +
-      'Dans Safari : bouton Partager, puis « Sur l\'écran d\'accueil ». ' +
-      'Utilisée depuis un onglet, l\'application perdrait ses photos en attente.</div>';
-  }
-})();
-</script>
+<script src="msal-browser.min.js"></script>
+<script src="config.js"></script>
+<script src="db.js"></script>
+<script src="auth.js"></script>
+<script src="graph.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

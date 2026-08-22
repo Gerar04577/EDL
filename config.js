@@ -1,0 +1,76 @@
+/* EDL — Configuration
+   Toutes les valeurs susceptibles de changer sont ici, et nulle part ailleurs.
+   Aucune clé secrète dans ce fichier : la clé Gemini vit dans Make. */
+
+var CONFIG = {
+
+  version_app: "0.3.0",
+  version_schema: "1.0",
+
+  // --- Microsoft Entra ---------------------------------------------------
+  microsoft: {
+    // Inscription "EDL", comptes Microsoft personnels uniquement
+    client_id: "b93e33ba-f9f8-4767-ae3d-4073df4f66c2",
+    authority: "https://login.microsoftonline.com/consumers",
+    // L'adresse exacte déclarée dans Entra, calculée pour éviter toute divergence
+    redirect_uri: location.origin + location.pathname,
+    scopes: ["Files.ReadWrite", "User.Read", "offline_access"],
+  },
+
+  // --- OneDrive ----------------------------------------------------------
+  onedrive: {
+    // Nom du dossier racine partagé. Change chaque année.
+    dossier_racine: "Immobilier 2025-2026",
+    // Emplacement de la liste des locataires exportée par Gestion Loyers
+    chemin_liste_locataires: "AGestion Charges/Calcul charges et compteurs/remboursements.json",
+    // Sous-dossiers attendus dans un dossier locataire
+    sous_dossier_edle: "EDLE",
+    sous_dossier_edls: "EDLS",
+    sous_dossier_meubles: "SAMADHI",
+  },
+
+  // Correspondance entre l'identifiant d'immeuble de Gestion Loyers
+  // et le vrai nom du dossier OneDrive. Repris du portage v84.
+  dossier_onedrive_par_immeuble: {
+    "nimy": "Nimy",
+    "petite-guirlande": "PTG",
+    "havre": "Havré",
+    "vannes": "Vannes",
+    "fermette": "Pourcelet Fermette",
+    "egmont": "Egmont",
+    "biche": "Biche",
+  },
+
+  // Immeubles disposant de répartiteurs ISTA
+  immeubles_avec_ista: ["petite-guirlande"],
+
+  // Immeubles dont les compteurs électriques sont en simple horaire par défaut
+  immeubles_simple_horaire: ["biche", "petite-guirlande", "nimy"],
+
+  // --- Photos ------------------------------------------------------------
+  photo: {
+    cote_max_px: 1600,
+    qualite_jpeg: 0.82,
+    cible_octets: 800 * 1024,
+  },
+
+  // --- Sauvegarde continue ----------------------------------------------
+  sauvegarde: {
+    // Le fichier de données est déposé au plus tard toutes les N photos
+    intervalle_photos: 20,
+    prefixe_brouillon: "BROUILLON_",
+  },
+
+  // --- Intelligence artificielle ----------------------------------------
+  ia: {
+    // Retrait de gemini-2.5-flash-lite annoncé pour le 16 octobre 2026
+    modele: "gemini-2.5-flash-lite",
+    // Webhook Make servant de relais. Vide = bouton "Décrire" désactivé.
+    webhook_ia: "",
+  },
+
+  // --- Fin de visite -----------------------------------------------------
+  make: {
+    webhook_fin_visite: "",
+  },
+};
