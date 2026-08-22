@@ -497,6 +497,8 @@ const ETIQUETTES = {
   ambigu:           { texte: "à trancher",       classe: "attention" },
   sans_locataire:   { texte: "sans locataire",   classe: "ko" },
   vide_normal:      { texte: "inoccupé",         classe: "gris" },
+  inoccupe:         { texte: "inoccupé",         classe: "gris" },
+  hors_perimetre:   { texte: "hors périmètre",   classe: "gris" },
   approuve_absent:  { texte: "dossier disparu",  classe: "ko" },
   erreur:           { texte: "erreur",           classe: "ko" },
 };
@@ -545,8 +547,20 @@ function dessinerComparaison() {
     <div class="ligne"><span>Dossiers complets</span><span class="val ok">${b.complet}</span></div>
     <div class="ligne"><span>Unités inoccupées</span><span class="val gris">${b.vide_normal}</span></div>
     <div class="ligne"><span>À traiter</span><span class="val ${aTraiter ? "ko" : "ok"}">${aTraiter}</span></div>
+    <div class="ligne"><span>Hors périmètre</span><span class="val gris">${b.hors_perimetre}</span></div>
     ${r.genere_le ? `<p class="note">Liste exportée le ${new Date(r.genere_le).toLocaleString("fr-BE")}</p>` : ""}
     </div>`;
+
+  if (r.fautes && r.fautes.length) {
+    html += `<div class="bloc"><h2>Dossiers à renommer dans OneDrive — ${r.fautes.length}</h2>
+      <p class="note">À corriger à la main dans OneDrive, puis relancer ce contrôle.</p>
+      ${r.fautes.map(f => `<div class="comp comp-alerte">
+        <div class="ligne"><span>${echapper(f.unite)}</span>
+          <span class="val attention">${echapper(f.correction)}</span></div>
+        <p class="note">${echapper(f.immeuble)} › ${echapper(f.chemin)}</p>
+      </div>`).join("")}
+    </div>`;
+  }
 
   r.resultats.forEach((bloc, ib) => {
     if (bloc.erreur) {
@@ -563,7 +577,8 @@ function dessinerComparaison() {
 
     bloc.lignes.forEach((l, il) => {
       const e = ETIQUETTES[l.statut] || ETIQUETTES.erreur;
-      const calme = l.statut === "complet" || l.statut === "vide_normal";
+      const calme = l.statut === "complet" || l.statut === "vide_normal"
+                 || l.statut === "hors_perimetre";
       html += `<div class="comp ${calme ? "" : "comp-alerte"}">
         <div class="ligne"><span>${echapper(l.designation)}${
           l.approuvee ? ' <span class="sceau">approuvé</span>' : ""}</span>
@@ -572,6 +587,8 @@ function dessinerComparaison() {
       if (l.dossier_unite) {
         html += `<p class="note">${echapper(l.dossier_unite)}`;
         if (l.dossier_courant) html += ` › ${echapper(l.dossier_courant)}`;
+        if (l.motif_choix && l.motif_choix !== "seul dossier")
+          html += ` <span class="gris">(${echapper(l.motif_choix)})</span>`;
         if (l.statut === "complet") html += ` › EDLE ✓ EDLS ✓`;
         if (l.structure === "plate") html += ` <span class="gris">(sans dossier locataire)</span>`;
         html += `</p>`;
@@ -579,9 +596,15 @@ function dessinerComparaison() {
       if (l.message) html += `<p class="note">${echapper(l.message)}</p>`;
       if (l.statut === "incomplet" && l.sous_dossiers)
         html += `<p class="note">présents : ${echapper(l.sous_dossiers.join(", ") || "aucun")}</p>`;
-      if (l.dossiers_locataires && l.dossiers_locataires.length > 1)
+      if (l.detail_locataires && l.detail_locataires.length > 1) {
+        html += `<p class="note">${l.detail_locataires.length} dossiers locataires : ${
+          l.detail_locataires.map(d => echapper(d.nom) +
+            (d.edle || d.edls ? " (" + [d.edle ? "EDLE" : null, d.edls ? "EDLS" : null]
+              .filter(Boolean).join("+") + ")" : "")).join(", ")}</p>`;
+      } else if (l.dossiers_locataires && l.dossiers_locataires.length > 1) {
         html += `<p class="note">${l.dossiers_locataires.length} dossiers locataires : ${
           echapper(l.dossiers_locataires.join(", "))}</p>`;
+      }
 
       // --- actions ---
       if (l.dossier_unite && !l.approuvee) {

@@ -4,7 +4,7 @@
 
 var CONFIG = {
 
-  version_app: "0.5.3",
+  version_app: "0.5.7",
   version_schema: "1.0",
 
   // --- Microsoft Entra ---------------------------------------------------
@@ -40,6 +40,10 @@ var CONFIG = {
     "egmont": "Egmont",
     "biche": "Biche",
   },
+
+  // Types d'unités pour lesquels aucun état des lieux n'est attendu.
+  // Retire "GARAGE" de cette liste si tu veux les contrôler comme les logements.
+  types_sans_etat_des_lieux: ["GARAGE"],
 
   // Immeubles disposant de répartiteurs ISTA
   immeubles_avec_ista: ["petite-guirlande"],
