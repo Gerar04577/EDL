@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="EDL">
+<meta name="theme-color" content="#1f4e5f">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icone-180.png">
+<title>EDL — État des Lieux</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #1a1a1a;
+    background: #f7f6f3;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sous { color: #6b6b6b; font-size: 14px; margin: 0 0 28px; }
+  .bloc {
+    background: #fff;
+    border: 1px solid #e3e0da;
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-bottom: 14px;
+  }
+  .bloc h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em;
+             color: #8a8a8a; margin: 0 0 10px; font-weight: 600; }
+  .ligne { display: flex; justify-content: space-between; gap: 16px;
+           padding: 6px 0; border-bottom: 1px solid #f0eeea; }
+  .ligne:last-child { border-bottom: 0; }
+  .ligne span:first-child { color: #4a4a4a; }
+  .val { font-weight: 600; text-align: right; }
+  .ok { color: #1f7a4d; }
+  .ko { color: #b03030; }
+  .avert {
+    background: #fdf3e3;
+    border: 1px solid #e8d5ac;
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-bottom: 14px;
+  }
+  .avert strong { display: block; margin-bottom: 6px; }
+  .pied { color: #9a9a9a; font-size: 13px; text-align: center; margin-top: 24px; }
+</style>
+</head>
+<body>
+
+<h1>EDL — État des Lieux</h1>
+<p class="sous">Page de départ. Aucune fonction active à ce stade.</p>
+
+<div id="avertissement"></div>
+
+<div class="bloc">
+  <h2>Diagnostic de l'appareil</h2>
+  <div class="ligne"><span>Installée sur l'écran d'accueil</span><span class="val" id="d-installee">…</span></div>
+  <div class="ligne"><span>Connexion sécurisée (HTTPS)</span><span class="val" id="d-https">…</span></div>
+  <div class="ligne"><span>Base locale (IndexedDB)</span><span class="val" id="d-idb">…</span></div>
+  <div class="ligne"><span>Stockage persistant accordé</span><span class="val" id="d-persist">…</span></div>
+  <div class="ligne"><span>Réseau</span><span class="val" id="d-reseau">…</span></div>
+</div>
+
+<div class="bloc">
+  <h2>Adresse à déclarer dans Entra</h2>
+  <div class="ligne"><span>URI de redirection</span><span class="val" id="d-url" style="word-break:break-all">…</span></div>
+</div>
+
+<p class="pied">Version 0 — page de départ, étape 0.1</p>
+
+<script>
+(function () {
+  var poser = function (id, texte, bon) {
+    var e = document.getElementById(id);
+    e.textContent = texte;
+    if (bon === true) e.className = 'val ok';
+    if (bon === false) e.className = 'val ko';
+  };
+
+  var installee = window.navigator.standalone === true ||
+                  (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  poser('d-installee', installee ? 'oui' : 'non', installee);
+
+  var https = location.protocol === 'https:';
+  poser('d-https', https ? 'oui' : 'non', https);
+
+  poser('d-idb', ('indexedDB' in window) ? 'disponible' : 'absente', ('indexedDB' in window));
+
+  poser('d-reseau', navigator.onLine ? 'en ligne' : 'hors ligne', navigator.onLine);
+
+  // L'adresse exacte à recopier dans le portail Entra, sans paramètres.
+  var url = location.origin + location.pathname;
+  poser('d-url', url);
+
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persisted().then(function (deja) {
+      if (deja) { poser('d-persist', 'oui', true); return; }
+      navigator.storage.persist().then(function (accorde) {
+        poser('d-persist', accorde ? 'oui' : 'non (à revoir une fois installée)', accorde);
+      });
+    });
+  } else {
+    poser('d-persist', 'non géré', false);
+  }
+
+  if (!installee) {
+    document.getElementById('avertissement').innerHTML =
+      '<div class="avert"><strong>À installer sur l\'écran d\'accueil</strong>' +
+      'Dans Safari : bouton Partager, puis « Sur l\'écran d\'accueil ». ' +
+      'Utilisée depuis un onglet, l\'application perdrait ses photos en attente.</div>';
+  }
+})();
+</script>
+</body>
+</html>
