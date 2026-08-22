@@ -4,7 +4,7 @@
 
 var CONFIG = {
 
-  version_app: "0.5.7",
+  version_app: "0.5.8",
   version_schema: "1.0",
 
   // --- Microsoft Entra ---------------------------------------------------

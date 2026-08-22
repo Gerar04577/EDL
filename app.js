@@ -527,13 +527,22 @@ async function ecranComparaison(silencieux) {
 function recalculerBilan() {
   const b = { total: 0, complet: 0, incomplet: 0, manquant: 0, ambigu: 0,
               sans_locataire: 0, vide_normal: 0, erreur: 0,
-              approuve_absent: 0, approuvees: 0 };
+              approuve_absent: 0, hors_perimetre: 0, approuvees: 0 };
+  const fautes = [];
   COMP.resultats.forEach(bloc => bloc.lignes.forEach(l => {
     b.total++;
     if (b[l.statut] !== undefined) b[l.statut]++;
     if (l.approuvee) b.approuvees++;
+    if (l.faute_de_frappe) {
+      fautes.push({
+        immeuble: bloc.immeuble, unite: l.designation,
+        chemin: [l.dossier_unite, l.dossier_courant].filter(Boolean).join(" › "),
+        correction: l.faute_de_frappe,
+      });
+    }
   }));
   COMP.bilan = b;
+  COMP.fautes = fautes;
 }
 
 function dessinerComparaison() {
@@ -553,7 +562,8 @@ function dessinerComparaison() {
 
   if (r.fautes && r.fautes.length) {
     html += `<div class="bloc"><h2>Dossiers à renommer dans OneDrive — ${r.fautes.length}</h2>
-      <p class="note">À corriger à la main dans OneDrive, puis relancer ce contrôle.</p>
+      <p class="note">À corriger à la main dans OneDrive, puis relancer le contrôle
+      avec le bouton en bas de page.</p>
       ${r.fautes.map(f => `<div class="comp comp-alerte">
         <div class="ligne"><span>${echapper(f.unite)}</span>
           <span class="val attention">${echapper(f.correction)}</span></div>
@@ -625,8 +635,11 @@ function dessinerComparaison() {
     html += `</div>`;
   });
 
+  html += `<button id="btn-relancer">Relancer le contrôle complet</button>`;
   html += `<button class="secondaire" id="btn-retour">Retour à l'accueil</button>`;
   vue(html);
+
+  $("btn-relancer").onclick = () => ecranComparaison();
 
   const ligneDe = (cle) => {
     const [ib, il] = cle.split(":").map(Number);
