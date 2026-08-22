@@ -203,8 +203,17 @@ async function suiteDossier(nomUnite, refUnite) {
   }
 
   titre("Dossier locataire", "Étape 3 sur 5 — " + nomUnite);
+  const attendu = (E.brouillon.preneurs || []).join(" & ");
   vue(`<p class="fil">${E.brouillon.type} · ${echapper(E.brouillon.immeuble_nom)} · ${echapper(nomUnite)}</p>
-    <div class="bloc">${boutonsChoix(locs.map(l => ({ valeur: l.nom, libelle: l.nom })))}</div>
+    ${attendu ? `<div class="bloc"><h2>Locataire attendu</h2>
+       <p class="note">D'après Gestion Loyers : <strong>${echapper(attendu)}</strong>.
+       Les dossiers changent à chaque nouveau bail — choisis celui de cette visite.</p></div>` : ""}
+    <div class="bloc">${boutonsChoix(locs.map(l => ({
+      valeur: l.nom,
+      libelle: l.nom,
+      droite: (typeof scoreNom === "function" &&
+               scoreNom(l.nom, E.brouillon.preneurs) > 0) ? "probable" : "",
+    })))}</div>
     <button class="secondaire" id="btn-retour">Retour</button>`);
   surChoix(nom => {
     const l = locs.find(x => x.nom === nom);
@@ -391,39 +400,58 @@ async function ecranVisiteReprise(visite) {
 async function ecranPiece(pieceId) {
   E.ecran = "piece";
   E.piece = pieceId;
+  E.brouillonTexte = ""; E.etat = null; E.proprete = null; E.indexEdition = null;
   VISITE = (await lireVisite(VISITE.visit_id)) || VISITE;
   const piece = VISITE.pieces.find(p => p.piece_id === pieceId);
   titre(piece.libelle, VISITE.bien.unite_source);
   dessinerPiece();
 }
 
-function dessinerPiece() {
+function dessinerPiece(message) {
   const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
   const photos = VISITE.photos.filter(p => p.rattachement === E.piece);
 
+  /* Le texte en cours et les sélections survivent au redessin : sans cela,
+     prendre une photo au milieu d'une dictée effaçait la saisie. */
+  if (E.brouillonTexte === undefined) E.brouillonTexte = "";
+  if (E.etat === undefined) E.etat = null;
+  if (E.proprete === undefined) E.proprete = null;
+
+  const seg = (cle, valeurs, actif) => `<div class="segments">${valeurs.map(v =>
+    `<button class="seg${actif === v ? " actif" : ""}" data-${cle}="${v}">${
+      v.replace(/_/g, " ")}</button>`).join("")}</div>`;
+
   vue(`<div class="barre" id="barre-attente">…</div>
+    ${message ? `<div class="succes">${echapper(message)}</div>` : ""}
 
     <div class="bloc"><h2>Repérage</h2>
       <p class="note">Depuis l'entrée de la pièce : mur de face, de gauche,
       de droite, arrière.</p></div>
 
-    <div class="bloc"><h2>Constatations</h2>
+    <div class="bloc"><h2>${E.indexEdition === null || E.indexEdition === undefined
+        ? "Nouvelle constatation" : "Modifier la constatation"}</h2>
+      <textarea id="saisie" rows="3"
+        placeholder="Décris ce que tu vois. Micro du clavier disponible.">${
+        echapper(E.brouillonTexte)}</textarea>
+      ${seg("etat", ["neuf","bon_etat","usage","degrade"], E.etat)}
+      ${seg("proprete", ["propre","a_nettoyer","sale"], E.proprete)}
+      <p class="note">Appuie une seconde fois sur un choix pour le désélectionner.</p>
+      <button id="btn-ajouter-constat">${E.indexEdition === null || E.indexEdition === undefined
+        ? "Ajouter la constatation" : "Enregistrer la modification"}</button>
+      ${E.indexEdition !== null && E.indexEdition !== undefined
+        ? `<button class="secondaire" id="btn-annuler-edition">Annuler la modification</button>` : ""}
+    </div>
+
+    <div class="bloc"><h2>${piece.constatations.length} constatation${
+        piece.constatations.length > 1 ? "s" : ""}</h2>
       ${piece.constatations.length
         ? piece.constatations.map((c, i) => `<div class="constat">
             <p>${echapper(c.texte)}</p>
-            <p class="note">${c.etat || "état non précisé"} · ${c.proprete || "propreté non précisée"}
+            <p class="note">${c.etat ? echapper(c.etat.replace(/_/g, " ")) : "état non précisé"} ·
+             ${c.proprete ? echapper(c.proprete.replace(/_/g, " ")) : "propreté non précisée"}
+            <button class="lien" data-modif="${i}" style="color:#1f4e5f">modifier</button>
             <button class="lien" data-suppr="${i}">supprimer</button></p></div>`).join("")
-        : `<p class="note">Aucune constatation.</p>`}
-      <textarea id="saisie" rows="3" placeholder="Décris ce que tu vois. Micro du clavier disponible."></textarea>
-      <div class="segments" id="seg-etat">
-        ${["neuf","bon_etat","usage","degrade"].map(v =>
-          `<button class="seg" data-etat="${v}">${v.replace("_"," ")}</button>`).join("")}
-      </div>
-      <div class="segments" id="seg-proprete">
-        ${["propre","a_nettoyer","sale"].map(v =>
-          `<button class="seg" data-proprete="${v}">${v.replace("_"," ")}</button>`).join("")}
-      </div>
-      <button id="btn-ajouter-constat">Ajouter la constatation</button>
+        : `<p class="note">Aucune constatation pour l'instant.</p>`}
     </div>
 
     <div class="bloc"><h2>${photos.length} photo${photos.length > 1 ? "s" : ""}</h2>
@@ -438,34 +466,64 @@ function dessinerPiece() {
 
     <button class="secondaire" id="btn-retour">Retour aux pièces</button>`);
 
-  E.etat = null; E.proprete = null;
+  const champ = $("saisie");
 
-  $("vue").querySelectorAll("[data-etat]").forEach(b => b.onclick = () => {
-    E.etat = b.getAttribute("data-etat");
-    $("vue").querySelectorAll("[data-etat]").forEach(x => x.className = "seg");
-    b.className = "seg actif";
+  function majBouton() {
+    $("btn-ajouter-constat").disabled = champ.value.trim().length === 0;
+  }
+  champ.oninput = () => { E.brouillonTexte = champ.value; majBouton(); };
+  majBouton();
+
+  /* Bascule : un second appui sur un choix actif le désélectionne. */
+  const brancherSegments = (cle) => {
+    $("vue").querySelectorAll("[data-" + cle + "]").forEach(b => b.onclick = () => {
+      const v = b.getAttribute("data-" + cle);
+      E[cle] = (E[cle] === v) ? null : v;
+      $("vue").querySelectorAll("[data-" + cle + "]").forEach(x =>
+        x.className = "seg" + (x.getAttribute("data-" + cle) === E[cle] ? " actif" : ""));
+    });
+  };
+  brancherSegments("etat");
+  brancherSegments("proprete");
+
+  $("vue").querySelectorAll("[data-modif]").forEach(b => b.onclick = () => {
+    const i = parseInt(b.getAttribute("data-modif"), 10);
+    const c = piece.constatations[i];
+    E.brouillonTexte = c.texte;
+    E.etat = c.etat || null;
+    E.proprete = c.proprete || null;
+    E.indexEdition = i;
+    dessinerPiece();
+    $("saisie").focus();
   });
-  $("vue").querySelectorAll("[data-proprete]").forEach(b => b.onclick = () => {
-    E.proprete = b.getAttribute("data-proprete");
-    $("vue").querySelectorAll("[data-proprete]").forEach(x => x.className = "seg");
-    b.className = "seg actif";
-  });
+
   $("vue").querySelectorAll("[data-suppr]").forEach(b => b.onclick = async () => {
     const i = parseInt(b.getAttribute("data-suppr"), 10);
     VISITE = await modifierVisite(VISITE.visit_id, v => {
       v.pieces.find(x => x.piece_id === E.piece).constatations.splice(i, 1);
     }) || VISITE;
-    dessinerPiece();
+    E.indexEdition = null;
+    programmerDepot();
+    dessinerPiece("Constatation supprimée");
   });
 
   $("btn-ajouter-constat").onclick = async () => {
-    const texte = $("saisie").value.trim();
+    const texte = champ.value.trim();
     if (!texte) return;
+    const enEdition = E.indexEdition !== null && E.indexEdition !== undefined;
+    const i = E.indexEdition;
     VISITE = await modifierVisite(VISITE.visit_id, v => {
       const pc = v.pieces.find(x => x.piece_id === E.piece);
-      pc.constatations.push({ texte, etat: E.etat, proprete: E.proprete });
+      const entree = { texte, etat: E.etat, proprete: E.proprete };
+      if (enEdition) pc.constatations[i] = entree; else pc.constatations.push(entree);
     }) || VISITE;
-    await deposerFichierVisite(VISITE);
+    E.brouillonTexte = ""; E.etat = null; E.proprete = null; E.indexEdition = null;
+    programmerDepot();
+    dessinerPiece(enEdition ? "Constatation modifiée" : "Constatation enregistrée");
+  };
+
+  if ($("btn-annuler-edition")) $("btn-annuler-edition").onclick = () => {
+    E.brouillonTexte = ""; E.etat = null; E.proprete = null; E.indexEdition = null;
     dessinerPiece();
   };
 
@@ -473,6 +531,7 @@ function dessinerPiece() {
   $("appareil").onchange = async (ev) => {
     const fichier = ev.target.files && ev.target.files[0];
     if (!fichier) return;
+    E.brouillonTexte = champ.value;          // la dictée en cours est préservée
     $("btn-photo").disabled = true;
     $("btn-photo").textContent = "Enregistrement…";
     try {
@@ -481,11 +540,25 @@ function dessinerPiece() {
       avert(`<div class="erreur"><strong>Photo non enregistrée</strong>${echapper(e.message)}</div>`);
     }
     VISITE = (await lireVisite(VISITE.visit_id)) || VISITE;
-    dessinerPiece();
+    dessinerPiece("Photo enregistrée");
   };
 
-  $("btn-retour").onclick = () => ecranVisiteReprise(VISITE);
+  $("btn-retour").onclick = () => {
+    E.brouillonTexte = ""; E.etat = null; E.proprete = null; E.indexEdition = null;
+    ecranVisiteReprise(VISITE);
+  };
   majCompteurAttente();
+}
+
+/* Le fichier de visite n'est plus déposé à chaque frappe : on attend
+   quelques secondes de calme. Hors réseau, l'échec reste sans effet. */
+let _minuterieDepot = null;
+function programmerDepot() {
+  if (_minuterieDepot) clearTimeout(_minuterieDepot);
+  _minuterieDepot = setTimeout(async () => {
+    _minuterieDepot = null;
+    if (VISITE) await deposerFichierVisite(VISITE);
+  }, 5000);
 }
 
 // --- Correspondances avec OneDrive ---------------------------------------
