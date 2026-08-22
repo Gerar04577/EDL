@@ -1,7 +1,7 @@
 {
   "name": "EDL — État des Lieux",
   "short_name": "EDL",
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
