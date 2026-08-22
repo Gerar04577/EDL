@@ -153,6 +153,13 @@ async function ecranDossier(designation) {
   try { r = await resoudreDossierUnite(E.brouillon.immeuble_id, designation); }
   catch (e) { return erreurEcran(e.message, () => ecranUnite(E.brouillon.immeuble_id)); }
 
+  if (r.statut === "approuve_absent") {
+    return erreurEcran(
+      `Le dossier approuvé « ${echapper(r.attendu)} » n'existe plus dans « ${
+        echapper(imm.dossier_onedrive)} ».<br><br>Passe par « Comparer avec OneDrive » pour le redésigner.`,
+      () => ecranUnite(E.brouillon.immeuble_id));
+  }
+
   if (r.statut === "introuvable") {
     return erreurEcran(
       `Aucun dossier ne correspond à « ${echapper(designation)} » dans « ${
@@ -177,7 +184,7 @@ async function ecranDossier(designation) {
     return;
   }
 
-  E.brouillon.confirmee = false;
+  E.brouillon.confirmee = r.approuvee === true;
   suiteDossier(r.nom, r.ref);
 }
 
@@ -481,26 +488,28 @@ function dessinerPiece() {
   majCompteurAttente();
 }
 
-// --- Comparaison avec OneDrive -------------------------------------------
+// --- Correspondances avec OneDrive ---------------------------------------
 
 const ETIQUETTES = {
-  complet: { texte: "complet", classe: "ok" },
-  incomplet: { texte: "incomplet", classe: "ko" },
-  manquant: { texte: "dossier absent", classe: "ko" },
-  ambigu: { texte: "à trancher", classe: "attention" },
-  sans_locataire: { texte: "sans locataire", classe: "ko" },
-  vide_normal: { texte: "inoccupé", classe: "gris" },
-  erreur: { texte: "erreur", classe: "ko" },
+  complet:          { texte: "complet",          classe: "ok" },
+  incomplet:        { texte: "incomplet",        classe: "ko" },
+  manquant:         { texte: "à désigner",       classe: "ko" },
+  ambigu:           { texte: "à trancher",       classe: "attention" },
+  sans_locataire:   { texte: "sans locataire",   classe: "ko" },
+  vide_normal:      { texte: "inoccupé",         classe: "gris" },
+  approuve_absent:  { texte: "dossier disparu",  classe: "ko" },
+  erreur:           { texte: "erreur",           classe: "ko" },
 };
 
-async function ecranComparaison() {
-  E.ecran = "comparaison";
-  titre("Comparaison avec OneDrive", "Contrôle des 50 unités");
-  vue(`<p class="note" id="progres">Lecture de OneDrive en cours…</p>`);
+let COMP = null;
 
-  let r;
+async function ecranComparaison(silencieux) {
+  E.ecran = "comparaison";
+  titre("Correspondances OneDrive", "Contrôle et approbation des unités");
+  if (!silencieux) vue(`<p class="note" id="progres">Lecture de OneDrive en cours…</p>`);
+
   try {
-    r = await comparerAvecOneDrive(nom => {
+    COMP = await comparerAvecOneDrive(nom => {
       const p = $("progres");
       if (p) p.textContent = "Lecture de " + nom + "…";
     });
@@ -510,61 +519,133 @@ async function ecranComparaison() {
     $("btn-retour").onclick = () => ecranAccueil();
     return;
   }
+  dessinerComparaison();
+}
 
-  const b = r.bilan;
-  const anomalies = b.incomplet + b.manquant + b.ambigu + b.sans_locataire + b.erreur;
+function dessinerComparaison() {
+  const r = COMP, b = r.bilan;
+  const aTraiter = b.incomplet + b.manquant + b.ambigu + b.sans_locataire
+                 + b.erreur + b.approuve_absent;
 
   let html = `<div class="bloc"><h2>Bilan</h2>
     <div class="ligne"><span>Unités contrôlées</span><span class="val">${b.total}</span></div>
+    <div class="ligne"><span>Correspondances approuvées</span><span class="val ok">${b.approuvees}</span></div>
     <div class="ligne"><span>Dossiers complets</span><span class="val ok">${b.complet}</span></div>
-    <div class="ligne"><span>Unités inoccupées</span><span class="val">${b.vide_normal}</span></div>
-    <div class="ligne"><span>À traiter</span><span class="val ${anomalies ? "ko" : "ok"}">${anomalies}</span></div>
+    <div class="ligne"><span>Unités inoccupées</span><span class="val gris">${b.vide_normal}</span></div>
+    <div class="ligne"><span>À traiter</span><span class="val ${aTraiter ? "ko" : "ok"}">${aTraiter}</span></div>
     ${r.genere_le ? `<p class="note">Liste exportée le ${new Date(r.genere_le).toLocaleString("fr-BE")}</p>` : ""}
     </div>`;
 
-  r.resultats.forEach(bloc => {
+  r.resultats.forEach((bloc, ib) => {
     if (bloc.erreur) {
       html += `<div class="bloc"><h2>${echapper(bloc.immeuble)}</h2>
         <div class="erreur">${echapper(bloc.erreur)}</div></div>`;
       return;
     }
-    const aTraiter = bloc.lignes.filter(l =>
-      ["incomplet", "manquant", "ambigu", "sans_locataire", "erreur"].includes(l.statut)).length;
+    const n = bloc.lignes.filter(l =>
+      ["incomplet","manquant","ambigu","sans_locataire","erreur","approuve_absent"]
+        .includes(l.statut)).length;
 
-    html += `<div class="bloc"><h2>${echapper(bloc.immeuble)} — dossier « ${echapper(bloc.dossier_onedrive)} »${
-      aTraiter ? " · " + aTraiter + " à traiter" : ""}</h2>`;
+    html += `<div class="bloc"><h2>${echapper(bloc.immeuble)} — « ${echapper(bloc.dossier_onedrive)} »${
+      n ? " · " + n + " à traiter" : ""}</h2>`;
 
-    bloc.lignes.forEach(l => {
+    bloc.lignes.forEach((l, il) => {
       const e = ETIQUETTES[l.statut] || ETIQUETTES.erreur;
-      html += `<div class="comp ${l.statut === "complet" || l.statut === "vide_normal" ? "" : "comp-alerte"}">
-        <div class="ligne"><span>${echapper(l.designation)}</span>
+      const calme = l.statut === "complet" || l.statut === "vide_normal";
+      html += `<div class="comp ${calme ? "" : "comp-alerte"}">
+        <div class="ligne"><span>${echapper(l.designation)}${
+          l.approuvee ? ' <span class="sceau">approuvé</span>' : ""}</span>
           <span class="val ${e.classe}">${e.texte}</span></div>`;
+
       if (l.dossier_unite) {
-        html += `<p class="note">dossier : ${echapper(l.dossier_unite)}`;
+        html += `<p class="note">${echapper(l.dossier_unite)}`;
         if (l.dossier_courant) html += ` › ${echapper(l.dossier_courant)}`;
         if (l.statut === "complet") html += ` › EDLE ✓ EDLS ✓`;
         html += `</p>`;
       }
-      if (l.candidats && l.candidats.length)
-        html += `<p class="note">candidats : ${echapper(l.candidats.join(" ou "))}</p>`;
       if (l.message) html += `<p class="note">${echapper(l.message)}</p>`;
       if (l.statut === "incomplet" && l.sous_dossiers)
         html += `<p class="note">présents : ${echapper(l.sous_dossiers.join(", ") || "aucun")}</p>`;
       if (l.dossiers_locataires && l.dossiers_locataires.length > 1)
         html += `<p class="note">${l.dossiers_locataires.length} dossiers locataires : ${
           echapper(l.dossiers_locataires.join(", "))}</p>`;
+
+      // --- actions ---
+      if (l.dossier_unite && !l.approuvee) {
+        html += `<button class="mini" data-approuver="${ib}:${il}">Approuver cette correspondance</button>`;
+      }
+      if (l.approuvee) {
+        html += `<button class="mini secondaire" data-retirer="${ib}:${il}">Retirer l'approbation</button>`;
+      }
+      if (l.candidats_libres && l.candidats_libres.length) {
+        html += `<button class="mini secondaire" data-designer="${ib}:${il}">Désigner le dossier</button>`;
+      }
       html += `</div>`;
     });
 
     if (bloc.extras.length)
-      html += `<p class="note">Dossiers sans unité correspondante — normal, ce ne sont pas des logements : ${
+      html += `<p class="note">Dossiers sans unité correspondante — ce ne sont pas des logements : ${
         echapper(bloc.extras.join(", "))}</p>`;
     html += `</div>`;
   });
 
   html += `<button class="secondaire" id="btn-retour">Retour à l'accueil</button>`;
   vue(html);
+
+  const ligneDe = (cle) => {
+    const [ib, il] = cle.split(":").map(Number);
+    return { bloc: COMP.resultats[ib], ligne: COMP.resultats[ib].lignes[il] };
+  };
+
+  $("vue").querySelectorAll("[data-approuver]").forEach(btn => btn.onclick = async () => {
+    const { bloc, ligne } = ligneDe(btn.getAttribute("data-approuver"));
+    btn.disabled = true; btn.textContent = "Enregistrement…";
+    try {
+      await approuverCorrespondance(bloc.immeuble_id, ligne.designation,
+                                    ligne.dossier_unite, nomUtilisateur());
+      await ecranComparaison(true);
+    } catch (e) {
+      btn.textContent = "Échec : " + e.message; btn.disabled = false;
+    }
+  });
+
+  $("vue").querySelectorAll("[data-retirer]").forEach(btn => btn.onclick = async () => {
+    const { bloc, ligne } = ligneDe(btn.getAttribute("data-retirer"));
+    btn.disabled = true;
+    await retirerCorrespondance(bloc.immeuble_id, ligne.designation);
+    await ecranComparaison(true);
+  });
+
+  $("vue").querySelectorAll("[data-designer]").forEach(btn => btn.onclick = () => {
+    const { bloc, ligne } = ligneDe(btn.getAttribute("data-designer"));
+    ecranDesignation(bloc, ligne);
+  });
+
   $("btn-retour").onclick = () => ecranAccueil();
+}
+
+function ecranDesignation(bloc, ligne) {
+  titre("Désigner le dossier", ligne.designation);
+  vue(`<div class="bloc">
+      <p class="note">Immeuble ${echapper(bloc.immeuble)} — dossier « ${
+        echapper(bloc.dossier_onedrive)} ».<br>
+      Choisis le dossier qui correspond à « ${echapper(ligne.designation)} ».
+      Ton choix sera enregistré et remplacera définitivement la reconnaissance automatique.</p>
+      ${boutonsChoix((ligne.candidats_libres || []).map(n => ({ valeur: n, libelle: n })))}
+    </div>
+    <button class="secondaire" id="btn-retour">Annuler</button>`);
+  surChoix(async nom => {
+    vue(`<p class="note">Enregistrement…</p>`);
+    try {
+      await approuverCorrespondance(bloc.immeuble_id, ligne.designation, nom, nomUtilisateur());
+      await ecranComparaison(true);
+    } catch (e) {
+      vue(`<div class="erreur"><strong>Échec</strong>${echapper(e.message)}</div>
+           <button class="secondaire" id="btn-retour">Retour</button>`);
+      $("btn-retour").onclick = () => ecranComparaison();
+    }
+  });
+  $("btn-retour").onclick = () => dessinerComparaison();
 }
 
 // --- Démarrage -----------------------------------------------------------

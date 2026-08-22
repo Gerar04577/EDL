@@ -1,11 +1,83 @@
-/* EDL — Comparaison liste des locataires / OneDrive
+/* EDL — Correspondances liste des locataires / OneDrive
+
+   Une correspondance APPROUVÉE par l'utilisateur fait foi et remplace
+   définitivement le calcul automatique. Elle est enregistrée dans OneDrive,
+   donc partagée entre les trois utilisateurs et conservée d'un appareil
+   à l'autre.
+
+   Comparaison liste des locataires / OneDrive
    Repris de la fonctionnalité « Comparer noms OneDrive » de Gestion Loyers v84,
    étendue de deux niveaux : dossier locataire, puis EDLE et EDLS.
 
    Contrôle à faire au bureau, jamais debout dans un logement. */
 
+/* ---- Table des correspondances approuvées -------------------------------
+   Déposée dans le dossier racine, à côté des dossiers d'immeubles. */
+
+const FICHIER_CORRESPONDANCES = "EDL_correspondances.json";
+let _correspondances = null;
+
+function cleUnite(immeubleId, designation) { return immeubleId + "|" + designation; }
+
+async function chargerCorrespondances(forcer) {
+  if (_correspondances && !forcer) return _correspondances;
+  try {
+    const racine = await obtenirRefRacineImmobilier();
+    const enfants = await enfantsDeRef(racine);
+    const f = enfants.find(e => (e.name || "").trim() === FICHIER_CORRESPONDANCES);
+    if (!f) { _correspondances = { version: 1, unites: {} }; return _correspondances; }
+    const ref = refDe(f, racine.driveId);
+    _correspondances = await telechargerJson(ref);
+    if (!_correspondances.unites) _correspondances.unites = {};
+  } catch (e) {
+    await journaliser("correspondances_lecture_echouee", String(e && e.message));
+    _correspondances = { version: 1, unites: {} };
+  }
+  return _correspondances;
+}
+
+async function enregistrerCorrespondances() {
+  const racine = await obtenirRefRacineImmobilier();
+  const chemin = racine.driveId
+    ? `/drives/${racine.driveId}/items/${racine.id}:/${FICHIER_CORRESPONDANCES}:/content`
+    : `/me/drive/items/${racine.id}:/${FICHIER_CORRESPONDANCES}:/content`;
+  const res = await appelGraph(chemin, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(_correspondances, null, 1),
+  });
+  if (!res.ok) throw new Error(`Enregistrement : ${await detailErreur(res)}`);
+  await journaliser("correspondances_enregistrees",
+    { unites: Object.keys(_correspondances.unites).length });
+  return true;
+}
+
+async function approuverCorrespondance(immeubleId, designation, dossierUnite, operateur) {
+  await chargerCorrespondances();
+  _correspondances.unites[cleUnite(immeubleId, designation)] = {
+    dossier_unite: dossierUnite,
+    approuve_le: new Date().toISOString(),
+    approuve_par: operateur || null,
+  };
+  await enregistrerCorrespondances();
+}
+
+async function retirerCorrespondance(immeubleId, designation) {
+  await chargerCorrespondances();
+  delete _correspondances.unites[cleUnite(immeubleId, designation)];
+  await enregistrerCorrespondances();
+}
+
+function correspondanceApprouvee(immeubleId, designation) {
+  if (!_correspondances) return null;
+  return _correspondances.unites[cleUnite(immeubleId, designation)] || null;
+}
+
+/* ---- Comparaison ------------------------------------------------------- */
+
 async function comparerAvecOneDrive(surProgres) {
   const liste = await chargerLocataires(true);
+  await chargerCorrespondances(true);
   const resultats = [];
 
   for (const imm of liste.immeubles) {
@@ -49,19 +121,38 @@ async function comparerAvecOneDrive(surProgres) {
         message: null,
       };
 
-      const r = trouverDossierUnite(unite.designation, noms);
+      /* Une correspondance approuvée fait foi : aucun calcul. */
+      const approuvee = correspondanceApprouvee(imm.immeuble_id, unite.designation);
+      let r;
+      if (approuvee && noms.includes(approuvee.dossier_unite)) {
+        r = { trouve: approuvee.dossier_unite, candidats: [], ambigu: false };
+        ligne.approuvee = true;
+        ligne.approuve_le = approuvee.approuve_le;
+      } else if (approuvee) {
+        // le dossier approuvé a disparu ou a été renommé
+        ligne.statut = "approuve_absent";
+        ligne.message = `le dossier approuvé « ${approuvee.dossier_unite} » n'existe plus`;
+        ligne.candidats_libres = noms;
+        bloc.lignes.push(ligne);
+        continue;
+      } else {
+        r = trouverDossierUnite(unite.designation, noms);
+        ligne.approuvee = false;
+      }
 
       if (r.ambigu) {
         ligne.statut = "ambigu";
         ligne.ambigu = true;
         ligne.candidats = r.candidats;
-        ligne.message = "plusieurs dossiers possibles";
+        ligne.message = "plusieurs dossiers possibles — à trancher";
+        ligne.candidats_libres = noms;
         bloc.lignes.push(ligne);
         r.candidats.forEach(c => utilises.add(c));
         continue;
       }
       if (!r.trouve) {
-        ligne.message = "aucun dossier correspondant";
+        ligne.message = "aucun dossier correspondant — à désigner";
+        ligne.candidats_libres = noms;
         bloc.lignes.push(ligne);
         continue;
       }
@@ -127,10 +218,12 @@ async function comparerAvecOneDrive(surProgres) {
   const bilan = {
     total: 0, complet: 0, incomplet: 0, manquant: 0,
     ambigu: 0, sans_locataire: 0, vide_normal: 0, erreur: 0,
+    approuve_absent: 0, approuvees: 0,
   };
   resultats.forEach(b => b.lignes.forEach(l => {
     bilan.total++;
     if (bilan[l.statut] !== undefined) bilan[l.statut]++;
+    if (l.approuvee) bilan.approuvees++;
   }));
 
   await journaliser("comparaison_onedrive", bilan);

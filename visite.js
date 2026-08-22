@@ -13,6 +13,24 @@ async function resoudreDossierUnite(immeubleId, designation) {
   const dossiers = enfants.filter(e => e.folder || e.remoteItem);
   const noms = dossiers.map(e => e.name);
 
+  /* Une correspondance approuvée fait foi et court-circuite la
+     reconnaissance automatique. */
+  if (typeof chargerCorrespondances === "function") {
+    try {
+      await chargerCorrespondances();
+      const a = correspondanceApprouvee(immeubleId, designation);
+      if (a && noms.includes(a.dossier_unite)) {
+        const el = dossiers.find(e => e.name === a.dossier_unite);
+        return { statut: "resolu", nom: a.dossier_unite,
+                 ref: refDe(el, refImmeuble.driveId), candidats: [], approuvee: true };
+      }
+      if (a) {
+        return { statut: "approuve_absent", nom: null, ref: null, candidats: [],
+                 attendu: a.dossier_unite, tous: noms };
+      }
+    } catch (_) { /* on retombe sur la reconnaissance automatique */ }
+  }
+
   const r = trouverDossierUnite(designation, noms);
 
   if (r.trouve) {
