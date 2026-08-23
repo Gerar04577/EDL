@@ -149,6 +149,7 @@ async function genererPV(visite) {
     p.ligne("Représenté par", V.parties.bailleur_represente_par);
   (V.parties.preneurs || []).forEach((x, i) => {
     p.ligne("Preneur " + (i + 1), x.nom_complet);
+    p.ligne("   Qualité", x.qualite || "Locataire");
     if (x.numero_carte_identite)
       p.ligne("   Carte d'identité n°", x.numero_carte_identite);
     p.ligne("   Identité vérifiée", x.identite_verifiee ? "oui, sur présentation de la carte" : "non");
@@ -266,6 +267,25 @@ async function genererPV(visite) {
   if (V.divers) { p.filet(); p.sousTitre("Divers"); p.paragraphe(V.divers); }
   p.saut(6);
 
+  // --- 6 bis. Observations et réserves ------------------------------------
+  p.titre("Observations et réserves");
+  const reserves = V.reserves || [];
+  if (reserves.length === 0) {
+    p.paragraphe("Le preneur, invité à faire consigner ses observations et réserves " +
+      "avant la validation du présent état des lieux, a déclaré n'en avoir aucune.");
+  } else {
+    p.paragraphe("Les observations et réserves suivantes ont été consignées à la " +
+      "demande de leur auteur, avant la validation du présent état des lieux :");
+    p.saut(3);
+    reserves.forEach((r, i) => {
+      p.sousTitre((i + 1) + ". " + (r.auteur || "Le preneur") +
+        (r.piece ? " — " + r.piece : ""));
+      p.paragraphe(r.texte, { retrait: 2 });
+      p.saut(2);
+    });
+  }
+  p.saut(6);
+
   // --- 7. Chiffrage -------------------------------------------------------
   if (V.options && V.options.chiffrage_actif && V.chiffrage) {
     p.titre("Chiffrage");
@@ -290,16 +310,29 @@ async function genererPV(visite) {
   if (p.y + hauteurBloc > PDF_HAUTEUR - PDF_MARGE) { doc.addPage(); p.y = PDF_MARGE; }
 
   p.titre("Signatures");
-  p.paragraphe("Le présent état des lieux, établi et accepté contradictoirement entre les parties, " +
-    "fait partie intégrante du bail dont il ne peut être dissocié. " +
-    "Chaque signataire reconnaît avoir reçu un exemplaire.");
+  p.paragraphe("LU ET APPROUVÉ", { gras: true, taille: 12 });
+  p.saut(2);
+  p.paragraphe("Chaque signataire confirme avoir participé contradictoirement à l'état " +
+    "des lieux, avoir pris connaissance du rapport qui lui est présenté ainsi que des " +
+    "photographies qui en font partie, et avoir eu la possibilité de faire consigner ses " +
+    "observations et réserves avant sa validation.");
+  p.saut(2);
+  p.paragraphe("En apposant sa signature ci-dessous, il manifeste sa volonté de valider le " +
+    "présent état des lieux, sous réserve des observations et réserves qui y sont " +
+    "expressément consignées.");
+  p.saut(2);
+  p.paragraphe("Le présent état des lieux fait partie intégrante du bail dont il ne peut " +
+    "être dissocié. Chaque signataire reconnaît en recevoir un exemplaire.");
   p.saut(6);
 
   const blocs = [];
-  blocs.push({ role: "Le bailleur", nom: V.parties.bailleur_represente_par || V.parties.bailleur,
+  blocs.push({ role: "Le bailleur",
+               qualite: V.parties.bailleur_represente_par ? "Mandataire" : "Bailleur",
+               nom: V.parties.bailleur_represente_par || V.parties.bailleur,
                image: (V.signatures || {}).bailleur });
   (V.parties.preneurs || []).forEach((x, i) => {
-    blocs.push({ role: "Le preneur", nom: x.nom_complet,
+    blocs.push({ role: "Le preneur", qualite: x.qualite || "Locataire",
+                 nom: x.nom_complet,
                  image: ((V.signatures || {}).preneurs || [])[i] });
   });
 
@@ -311,7 +344,7 @@ async function genererPV(visite) {
     const x = PDF_MARGE + colonne * (largeurBloc + 8);
     const y0 = p.y;
     doc.setFontSize(9); doc.setTextColor(90);
-    doc.text(b.role + " — lu et approuvé", x, y0);
+    doc.text(b.role + (b.qualite ? " — " + b.qualite : ""), x, y0);
     doc.setTextColor(0); doc.setFontSize(10);
     doc.text(String(b.nom || ""), x, y0 + 5);
     if (b.image) {

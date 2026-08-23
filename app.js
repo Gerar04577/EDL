@@ -1472,6 +1472,11 @@ function ecranIdentites(message) {
         <input class="saisie-mail" inputmode="email" data-mail="${i}"
           placeholder="pour l'envoi du document"
           value="${echapper(x.email || "")}"></div>
+      <div class="interrupteur"><span>Qualité</span><span class="segments">
+        ${["Locataire", "Colocataire", "Mandataire"].map(q =>
+          `<button class="seg${(x.qualite || "Locataire") === q ? " actif" : ""}"
+             data-qualite="${i}:${q}">${q}</button>`).join("")}
+      </span></div>
       <div class="interrupteur"><span>Identité vérifiée sur présentation de la carte</span>
         <span class="segments">
           <button class="seg${x.identite_verifiee === true ? " actif" : ""}"
@@ -1512,6 +1517,12 @@ function ecranIdentites(message) {
       await ecrirePreneur(i, "email", inp.value.trim() || null);
     };
   });
+  $("vue").querySelectorAll("[data-qualite]").forEach(b => b.onclick = async () => {
+    const [i, q] = b.getAttribute("data-qualite").split(":");
+    await ecrirePreneur(parseInt(i, 10), "qualite", q);
+    ecranIdentites();
+  });
+
   $("vue").querySelectorAll("[data-verif-oui]").forEach(b => b.onclick = async () => {
     await ecrirePreneur(parseInt(b.getAttribute("data-verif-oui"), 10), "identite_verifiee", true);
     ecranIdentites();
@@ -1549,23 +1560,135 @@ async function ecranLecture() {
       <p class="note"><a href="${url}" target="_blank">Ouvrir en plein écran</a></p>
     </div>
     <div class="bloc"><h2>Confirmation de lecture</h2>
-      <div class="interrupteur"><span>Le locataire déclare avoir lu et approuvé</span>
+      <div class="interrupteur"><span>Le locataire déclare avoir lu le document</span>
         <span class="segments">
           <button class="seg" id="lu-oui">oui</button>
         </span></div>
-      <p class="note">Cette confirmation est distincte de la signature :
-      elle atteste du consentement éclairé.</p>
+      <p class="note">La lecture est distincte de la signature. L'écran suivant
+      permettra au locataire de faire consigner ses observations et réserves.</p>
     </div>
-    <button id="btn-signatures" disabled>Passer aux signatures</button>
+    <button id="btn-reserves" disabled>Observations et réserves</button>
     <button class="secondaire" id="btn-retour">Retour</button>`);
 
   $("lu-oui").onclick = () => {
     E.luEtApprouve = !E.luEtApprouve;
     $("lu-oui").className = "seg" + (E.luEtApprouve ? " actif" : "");
-    $("btn-signatures").disabled = !E.luEtApprouve;
+    $("btn-reserves").disabled = !E.luEtApprouve;
   };
-  $("btn-signatures").onclick = () => ecranSignatures();
+  $("btn-reserves").onclick = () => ecranReserves();
   $("btn-retour").onclick = () => { URL.revokeObjectURL(url); ecranIdentites(); };
+}
+
+// --- Observations et réserves du preneur ---------------------------------
+
+/* Le caractère contradictoire de l'état des lieux suppose que le preneur
+   ait PU faire consigner son désaccord avant de signer. Sans cet écran,
+   un état des lieux contesté serait fragile. */
+async function ecranReserves(message) {
+  E.ecran = "reserves";
+  VISITE = (await lireVisite(VISITE.visit_id)) || VISITE;
+  const V = VISITE;
+  const reserves = V.reserves || [];
+  const auteurs = [{ nom: "Le preneur", cle: "preneur" }]
+    .concat((V.parties.preneurs || []).map(x => ({ nom: x.nom_complet, cle: x.nom_complet })));
+
+  if (!E.reserveAuteur) E.reserveAuteur = auteurs[auteurs.length > 1 ? 1 : 0].nom;
+  if (E.reserveTexte === undefined) E.reserveTexte = "";
+  if (!E.reservePiece) E.reservePiece = "";
+
+  titre("Observations et réserves", "Avant signature");
+
+  vue(`${message ? `<div class="succes">${echapper(message)}</div>` : ""}
+    <div class="bloc"><h2>À lire au locataire</h2>
+      <p class="note">« Avant de signer, souhaitez-vous faire consigner des
+      observations ou des réserves ? Elles figureront dans le document et
+      la signature en tiendra compte. »</p>
+      <p class="note">S'il n'en a aucune, le document le mentionnera
+      expressément. Cette question doit être posée : elle fonde le caractère
+      contradictoire de l'état des lieux.</p>
+    </div>
+
+    <div class="bloc"><h2>${reserves.length} réserve${reserves.length > 1 ? "s" : ""} consignée${
+        reserves.length > 1 ? "s" : ""}</h2>
+      ${reserves.length
+        ? reserves.map((r, i) => `<div class="constat">
+            <p class="note"><strong>${echapper(r.auteur)}</strong>${
+              r.piece ? " — " + echapper(r.piece) : ""}</p>
+            <p>${echapper(r.texte)}</p>
+            <p class="note"><button class="lien" data-suppr-reserve="${i}">retirer</button></p>
+          </div>`).join("")
+        : `<p class="note">Aucune réserve. Le document indiquera que le preneur,
+           invité à en formuler, a déclaré n'en avoir aucune.</p>`}
+    </div>
+
+    <div class="bloc"><h2>Ajouter une réserve</h2>
+      <div class="ligne"><span>Auteur</span></div>
+      <div class="segments">${auteurs.map(x =>
+        `<button class="seg${E.reserveAuteur === x.nom ? " actif" : ""}"
+           data-auteur="${echapper(x.nom)}">${echapper(x.nom)}</button>`).join("")}</div>
+      <div class="ligne" style="margin-top:9px"><span>Pièce concernée</span>
+        <input class="saisie-mail" id="res-piece" placeholder="facultatif"
+          value="${echapper(E.reservePiece)}"></div>
+      <textarea id="res-texte" rows="3"
+        placeholder="Ce que le locataire veut faire consigner, dans ses termes.">${
+        echapper(E.reserveTexte)}</textarea>
+      <button id="btn-ajouter-reserve">Consigner cette réserve</button>
+    </div>
+
+    <div class="avert"><strong>Après la signature, plus aucune réserve
+      ne pourra être ajoutée</strong>
+      Une observation formulée plus tard exigerait un avenant signé des deux parties.</div>
+
+    <button id="btn-vers-signatures">Passer aux signatures</button>
+    <button class="secondaire" id="btn-retour">Retour au document</button>`);
+
+  $("vue").querySelectorAll("[data-auteur]").forEach(b => b.onclick = () => {
+    E.reserveAuteur = b.getAttribute("data-auteur");
+    E.reserveTexte = $("res-texte").value;
+    E.reservePiece = $("res-piece").value;
+    ecranReserves();
+  });
+
+  $("btn-ajouter-reserve").onclick = async () => {
+    const texte = $("res-texte").value.trim();
+    if (!texte) return ecranReserves("Écris d'abord la réserve.");
+    try {
+      VISITE = await modifierVisite(VISITE.visit_id, v => {
+        v.reserves = v.reserves || [];
+        v.reserves.push({
+          auteur: E.reserveAuteur,
+          piece: $("res-piece").value.trim() || null,
+          texte: texte,
+          horodatage: new Date().toISOString(),
+        });
+      }) || VISITE;
+    } catch (e) {
+      return ecranReserves("Enregistrement impossible : " + e.message);
+    }
+    E.reserveTexte = ""; E.reservePiece = "";
+    programmerDepot();
+    ecranReserves("Réserve consignée");
+  };
+
+  $("vue").querySelectorAll("[data-suppr-reserve]").forEach(b => b.onclick = async () => {
+    const i = parseInt(b.getAttribute("data-suppr-reserve"), 10);
+    VISITE = await modifierVisite(VISITE.visit_id, v => { v.reserves.splice(i, 1); }) || VISITE;
+    programmerDepot();
+    ecranReserves("Réserve retirée");
+  });
+
+  $("btn-vers-signatures").onclick = async () => {
+    if ((VISITE.reserves || []).length === 0) {
+      if (!(await confirmer("Aucune réserve n'a été consignée",
+          "Le document indiquera que le preneur, invité à en formuler, a déclaré " +
+          "n'en avoir aucune. As-tu bien posé la question ?",
+          "Oui, continuer"))) return;
+    }
+    E.reserveTexte = ""; E.reservePiece = "";
+    ecranSignatures();
+  };
+
+  $("btn-retour").onclick = () => ecranLecture();
 }
 
 // --- Signatures tactiles -------------------------------------------------
@@ -1581,7 +1704,19 @@ function ecranSignatures() {
   (V.parties.preneurs || []).forEach((x, i) =>
     blocs.push({ id: "preneur" + i, role: "Le preneur", nom: x.nom_complet }));
 
-  vue(`<div class="bloc"><h2>Signer du doigt</h2>
+  const nbReserves = (V.reserves || []).length;
+
+  vue(`<div class="bloc"><h2>À lire avant de signer</h2>
+      <p class="approuve">LU ET APPROUVÉ</p>
+      <p class="note">Chaque signataire confirme avoir participé contradictoirement
+      à l'état des lieux, avoir pris connaissance du rapport et des photographies
+      qui en font partie, et avoir eu la possibilité de faire consigner ses
+      observations et réserves avant sa validation.</p>
+      <p class="note">En apposant sa signature, il manifeste sa volonté de valider
+      le présent état des lieux${nbReserves
+        ? ", sous réserve des " + nbReserves + " observation(s) consignée(s)" : ""}.</p>
+    </div>
+    <div class="bloc"><h2>Signer du doigt</h2>
       <p class="note">Chaque signataire signe dans son cadre.
       Le bouton « effacer » permet de recommencer.</p></div>
     ${blocs.map(b => `<div class="bloc">
@@ -1740,6 +1875,8 @@ async function signerEtDeposer(blocs) {
       }
       v.preuve.horodatage_local = V.date_signature;
       v.preuve.lu_et_approuve = true;
+      v.preuve.nb_reserves = (v.reserves || []).length;
+      v.preuve.reserves_proposees = true;
       v.preuve.courriel_destinataires =
         (v.parties.preneurs || []).map(x => x.email).filter(Boolean);
     }) || VISITE;

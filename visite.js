@@ -225,6 +225,7 @@ async function creerVisite(param) {
         || param.operateur || null,
       preneurs: (param.preneurs || []).map(nom => ({
         nom_complet: nom,
+        qualite: "Locataire",
         numero_carte_identite: null,
         identite_verifiee: false,
         email: null,
@@ -262,6 +263,10 @@ async function creerVisite(param) {
       proprete: { propre: null, commentaire: "" },
     },
     divers: "",
+    /* Observations et réserves du preneur, consignées AVANT signature.
+       Sans cette possibilité, le caractère contradictoire de l'état des
+       lieux peut être contesté — décret wallon du 15 mars 2018, art. 27. */
+    reserves: [],
     pret_meubles: { actif: param.pret_meubles === true, articles: [] },
     comparaison: null,
     chiffrage: null,
