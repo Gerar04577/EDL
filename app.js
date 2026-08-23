@@ -70,9 +70,13 @@ async function ecranAccueil() {
   if (terminees.length) {
     html += `<div class="bloc"><h2>${terminees.length} visite${
       terminees.length > 1 ? "s terminées" : " terminée"}</h2>` +
-      terminees.slice(0, 8).map((v, i) => `<div class="ligne">
-        <span>${echapper(v.bien.unite_source)} — ${v.type}</span>
-        <span class="val gris">${new Date(v.date_debut).toLocaleDateString("fr-BE")}</span>
+      terminees.slice(0, 8).map((v, i) => `<div class="comp">
+        <div class="ligne"><span>${echapper(v.bien.unite_source)} — ${v.type}</span>
+        <span class="val gris">${new Date(v.date_debut).toLocaleDateString("fr-BE")}</span></div>
+        ${v.statut === "signee" && finVisiteDisponible()
+          ? `<button class="mini secondaire" data-renvoi="${i}">${
+              (v.preuve && v.preuve.courriel_envoye) ? "Renvoyer" : "Rapport et courriel"}</button>`
+          : ""}
       </div>`).join("") +
       `<button class="mini secondaire" id="btn-purge">Effacer les visites terminées</button></div>`;
   }
@@ -89,6 +93,8 @@ async function ecranAccueil() {
   if (E.connecte) {
     html += `<button class="secondaire" id="btn-ia">Description par IA${
       iaDisponible() ? "" : " — non configurée"}</button>`;
+    html += `<button class="secondaire" id="btn-reglage-fin">Rapport et courriel${
+      finVisiteDisponible() ? "" : " — non configuré"}</button>`;
     html += `<button class="secondaire" id="btn-comparer">Comparer avec OneDrive</button>`;
     html += `<button class="secondaire" id="btn-deconnexion">Se déconnecter</button>`;
   }
@@ -100,6 +106,7 @@ async function ecranAccueil() {
   if ($("btn-deconnexion")) $("btn-deconnexion").onclick = () => seDeconnecter();
   if ($("btn-comparer")) $("btn-comparer").onclick = () => ecranComparaison();
   if ($("btn-ia")) $("btn-ia").onclick = () => ecranIA();
+  if ($("btn-reglage-fin")) $("btn-reglage-fin").onclick = () => ecranReglageFin();
   if ($("btn-nouvelle")) $("btn-nouvelle").onclick = () => ecranType();
 
   $("vue").querySelectorAll("[data-reprendre]").forEach(b => b.onclick = () =>
@@ -107,6 +114,13 @@ async function ecranAccueil() {
 
   $("vue").querySelectorAll("[data-abandonner]").forEach(b => b.onclick = () =>
     ecranAbandon(ouvertes[parseInt(b.getAttribute("data-abandonner"), 10)]));
+
+  $("vue").querySelectorAll("[data-renvoi]").forEach(b => b.onclick = () => {
+    const v = terminees[parseInt(b.getAttribute("data-renvoi"), 10)];
+    VISITE = v;
+    E.finRapport = undefined; E.finCourriel = undefined; E.finMessage = "";
+    ecranFinVisite(v);
+  });
 
   if ($("btn-purge")) $("btn-purge").onclick = async () => {
     const b = $("btn-purge");
@@ -304,6 +318,29 @@ async function verifierCible(locataire) {
 /* Le message peut venir de Microsoft et contenir un nom de dossier :
    l'échappement est fait ICI, une fois pour toutes. Les appelants
    passent du texte brut ; ceux qui veulent du HTML utilisent {html:...}. */
+/* Confirmation en oui / non. Renvoie une promesse : l'appelant attend
+   la réponse sans figer le reste de l'écran. */
+function confirmer(titreTexte, detail, libelleOui) {
+  return new Promise(resoudre => {
+    const fond = document.createElement("div");
+    fond.className = "voile";
+    fond.innerHTML = `<div class="boite">
+      <h2>${echapper(titreTexte)}</h2>
+      ${detail ? `<p class="note">${echapper(detail)}</p>` : ""}
+      <button id="conf-oui">${echapper(libelleOui || "Oui")}</button>
+      <button class="secondaire" id="conf-non">Annuler</button>
+    </div>`;
+    document.body.appendChild(fond);
+    const fermer = (reponse) => {
+      if (fond.parentNode) fond.parentNode.removeChild(fond);
+      resoudre(reponse);
+    };
+    fond.querySelector("#conf-oui").onclick = () => fermer(true);
+    fond.querySelector("#conf-non").onclick = () => fermer(false);
+    fond.onclick = (ev) => { if (ev.target === fond) fermer(false); };
+  });
+}
+
 function erreurEcran(message, retour) {
   const corps = (message && message.html) ? message.html : echapper(message);
   vue(`<div class="erreur"><strong>Impossible de continuer</strong>${corps}</div>
@@ -818,6 +855,168 @@ async function prevenirEcran(visitId) {
     else if (E.ecran === "releves") dessinerReleves();
     else if (E.ecran === "visite") ecranVisiteReprise(VISITE);
   }, 250);
+}
+
+// --- Fin de visite : rapport Word et courriel ----------------------------
+
+function ecranFinVisite(visite, message) {
+  E.ecran = "fin_visite";
+  const V = visite;
+  const destinataires = ((V.parties && V.parties.preneurs) || [])
+    .map(x => x.email).filter(Boolean);
+  /* Le rapport Word n'a plus d'objet : les corrections se font AVANT
+     signature, sur l'écran de lecture. Le scénario Make se limite donc
+     à l'envoi du procès-verbal signé. */
+  if (E.finRapport === undefined) E.finRapport = false;
+  if (E.finCourriel === undefined) E.finCourriel = destinataires.length > 0;
+
+  titre("Rapport et courriel", V.bien.unite_source);
+
+  const inter = (cle, libelle, valeur, desactive) =>
+    `<div class="interrupteur"><span>${libelle}</span><span class="segments">
+      <button class="seg${valeur ? " actif" : ""}" data-fin-oui="${cle}"${
+        desactive ? " disabled" : ""}>oui</button>
+      <button class="seg${valeur ? "" : " actif"}" data-fin-non="${cle}">non</button>
+    </span></div>`;
+
+  vue(`${message || ""}
+    <div class="bloc"><h2>Ce qui sera fait</h2>
+      ${inter("courriel", "Courriel au locataire, procès-verbal signé joint",
+              E.finCourriel, destinataires.length === 0)}
+      ${inter("rapport", "Rapport Word (nécessite un modèle dans Make)", E.finRapport)}
+      <p class="note">L'envoi du procès-verbal le jour même établit que le
+      locataire en a reçu copie : cela fait partie de la preuve.</p>
+      <p class="note">Le document signé est déjà déposé dans OneDrive.
+      Un échec d'envoi ne remet rien en cause.</p>
+    </div>
+
+    <div class="bloc"><h2>Destinataires</h2>
+      ${destinataires.length
+        ? destinataires.map(e => `<div class="ligne"><span>${echapper(e)}</span>
+            <span class="val ok">renseigné</span></div>`).join("")
+        : `<p class="note ko">Aucune adresse électronique n'a été saisie à la
+           signature. Le courriel ne peut pas partir.</p>`}
+    </div>
+
+    <div class="bloc"><h2>Mot d'accompagnement</h2>
+      <textarea id="msg-fin" rows="3"
+        placeholder="Facultatif — ajouté au courriel">${echapper(E.finMessage || "")}</textarea>
+    </div>
+
+    <button id="btn-lancer-fin">Envoyer</button>
+    <button class="secondaire" id="btn-retour">Plus tard</button>
+    <div id="resultat-fin"></div>`);
+
+  $("vue").querySelectorAll("[data-fin-oui]").forEach(b => b.onclick = () => {
+    const k = b.getAttribute("data-fin-oui");
+    if (k === "rapport") E.finRapport = true; else E.finCourriel = true;
+    ecranFinVisite(visite);
+  });
+  $("vue").querySelectorAll("[data-fin-non]").forEach(b => b.onclick = () => {
+    const k = b.getAttribute("data-fin-non");
+    if (k === "rapport") E.finRapport = false; else E.finCourriel = false;
+    ecranFinVisite(visite);
+  });
+
+  $("btn-lancer-fin").onclick = async () => {
+    E.finMessage = $("msg-fin").value;
+    if (!E.finRapport && !E.finCourriel) {
+      return afficherFin(`<div class="avert">Rien n'est sélectionné.</div>`);
+    }
+    if (E.finCourriel && !(await confirmer(
+        "Envoyer le courriel au locataire ?",
+        "Il partira à : " + destinataires.join(", ") +
+        ". Cet envoi ne peut pas être rappelé.", "Oui, envoyer"))) return;
+
+    const b = $("btn-lancer-fin");
+    b.disabled = true; b.textContent = "Envoi en cours…";
+    try {
+      const reponse = await envoyerFinVisite(V,
+        { rapport: E.finRapport, courriel: E.finCourriel, message: E.finMessage });
+      VISITE = await modifierVisite(V.visit_id, v => {
+        v.preuve = v.preuve || {};
+        v.preuve.execution_make_id = String(reponse).slice(0, 120);
+        v.preuve.courriel_envoye = E.finCourriel === true;
+        v.preuve.rapport_demande = E.finRapport === true;
+        v.preuve.fin_visite_le = new Date().toISOString();
+      }) || VISITE;
+      afficherFin(`<div class="succes">Envoi accepté par le scénario</div>
+        <div class="bloc"><p class="note">${echapper(reponse)}</p>
+        <p class="note">Vérifie dans OneDrive que le rapport Word est bien arrivé,
+        et dans tes messages envoyés que le courriel est parti.</p></div>`);
+      b.textContent = "Renvoyer";
+    } catch (e) {
+      afficherFin(`<div class="erreur"><strong>Envoi non abouti</strong>${
+        echapper(e.message)}</div>
+        <div class="bloc"><p class="note">Le procès-verbal signé reste déposé dans
+        OneDrive : rien n'est perdu. Tu peux réessayer, ou envoyer le document
+        à la main depuis OneDrive.</p></div>`);
+    }
+    b.disabled = false;
+  };
+
+  $("btn-retour").onclick = () => ecranAccueil();
+}
+
+function afficherFin(html) {
+  const z = $("resultat-fin");
+  if (z) z.innerHTML = html;
+}
+
+/* Réglage du second scénario Make, depuis l'accueil. */
+function ecranReglageFin(message) {
+  E.ecran = "reglage_fin";
+  titre("Rapport et courriel", finVisiteDisponible() ? "Scénario configuré" : "Non configuré");
+
+  vue(`${message || ""}
+    <div class="bloc"><h2>À quoi cela sert</h2>
+      <p class="note">Après la signature, un second scénario Make produit le
+      rapport Word et envoie le procès-verbal au locataire. Le procès-verbal
+      signé, lui, est déposé par l'application elle-même : ce scénario n'est
+      jamais indispensable.</p>
+    </div>
+
+    <div class="bloc"><h2>Adresse du scénario</h2>
+      <p class="note">Scénario <strong>EDL-FIN-VISITE</strong>.</p>
+      <textarea id="url-fin" rows="2"
+        placeholder="https://hook.eu1.make.com/…">${echapper(adresseFinVisite())}</textarea>
+      <button class="mini" id="btn-garder-fin">Enregistrer cette adresse</button>
+    </div>
+
+    <div class="bloc"><h2>Apprendre la structure à Make</h2>
+      <p class="note">Dans Make : ouvre le scénario, clique le webhook, puis
+      <strong>« Redetermine data structure »</strong>. Reviens ici et appuie
+      ci-dessous : les champs apparaîtront dans Make.</p>
+      <button class="mini" id="btn-echantillon-fin">Envoyer un échantillon</button>
+    </div>
+
+    <div id="resultat-fin"></div>
+    <button class="secondaire" id="btn-retour">Retour à l'accueil</button>`);
+
+  $("btn-garder-fin").onclick = () => {
+    const url = $("url-fin").value.trim();
+    if (!url) return afficherFin(`<div class="erreur">Le champ est vide.</div>`);
+    enregistrerAdresseFinVisite(url);
+    afficherFin(`<div class="succes">Adresse enregistrée sur cet appareil</div>`);
+    titre("Rapport et courriel", "Scénario configuré");
+  };
+
+  $("btn-echantillon-fin").onclick = async () => {
+    const url = $("url-fin").value.trim();
+    if (!url) return afficherFin(`<div class="erreur">Colle d'abord l'adresse.</div>`);
+    const b = $("btn-echantillon-fin"); b.disabled = true; b.textContent = "Envoi…";
+    try {
+      const r = await envoyerEchantillonFinVisite(url);
+      afficherFin(`<div class="succes">Échantillon envoyé — réponse ${r.statut}</div>
+        <div class="bloc"><p class="note">${echapper(r.corps || "(vide)")}</p>
+        <p class="note">Les champs doivent maintenant apparaître dans le webhook.</p></div>`);
+    } catch (e) {
+      afficherFin(`<div class="erreur"><strong>Échec</strong>${echapper(e.message)}</div>`);
+    }
+    b.disabled = false; b.textContent = "Envoyer un échantillon";
+  };
+
+  $("btn-retour").onclick = () => ecranAccueil();
 }
 
 // --- Réglage et essai du relais IA ---------------------------------------
@@ -1501,10 +1700,13 @@ async function signerEtDeposer(blocs) {
       </div>
       ${comparaisonDeposee ? `<div class="bloc"><h2>Rapport de comparaison</h2>
         <p class="note">${echapper(comparaisonDeposee.nom)}</p></div>` : ""}
-      <div class="avert"><strong>À faire maintenant</strong>
-        Envoie le PDF au locataire depuis OneDrive, le jour même :
-        sa réception fait partie de la preuve.</div>
-      <button id="btn-accueil">Retour à l'accueil</button>`);
+      ${finVisiteDisponible()
+        ? `<button id="btn-envoi">Rapport Word et courriel au locataire</button>`
+        : `<div class="avert"><strong>À faire maintenant</strong>
+             Envoie le PDF au locataire depuis OneDrive, le jour même :
+             sa réception fait partie de la preuve.</div>`}
+      <button class="secondaire" id="btn-accueil">Retour à l'accueil</button>`);
+    if ($("btn-envoi")) $("btn-envoi").onclick = () => ecranFinVisite(VISITE);
     $("btn-accueil").onclick = () => ecranAccueil();
   } catch (e) {
     vue(`<div class="erreur"><strong>Signature non aboutie</strong>${echapper(e.message)}<br><br>
@@ -1595,11 +1797,11 @@ function dessinerPiece(message) {
           <span class="val ${p.statut_transfert === "confirme" ? "ok" : "ko"}">${
             p.statut_transfert === "confirme" ? "enregistrée" : "en attente"}</span></div>
           ${p.description ? `<p class="note">${echapper(p.description)}</p>` : ""}
-          <p class="note">
-            ${p.statut_transfert === "confirme"
-              ? `<button class="lien" style="color:#1f4e5f" data-decrire="${
-                  echapper(p.photo_id)}">${p.description ? "redécrire" : "décrire"}</button>`
-              : `<span class="gris">en attente d'envoi</span>`}
+          ${p.statut_transfert === "confirme"
+            ? `<button class="decrire" data-decrire="${echapper(p.photo_id)}">${
+                p.description ? "Redécrire cette photo" : "Décrire cette photo"}</button>`
+            : `<p class="note gris">En attente d'envoi</p>`}
+          <p class="note" style="margin-top:10px">
             <button class="lien" data-suppr-photo="${
               echapper(p.photo_id)}">retirer de l'état des lieux</button></p></div>`).join("")
         : `<p class="note">Aucune photo.</p>`}
@@ -1698,7 +1900,13 @@ function dessinerPiece(message) {
       return dessinerPiece("Aucun relais IA enregistré — va dans " +
         "Accueil → Description par IA pour coller l'adresse Make.");
     }
-    b.disabled = true; b.textContent = "lecture…";
+    /* Chaque description est facturée : deux crédits Make et un appel
+       Gemini. Un appui involontaire ne doit jamais suffire. */
+    if (!(await confirmer("Décrire cette photo ?",
+        "Cet appel est facturé — deux crédits Make et un appel Gemini. " +
+        (photo.description ? "Le texte proposé remplacera le précédent." : ""),
+        "Oui, décrire"))) return;
+    b.disabled = true; b.textContent = "Lecture en cours…";
     let texte;
     try {
       texte = await decrirePhoto(VISITE, photo);

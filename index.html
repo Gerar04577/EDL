@@ -75,6 +75,14 @@
   .sceau { display:inline-block; font-size:11px; font-weight:600; color:#1f7a4d;
     background:#e8f3ec; padding:2px 7px; border-radius:20px; vertical-align:middle; }
   code { background:#f0eeea; padding:1px 5px; border-radius:4px; font-size:13px; }
+  .decrire { width:100%; margin-top:9px; padding:13px; font-size:15px; font-weight:600;
+    background:#e8f0fb; color:#1a4a80; border:1px solid #bcd3ef; border-radius:10px; }
+  .decrire:disabled { opacity:.6; }
+  .voile { position:fixed; inset:0; background:rgba(20,20,20,.45); z-index:50;
+    display:flex; align-items:center; justify-content:center;
+    padding:24px calc(18px + env(safe-area-inset-left)); }
+  .boite { background:#fff; border-radius:14px; padding:20px 18px; max-width:420px; width:100%; }
+  .boite h2 { font-size:17px; margin:0 0 8px; text-transform:none; letter-spacing:0; color:#1a1a1a; }
   .lien { width:auto; margin:0 0 0 8px; padding:0; background:none; border:none;
     color:#b03030; font-size:13px; font-weight:500; }
 </style>
@@ -101,6 +109,7 @@
 <script src="pdf.js"></script>
 <script src="comparaison-edl.js"></script>
 <script src="ia.js"></script>
+<script src="finvisite.js"></script>
 <script src="comparaison.js"></script>
 <script src="photos.js"></script>
 <script src="app.js"></script>
