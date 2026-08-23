@@ -175,13 +175,14 @@ function rappelGmail() {
 /* Une correction après signature ne modifie JAMAIS le document signé :
    elle crée une version suivante, qui devra être signée à son tour.
    L'ancienne reste dans le dossier, avec son empreinte. */
-function ecranRectification(visite) {
+function ecranRectification(visite, message) {
   E.ecran = "rectification";
   const suivante = "V" + ((parseInt(String(visite.version_doc || "V1")
     .replace(/\D/g, ""), 10) || 1) + 1);
 
   titre("Rectifier", visite.bien.unite_source);
-  vue(`<div class="avert"><strong>Le document signé ne sera pas modifié</strong>
+  vue(`${message ? `<div class="erreur">${echapper(message)}</div>` : ""}
+    <div class="avert"><strong>Le document signé ne sera pas modifié</strong>
       La version ${echapper(visite.version_doc || "V1")}, signée le
       ${new Date(visite.date_signature || visite.date_debut).toLocaleString("fr-BE")},
       reste dans le dossier avec son empreinte. Une rectification crée la version
@@ -189,7 +190,8 @@ function ecranRectification(visite) {
 
     <div class="bloc"><h2>Motif de la rectification</h2>
       <textarea id="motif" rows="3"
-        placeholder="Ce qui doit être corrigé, et pourquoi. Ce texte figurera au document."></textarea>
+        placeholder="Ce qui doit être corrigé, et pourquoi. Ce texte figurera au document.">${
+        echapper(E.motifRectif || "")}</textarea>
       <p class="note">Le motif est inscrit au procès-verbal de la nouvelle version :
       il explique au lecteur pourquoi deux documents coexistent.</p>
     </div>
@@ -205,21 +207,40 @@ function ecranRectification(visite) {
 
   $("btn-creer-version").onclick = async () => {
     const motif = $("motif").value.trim();
-    if (!motif) return ecranRectification(visite);
+    if (!motif) {
+      return ecranRectification(visite,
+        "Écris d'abord le motif : il figurera au document et explique " +
+        "pourquoi deux versions coexistent.");
+    }
+    E.motifRectif = motif;
     if (!(await confirmer("Créer la version " + suivante + " ?",
         "La version signée reste intacte. La nouvelle devra être signée par " +
         "les deux parties pour avoir effet.", "Oui, créer"))) return;
     try {
       const copie = await nouvelleVersion(visite, motif);
+      E.motifRectif = "";
       VISITE = copie;
-      ecranVisiteReprise(copie);
+      vue(`<div class="succes">Version ${echapper(copie.version_doc)} créée</div>
+        <div class="bloc"><h2>${echapper(copie.bien.unite_source)}</h2>
+          <div class="ligne"><span>Version précédente</span><span class="val">${
+            echapper(copie.version_precedente.version)}, signée le ${
+            new Date(copie.version_precedente.date_signature).toLocaleDateString("fr-BE")
+            }</span></div>
+          <div class="ligne"><span>Motif</span><span class="val">${echapper(motif)}</span></div>
+          <p class="note">Le contenu de la version précédente a été repris.
+          Corrige ce qui doit l'être, puis fais signer à nouveau les deux parties.</p>
+        </div>
+        <button id="btn-ouvrir">Ouvrir la version ${echapper(copie.version_doc)}</button>
+        <button class="secondaire" id="btn-acc">Retour à l'accueil</button>`);
+      $("btn-ouvrir").onclick = () => ecranVisiteReprise(copie);
+      $("btn-acc").onclick = () => ecranAccueil();
     } catch (e) {
       vue(`<div class="erreur"><strong>Impossible</strong>${echapper(e.message)}</div>
            <button class="secondaire" id="btn-r">Retour</button>`);
       $("btn-r").onclick = () => ecranAccueil();
     }
   };
-  $("btn-annuler").onclick = () => ecranAccueil();
+  $("btn-annuler").onclick = () => { E.motifRectif = ""; ecranAccueil(); };
 }
 
 function ecranAbandon(visite) {
@@ -1055,7 +1076,7 @@ function ecranFinVisite(visite, message) {
     </div>
 
     <button id="btn-lancer-fin">Envoyer</button>
-    <button class="secondaire" id="btn-retour">Plus tard</button>
+    <button class="secondaire" id="btn-retour">Retour à l'accueil</button>
     <div id="resultat-fin"></div>`);
 
   $("vue").querySelectorAll("[data-fin-oui]").forEach(b => b.onclick = () => {
@@ -1093,15 +1114,21 @@ function ecranFinVisite(visite, message) {
       }) || VISITE;
       afficherFin(`<div class="succes">Envoi accepté par le scénario</div>
         <div class="bloc"><p class="note">${echapper(reponse)}</p>
-        <p class="note">Vérifie dans OneDrive que le rapport Word est bien arrivé,
-        et dans tes messages envoyés que le courriel est parti.</p></div>`);
+        <p class="note">Vérifie dans tes messages envoyés que le courriel est parti,
+        avec le procès-verbal en pièce jointe.</p></div>
+        <button id="btn-fin-accueil">Retour à l'accueil</button>`);
+      const ba = $("btn-fin-accueil");
+      if (ba) ba.onclick = () => ecranAccueil();
       b.textContent = "Renvoyer";
     } catch (e) {
       afficherFin(`<div class="erreur"><strong>Envoi non abouti</strong>${
         echapper(e.message)}</div>
         <div class="bloc"><p class="note">Le procès-verbal signé reste déposé dans
         OneDrive : rien n'est perdu. Tu peux réessayer, ou envoyer le document
-        à la main depuis OneDrive.</p></div>`);
+        à la main depuis OneDrive.</p></div>
+        <button class="secondaire" id="btn-fin-accueil">Retour à l'accueil</button>`);
+      const be = $("btn-fin-accueil");
+      if (be) be.onclick = () => ecranAccueil();
     }
     b.disabled = false;
   };

@@ -264,8 +264,10 @@ async function creerVisite(param) {
     parties: {
       bailleur_cle: (param.bailleur && param.bailleur.cle) || null,
       bailleur: (param.bailleur && param.bailleur.libelle) || CONFIG.bailleur,
-      bailleur_represente_par: (param.bailleur && param.bailleur.represente_par)
-        || param.operateur || null,
+      /* Le représentant vient du bailleur choisi, jamais du compte
+         connecté : le nom du compte Microsoft avait été pris pour un
+         mandataire, ce qui donnait des mentions fausses au document. */
+      bailleur_represente_par: (param.bailleur && param.bailleur.represente_par) || null,
       preneurs: (param.preneurs || []).map(nom => ({
         nom_complet: nom,
         qualite: "Locataire",

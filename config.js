@@ -4,7 +4,7 @@
 
 var CONFIG = {
 
-  version_app: "1.4.0",
+  version_app: "1.4.2",
 
   /* Protocole de signature imprimé en page 1 du procès-verbal.
      Laisser vide tant que l'avocat n'a pas rendu son texte :
@@ -16,10 +16,14 @@ var CONFIG = {
      contestable. La valeur ci-dessous ne sert que de défaut. */
   bailleur: "GERARD Jean-Marc",
 
+  /* Julien Gérard conduit toutes les visites, mais sa qualité change :
+     mandataire pour les immeubles de Jean-Marc et pour SAMADHI,
+     propriétaire en nom propre à Egmont. Le nom du compte Microsoft
+     ne sert JAMAIS de représentant. */
   bailleurs: [
-    { cle: "jmg",     libelle: "GERARD Jean-Marc",  represente_par: null },
-    { cle: "samadhi", libelle: "SAMADHI S.A.",      represente_par: "GERARD Julien" },
-    { cle: "julien",  libelle: "GERARD Julien",     represente_par: null },
+    { cle: "jmg",     libelle: "GERARD Jean-Marc", represente_par: "GERARD Julien" },
+    { cle: "samadhi", libelle: "SAMADHI S.A.",     represente_par: "GERARD Julien" },
+    { cle: "julien",  libelle: "GERARD Julien",    represente_par: null },
   ],
 
   // Bailleur attendu pour chaque immeuble

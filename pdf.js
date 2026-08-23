@@ -146,8 +146,10 @@ async function genererPV(visite) {
   // --- 2. Parties et dates ------------------------------------------------
   p.sousTitre("Désignation des parties");
   p.ligne("Bailleur", V.parties.bailleur);
-  if (V.parties.bailleur_represente_par)
-    p.ligne("Représenté par", V.parties.bailleur_represente_par);
+  if (V.parties.bailleur_represente_par) {
+    const feminin = /^(S\.?A\.?|S\.?P\.?R\.?L|S\.?R\.?L|SC)/i.test(String(V.parties.bailleur).trim());
+    p.ligne("Représenté" + (feminin ? "e" : "") + " par", V.parties.bailleur_represente_par);
+  }
   (V.parties.preneurs || []).forEach((x, i) => {
     p.ligne("Preneur " + (i + 1), x.nom_complet);
     p.ligne("   Qualité", x.qualite || "Locataire");

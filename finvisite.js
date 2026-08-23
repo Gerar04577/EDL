@@ -76,6 +76,8 @@ function resumePourMake(visite) {
     date_visite: V.date_debut || "",
     date_signature: V.date_signature || "",
     bailleur: (V.parties && V.parties.bailleur) || "",
+    bailleur_complet: nomBailleurComplet(V),
+    bailleur_represente_par: (V.parties && V.parties.bailleur_represente_par) || "",
     operateur: V.operateur || "",
     preneurs: ((V.parties && V.parties.preneurs) || [])
       .map(x => x.nom_complet).join(" & "),
@@ -127,6 +129,16 @@ function resumePourMake(visite) {
   };
 }
 
+/* « Bailleur, représenté par X » — jamais l'inverse. */
+function nomBailleurComplet(V) {
+  const p = V.parties || {};
+  if (!p.bailleur) return "";
+  const feminin = /^(S\.?A\.?|S\.?P\.?R\.?L|S\.?R\.?L|SC)/i.test(p.bailleur.trim());
+  return p.bailleur_represente_par
+    ? p.bailleur + ", représenté" + (feminin ? "e" : "") + " par " + p.bailleur_represente_par
+    : p.bailleur;
+}
+
 function horodatageComplet(iso) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -176,9 +188,7 @@ function corpsCourriel(V) {
       "applicables.",
     "",
     "Bien cordialement,",
-    (V.parties && V.parties.bailleur_represente_par)
-      ? V.parties.bailleur_represente_par + " pour " + V.parties.bailleur
-      : ((V.parties && V.parties.bailleur) || ""),
+    nomBailleurComplet(V),
   ].join("\n");
 }
 
