@@ -133,6 +133,38 @@ function compositionParDefaut(designation) {
   return Object.assign({}, base, { nb_chambres: 1, hall: true });
 }
 
+/* Crée la version suivante d'une visite déjà signée. La version signée
+   reste intacte : elle conserve son PDF, son empreinte et sa date. La
+   nouvelle repart de son contenu et devra être signée à nouveau. */
+async function nouvelleVersion(visiteSignee, motif) {
+  const numero = parseInt(String(visiteSignee.version_doc || "V1").replace(/\D/g, ""), 10) || 1;
+  const copie = JSON.parse(JSON.stringify(visiteSignee));
+
+  const edl = visiteSignee.edl_id || visiteSignee.visit_id;
+  copie.edl_id = edl;                          // l'identifiant EDL ne change PAS
+  copie.version_doc = "V" + (numero + 1);
+  copie.visit_id = edl + "__" + copie.version_doc;
+  copie.version_precedente = {
+    version: visiteSignee.version_doc || "V1",
+    date_signature: visiteSignee.date_signature || null,
+    empreinte: (visiteSignee.preuve || {}).hash_pdf_pv_sha256 || null,
+    fichier: (visiteSignee.preuve || {}).pv_nom_fichier || null,
+  };
+  copie.motif_version = motif || null;
+  copie.statut = "en_cours";
+  copie.date_signature = null;
+  copie.preuve = {};
+  copie.signatures = undefined;
+  delete copie.signatures;
+
+  copie.photo_seq = {};        // les photos de la version précédente restent les siennes
+  await enregistrerVisite(copie);
+  await journaliser("nouvelle_version", {
+    edl_id: edl, version: copie.version_doc, motif: motif || null,
+  });
+  return copie;
+}
+
 /* Le bailleur attendu pour un immeuble. Trois propriétaires distincts :
    se tromper rendrait le procès-verbal contestable. */
 function bailleurParDefaut(immeubleId) {
@@ -195,9 +227,20 @@ function construirePieces(composition) {
 /* Création de la visite. Les identifiants sont générés localement,
    avant tout appel réseau, et ne changent plus ensuite. */
 async function creerVisite(param) {
+  const identifiant = nouvelIdentifiant("v");
   const visite = {
     schema_version: CONFIG.version_schema,
-    visit_id: nouvelIdentifiant("v"),
+    /* edl_id est l'identifiant permanent de l'état des lieux : il ne change
+       jamais, y compris entre versions. visit_id est la clé de stockage :
+       il vaut edl_id pour la V1, puis « edl_id__V2 » pour les suivantes,
+       afin que les versions coexistent sans s'écraser. */
+    edl_id: identifiant,
+    visit_id: identifiant,
+    /* Version du document. Une correction après signature ne modifie
+       jamais la version précédente : elle en crée une nouvelle, et
+       l'ancienne reste archivée dans le dossier. */
+    version_doc: "V1",
+    version_precedente: null,
     type: param.type,
     statut: "en_cours",
     date_debut: new Date().toISOString(),

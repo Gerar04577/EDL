@@ -79,8 +79,16 @@ async function ajouterPhoto(visite, rattachement, fichier) {
      se font dans une seule transaction. Sans cela, deux prises simultanées
      — un double appui suffit — produisent le même nom de fichier, et la
      seconde écrase la première dans OneDrive. */
+  /* Empreinte calculée sur l'appareil, avant tout transfert : elle
+     établit que la photo versée au débat est bien celle qui a été prise
+     et présentée au signataire. */
+  let empreinte = null;
+  try { empreinte = await empreinteBlob(blob); }
+  catch (e) { await journaliser("empreinte_photo_echouee", String(e && e.message)); }
+
   const entree = {
     photo_id: photoId, nom_fichier: null, rattachement,
+    empreinte_sha256: empreinte,
     onedrive_item_id: null, taille_octets: blob.size || null,
     statut_transfert: "en_attente", tentatives: 0,
     horodatage: new Date().toISOString(),
@@ -135,6 +143,16 @@ async function ajouterPhoto(visite, rattachement, fichier) {
 
   lancerFile();
   return photoId;
+}
+
+/* Empreinte SHA-256 d'un fichier, calculée localement. */
+async function empreinteBlob(blob) {
+  if (!(typeof crypto !== "undefined" && crypto.subtle)) return null;
+  const tampon = blob.arrayBuffer ? await blob.arrayBuffer() : null;
+  if (!tampon) return null;
+  const h = await crypto.subtle.digest("SHA-256", tampon);
+  return Array.from(new Uint8Array(h))
+    .map(x => x.toString(16).padStart(2, "0")).join("");
 }
 
 /* Téléversement d'un élément de la file. */

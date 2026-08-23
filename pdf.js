@@ -40,7 +40,8 @@ function nouveauDocument() {
 function dateFr(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
-  return d.toLocaleDateString("fr-BE") + " à " + d.toLocaleTimeString("fr-BE").slice(0, 5);
+  /* Secondes comprises : l'horodatage applicatif doit être précis. */
+  return d.toLocaleDateString("fr-BE") + " à " + d.toLocaleTimeString("fr-BE");
 }
 
 function libelleEtat(v) {
@@ -188,7 +189,12 @@ async function genererPV(visite) {
       });
       if (photos.length) {
         p.paragraphe(photos.length + " photographie" + (photos.length > 1 ? "s" : "") +
-          " : " + photos.map(x => x.nom_fichier).join(", "), { retrait: 2, taille: 8 });
+          " faisant partie du présent rapport :", { retrait: 2, taille: 8 });
+        photos.forEach((x, n) => {
+          p.paragraphe((n + 1) + ". " + x.nom_fichier +
+            (x.empreinte_sha256 ? "  —  SHA-256 " + x.empreinte_sha256 : ""),
+            { retrait: 4, taille: 7 });
+        });
       }
     }
     p.saut(4);
@@ -266,6 +272,22 @@ async function genererPV(visite) {
 
   if (V.divers) { p.filet(); p.sousTitre("Divers"); p.paragraphe(V.divers); }
   p.saut(6);
+
+  // --- 6 ter. Version antérieure ------------------------------------------
+  if (V.version_precedente) {
+    p.titre("Version antérieure");
+    p.paragraphe("Le présent document est la version " + (V.version_doc || "V2") +
+      " de l'état des lieux référencé ci-dessus. Il rectifie la version " +
+      V.version_precedente.version + ", signée le " +
+      dateFr(V.version_precedente.date_signature) + ", qui demeure archivée et " +
+      "n'a pas été modifiée.");
+    if (V.version_precedente.empreinte)
+      p.paragraphe("Empreinte SHA-256 de la version antérieure : " +
+        V.version_precedente.empreinte, { taille: 8 });
+    if (V.motif_version)
+      p.paragraphe("Motif de la rectification : " + V.motif_version);
+    p.saut(6);
+  }
 
   // --- 6 bis. Observations et réserves ------------------------------------
   p.titre("Observations et réserves");
@@ -356,21 +378,48 @@ async function genererPV(visite) {
   p.y += 34;
 
   p.saut(4);
-  p.paragraphe("Document établi le " + dateFr(V.date_signature || new Date().toISOString()) +
-    ".  Référence : " + V.visit_id, { taille: 8 });
+  p.paragraphe("Document établi le " +
+    dateFr(V.date_signature || new Date().toISOString()) + " (" + fuseau() + ")." +
+    "  Référence : " + (V.edl_id || V.visit_id) + "  —  Version : " + (V.version_doc || "V1"),
+    { taille: 8 });
+
+  /* Les empreintes des photographies sont inscrites AU document : le
+     SHA-256 du PDF les couvre donc, et l'on peut vérifier plus tard que
+     les photographies produites sont bien celles présentées au signataire. */
+  const avecEmpreinte = V.photos.filter(x => x.empreinte_sha256);
+  if (avecEmpreinte.length) {
+    p.saut(3);
+    p.paragraphe("Les " + avecEmpreinte.length + " photographie(s) référencées " +
+      "ci-dessus portent chacune une empreinte SHA-256 inscrite au présent document. " +
+      "L'empreinte du présent fichier couvre donc l'ensemble : le rapport et " +
+      "l'identification des photographies qui en font partie.", { taille: 8 });
+  }
 
   // --- Pied de page sur chaque feuille ------------------------------------
   const total = doc.getNumberOfPages();
   for (let i = 1; i <= total; i++) {
     doc.setPage(i);
     doc.setFontSize(8); doc.setTextColor(140);
-    doc.text(V.bien.unite_source + " — " + (sortie ? "EDLS" : "EDLE") + " — " + V.visit_id,
+    doc.text(V.bien.unite_source + " — " + (sortie ? "EDLS" : "EDLE") + " — " +
+             (V.edl_id || V.visit_id) + " " + (V.version_doc || "V1"),
              PDF_MARGE, PDF_HAUTEUR - 10);
     doc.text(i + " / " + total, PDF_LARGEUR - PDF_MARGE, PDF_HAUTEUR - 10, { align: "right" });
     doc.setTextColor(0);
   }
 
   return doc;
+}
+
+function fuseau() {
+  const d = new Date();
+  const m = -d.getTimezoneOffset();
+  const signe = m >= 0 ? "+" : "-";
+  const h = String(Math.floor(Math.abs(m) / 60)).padStart(2, "0");
+  const mn = String(Math.abs(m) % 60).padStart(2, "0");
+  let nom = "";
+  try { nom = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (_) {}
+  if (nom === "UTC" || nom === "Etc/UTC") nom = "";
+  return (nom ? nom + ", " : "") + "UTC" + signe + h + ":" + mn;
 }
 
 function euro(v) {

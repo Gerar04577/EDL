@@ -65,7 +65,7 @@ function resumePourMake(visite) {
 
   return {
     action: "fin_visite",
-    visit_id: V.visit_id,
+    visit_id: V.edl_id || V.visit_id,
     type: V.type,
     type_libelle: sortie ? "état des lieux de sortie" : "état des lieux d'entrée",
     immeuble: V.bien.immeuble || "",
@@ -106,6 +106,18 @@ function resumePourMake(visite) {
     pv_nom_fichier: (V.preuve && V.preuve.pv_nom_fichier) || "",
     pv_item_id: (V.preuve && V.preuve.pv_onedrive_item_id) || "",
     pv_empreinte: (V.preuve && V.preuve.hash_pdf_pv_sha256) || "",
+    /* Éléments imposés au courriel par l'expertise : identifiant, version,
+       horodatage complet avec fuseau, empreinte du fichier. */
+    version_doc: V.version_doc || "V1",
+    horodatage_complet: horodatageComplet(V.date_signature || V.date_debut),
+    objet_courriel: "Transmission de votre état des lieux signé — " +
+      (V.bien.adresse_complete || V.bien.unite_source || "") + " — " +
+      (V.edl_id || V.visit_id) + " " + (V.version_doc || "V1"),
+    corps_courriel: corpsCourriel(V),
+    nb_reserves: String(((V.reserves || []).length)),
+    reserves: (V.reserves || []).map((r, i) =>
+      (i + 1) + ". " + (r.auteur || "Le preneur") +
+      (r.piece ? " — " + r.piece : "") + " : " + r.texte).join("\n"),
     comparaison_nom_fichier: (V.preuve && V.preuve.comparaison_nom_fichier) || "",
     comparaison_item_id: (V.preuve && V.preuve.comparaison_onedrive_item_id) || "",
     estimation_nettoyage: (V.chiffrage && V.chiffrage.estimation_nettoyage_heures != null)
@@ -113,6 +125,61 @@ function resumePourMake(visite) {
     total_tvac: (V.chiffrage && V.chiffrage.total_tvac != null)
       ? String(V.chiffrage.total_tvac) : "",
   };
+}
+
+function horodatageComplet(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const m = -d.getTimezoneOffset();
+  const signe = m >= 0 ? "+" : "-";
+  const hh = String(Math.floor(Math.abs(m) / 60)).padStart(2, "0");
+  const mm = String(Math.abs(m) % 60).padStart(2, "0");
+  let zone = "";
+  try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (_) {}
+  if (zone === "UTC" || zone === "Etc/UTC") zone = "";
+  return d.toLocaleDateString("fr-BE") + " à " + d.toLocaleTimeString("fr-BE") +
+    " (" + (zone ? zone + ", " : "") + "UTC" + signe + hh + ":" + mm + ")";
+}
+
+/* Corps du courriel, repris de la formulation validée par l'expertise.
+   Deux précautions de vocabulaire : on parle de TRANSMISSION d'un
+   exemplaire, jamais de délivrance ; et l'envoi n'est jamais présenté
+   comme la preuve d'une lecture par le destinataire. */
+function corpsCourriel(V) {
+  const reserves = V.reserves || [];
+  return [
+    "Madame, Monsieur,",
+    "",
+    "Nous vous confirmons la clôture de l'" +
+      (V.type === "EDLS" ? "état des lieux de sortie" : "état des lieux d'entrée") +
+      " réalisé pour le bien situé :",
+    (V.bien.adresse_complete || V.bien.unite_source || ""),
+    "",
+    "Vous trouverez en pièce jointe votre exemplaire électronique du rapport " +
+      "finalisé et signé, comprenant les descriptions, relevés, observations et " +
+      "photographies faisant partie du rapport présenté lors de sa validation.",
+    "",
+    "Référence : " + (V.edl_id || V.visit_id),
+    "Version : " + (V.version_doc || "V1"),
+    "Date et heure de validation : " + horodatageComplet(V.date_signature),
+    "Empreinte SHA-256 du fichier : " + ((V.preuve && V.preuve.hash_pdf_pv_sha256) || "—"),
+    "",
+    reserves.length
+      ? reserves.length + " observation(s) et réserve(s) ont été consignées à votre " +
+        "demande avant validation et figurent dans le rapport."
+      : "Aucune observation ni réserve n'a été consignée avant validation.",
+    "",
+    "Le rapport signé ainsi que les éléments techniques associés à sa validation " +
+      "et à sa transmission sont conservés afin de permettre, en cas de contestation, " +
+      "de vérifier le contenu du rapport, son intégrité, la date de sa validation et " +
+      "les circonstances de sa transmission, dans le respect des dispositions légales " +
+      "applicables.",
+    "",
+    "Bien cordialement,",
+    (V.parties && V.parties.bailleur_represente_par)
+      ? V.parties.bailleur_represente_par + " pour " + V.parties.bailleur
+      : ((V.parties && V.parties.bailleur) || ""),
+  ].join("\n");
 }
 
 /* Envoi. Comme pour l'IA : champs de formulaire, aucun en-tête

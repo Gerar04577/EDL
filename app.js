@@ -73,10 +73,14 @@ async function ecranAccueil() {
       terminees.slice(0, 8).map((v, i) => `<div class="comp">
         <div class="ligne"><span>${echapper(v.bien.unite_source)} — ${v.type}</span>
         <span class="val gris">${new Date(v.date_debut).toLocaleDateString("fr-BE")}</span></div>
+        ${v.version_doc && v.version_doc !== "V1"
+          ? `<p class="note gris">Version ${echapper(v.version_doc)}</p>` : ""}
         ${v.statut === "signee" && finVisiteDisponible()
           ? `<button class="mini secondaire" data-renvoi="${i}">${
               (v.preuve && v.preuve.courriel_envoye) ? "Renvoyer" : "Rapport et courriel"}</button>`
           : ""}
+        ${v.statut === "signee"
+          ? `<button class="mini secondaire" data-rectifier="${i}">Rectifier</button>` : ""}
       </div>`).join("") +
       `<button class="mini secondaire" id="btn-purge">Effacer les visites terminées</button></div>`;
   }
@@ -125,6 +129,9 @@ async function ecranAccueil() {
     ecranFinVisite(v);
   });
 
+  $("vue").querySelectorAll("[data-rectifier]").forEach(b => b.onclick = () =>
+    ecranRectification(terminees[parseInt(b.getAttribute("data-rectifier"), 10)]));
+
   if ($("btn-purge")) $("btn-purge").onclick = async () => {
     const b = $("btn-purge");
     b.disabled = true; b.textContent = "Effacement…";
@@ -160,6 +167,56 @@ function rappelGmail() {
     Échéance le ${echeance.toLocaleDateString("fr-BE")}. Passé cette date,
     l'envoi du procès-verbal au locataire s'arrêtera. Va dans Make,
     connexions, et réautorise Gmail.</div>`;
+}
+
+/* Une correction après signature ne modifie JAMAIS le document signé :
+   elle crée une version suivante, qui devra être signée à son tour.
+   L'ancienne reste dans le dossier, avec son empreinte. */
+function ecranRectification(visite) {
+  E.ecran = "rectification";
+  const suivante = "V" + ((parseInt(String(visite.version_doc || "V1")
+    .replace(/\D/g, ""), 10) || 1) + 1);
+
+  titre("Rectifier", visite.bien.unite_source);
+  vue(`<div class="avert"><strong>Le document signé ne sera pas modifié</strong>
+      La version ${echapper(visite.version_doc || "V1")}, signée le
+      ${new Date(visite.date_signature || visite.date_debut).toLocaleString("fr-BE")},
+      reste dans le dossier avec son empreinte. Une rectification crée la version
+      ${echapper(suivante)}, qui devra être relue et signée par les deux parties.</div>
+
+    <div class="bloc"><h2>Motif de la rectification</h2>
+      <textarea id="motif" rows="3"
+        placeholder="Ce qui doit être corrigé, et pourquoi. Ce texte figurera au document."></textarea>
+      <p class="note">Le motif est inscrit au procès-verbal de la nouvelle version :
+      il explique au lecteur pourquoi deux documents coexistent.</p>
+    </div>
+
+    <div class="bloc"><h2>Ce qui sera repris</h2>
+      <p class="note">Constatations, photographies, compteurs, clés, état général
+      et réserves de la version précédente. Tu pourras tout modifier avant de
+      signer à nouveau.</p>
+    </div>
+
+    <button id="btn-creer-version">Créer la version ${echapper(suivante)}</button>
+    <button class="secondaire" id="btn-annuler">Annuler</button>`);
+
+  $("btn-creer-version").onclick = async () => {
+    const motif = $("motif").value.trim();
+    if (!motif) return ecranRectification(visite);
+    if (!(await confirmer("Créer la version " + suivante + " ?",
+        "La version signée reste intacte. La nouvelle devra être signée par " +
+        "les deux parties pour avoir effet.", "Oui, créer"))) return;
+    try {
+      const copie = await nouvelleVersion(visite, motif);
+      VISITE = copie;
+      ecranVisiteReprise(copie);
+    } catch (e) {
+      vue(`<div class="erreur"><strong>Impossible</strong>${echapper(e.message)}</div>
+           <button class="secondaire" id="btn-r">Retour</button>`);
+      $("btn-r").onclick = () => ecranAccueil();
+    }
+  };
+  $("btn-annuler").onclick = () => ecranAccueil();
 }
 
 function ecranAbandon(visite) {
