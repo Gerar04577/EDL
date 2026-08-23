@@ -56,11 +56,14 @@ var AIDE = [
   {
     titre: "3. L'identité du propriétaire",
     corps: [
-      "Sur le récapitulatif, vérifie le bailleur. Il change selon l'immeuble :",
-      "— Havré : SAMADHI S.A., représentée par Julien Gérard ;",
-      "— Egmont : Julien Gérard ;",
-      "— Nimy, Petite Guirlande, Vannes, La Fermette, Biche : Jean-Marc Gérard.",
-      "Le nom retenu ici sera celui du document signé.",
+      "Sur le récapitulatif, vérifie le bailleur. Il change selon l'immeuble, " +
+      "et ta qualité change avec lui :",
+      "— Nimy, Petite Guirlande, Vannes, La Fermette, Biche : le bailleur est " +
+      "Jean-Marc Gérard, et tu le représentes ;",
+      "— Havré : le bailleur est SAMADHI S.A., et tu la représentes ;",
+      "— Egmont : le bailleur, c'est toi. Tu signes en ton nom, sans mention " +
+      "de représentation.",
+      "Le nom retenu ici sera celui du document signé et du courriel au locataire.",
     ],
     attention: "Une erreur de propriétaire rend le procès-verbal contestable. " +
       "L'application signale en rouge tout choix inhabituel.",
@@ -134,8 +137,24 @@ var AIDE = [
       "de la preuve.",
     ],
     attention: "Après signature, le document ne peut plus être modifié. Une correction " +
-      "exige de créer une nouvelle version, avec le bouton « Rectifier », et de faire " +
-      "signer à nouveau.",
+      "exige de créer une nouvelle version — voir la section suivante.",
+  },
+  {
+    titre: "9. Corriger une erreur après signature",
+    corps: [
+      "Un document signé ne se modifie jamais. Si une erreur apparaît ensuite, " +
+      "on crée une version suivante : la version signée reste dans le dossier, " +
+      "intacte, et la nouvelle reprend tout son contenu.",
+      "Sur l'accueil, dans la liste des visites terminées, appuie sur « Rectifier ».",
+      "Écris le motif de la correction. Il est OBLIGATOIRE : sans lui, le bouton " +
+      "« Créer la version » ne fait rien, et l'application te le dit. Ce texte figurera " +
+      "au document : il explique au lecteur pourquoi deux versions coexistent.",
+      "Corrige ensuite ce qui doit l'être, puis fais signer à nouveau les deux parties. " +
+      "La nouvelle version n'a d'effet qu'une fois signée.",
+    ],
+    attention: "L'ancienne version n'est jamais effacée. Deux documents coexisteront " +
+      "dans le dossier, V1 et V2 : c'est voulu, c'est ce qui rend la correction " +
+      "incontestable.",
   },
   {
     titre: "Si le réseau manque",
