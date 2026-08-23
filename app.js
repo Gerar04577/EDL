@@ -87,6 +87,8 @@ async function ecranAccueil() {
     </div>`;
 
   if (E.connecte) {
+    html += `<button class="secondaire" id="btn-ia">Description par IA${
+      iaDisponible() ? "" : " — non configurée"}</button>`;
     html += `<button class="secondaire" id="btn-comparer">Comparer avec OneDrive</button>`;
     html += `<button class="secondaire" id="btn-deconnexion">Se déconnecter</button>`;
   }
@@ -97,6 +99,7 @@ async function ecranAccueil() {
   if ($("btn-connexion")) $("btn-connexion").onclick = () => seConnecter();
   if ($("btn-deconnexion")) $("btn-deconnexion").onclick = () => seDeconnecter();
   if ($("btn-comparer")) $("btn-comparer").onclick = () => ecranComparaison();
+  if ($("btn-ia")) $("btn-ia").onclick = () => ecranIA();
   if ($("btn-nouvelle")) $("btn-nouvelle").onclick = () => ecranType();
 
   $("vue").querySelectorAll("[data-reprendre]").forEach(b => b.onclick = () =>
@@ -797,6 +800,104 @@ function cheminPhotoCompteur(rattachement) {
   return "compteurs.divers_photo_id";
 }
 
+// --- Réglage et essai du relais IA ---------------------------------------
+
+function ecranIA(message) {
+  E.ecran = "ia";
+  titre("Description par IA", iaDisponible() ? "Relais configuré" : "Relais non configuré");
+
+  vue(`${message || ""}
+    <div class="bloc"><h2>À quoi cela sert</h2>
+      <p class="note">Sous chaque photo déjà enregistrée, un bouton « décrire » propose
+      deux ou trois phrases factuelles. Tu les relis, tu les corriges, puis tu les
+      enregistres comme constatation. Rien n'est automatique.</p>
+      <p class="note">L'appréciation de l'usure normale et de la responsabilité
+      reste la tienne : elle n'est jamais demandée à l'IA.</p>
+    </div>
+
+    <div class="bloc"><h2>Adresse du relais Make</h2>
+      <p class="note">Scénario <strong>EDL-IA-PHOTO</strong>. La clé Gemini reste
+      chez Make, jamais dans l'application.</p>
+      <textarea id="url-ia" rows="2"
+        placeholder="https://hook.eu2.make.com/…">${
+        echapper((CONFIG.ia && CONFIG.ia.webhook_ia) || "")}</textarea>
+      <p class="note">Cette adresse doit aussi être collée dans <code>config.js</code>
+      pour être conservée après une mise à jour.</p>
+    </div>
+
+    <div class="bloc"><h2>1. Apprendre la structure à Make</h2>
+      <p class="note">Dans Make : ouvre le scénario, clique sur le webhook,
+      puis sur <strong>« Redetermine data structure »</strong>. Make se met en attente.
+      Reviens ici et appuie sur le bouton ci-dessous : Make verra les champs
+      et pourra les proposer dans les modules suivants.</p>
+      <button class="mini" id="btn-echantillon">Envoyer un échantillon à Make</button>
+    </div>
+
+    <div class="bloc"><h2>2. Essai réel</h2>
+      <p class="note">Le scénario doit être activé et contenir un module
+      <strong>« Webhook response »</strong> renvoyant l'en-tête
+      <code>Access-Control-Allow-Origin</code>. Sans lui, l'appel part
+      mais la réponse est refusée au navigateur.</p>
+      <button class="mini" id="btn-essai">Essayer sur une photo d'exemple</button>
+    </div>
+
+    <div id="resultat-ia"></div>
+    <button class="secondaire" id="btn-retour">Retour à l'accueil</button>`);
+
+  $("btn-echantillon").onclick = async () => {
+    const url = $("url-ia").value.trim();
+    if (!url) return afficherIA(`<div class="erreur">Colle d'abord l'adresse du webhook.</div>`);
+    const b = $("btn-echantillon"); b.disabled = true; b.textContent = "Envoi…";
+    try {
+      const r = await envoyerEchantillonIA(url);
+      afficherIA(`<div class="succes">Échantillon envoyé — réponse ${r.statut}</div>
+        <div class="bloc"><h2>Réponse de Make</h2>
+        <p class="note">${echapper(r.corps || "(vide)")}</p>
+        <p class="note">Retourne dans Make : les champs doivent maintenant apparaître
+        dans le webhook. Une réponse « Accepted » signifie que le scénario a reçu
+        les données mais ne renvoie rien — c'est normal à cette étape.</p></div>`);
+    } catch (e) {
+      afficherIA(`<div class="erreur"><strong>Échec</strong>${echapper(e.message)}</div>`);
+    }
+    b.disabled = false; b.textContent = "Envoyer un échantillon à Make";
+  };
+
+  $("btn-essai").onclick = async () => {
+    const url = $("url-ia").value.trim();
+    if (!url) return afficherIA(`<div class="erreur">Colle d'abord l'adresse du webhook.</div>`);
+    const b = $("btn-essai"); b.disabled = true; b.textContent = "Appel en cours…";
+    const ancienne = CONFIG.ia.webhook_ia;
+    CONFIG.ia.webhook_ia = url;
+    try {
+      const texte = await appelerRelaisIA({
+        action: "decrire", item_id: "ECHANTILLON", drive_id: "",
+        modele: CONFIG.ia.modele, piece: "Séjour", type: "EDLE",
+        consigne: "Réponds simplement : essai réussi.",
+        visit_id: "v_essai", photo_id: "ph_essai",
+      });
+      afficherIA(`<div class="succes">Le relais a répondu</div>
+        <div class="bloc"><h2>Texte reçu</h2>
+          <p class="note">${echapper(nettoyerReponseIA(texte) || texte || "(vide)")}</p></div>`);
+    } catch (e) {
+      CONFIG.ia.webhook_ia = ancienne;
+      afficherIA(`<div class="erreur"><strong>Échec</strong>${echapper(e.message)}</div>
+        <div class="bloc"><h2>Points à vérifier dans Make</h2>
+          <p class="note">— le scénario est-il activé ?<br>
+          — contient-il un module « Webhook response » en fin de parcours ?<br>
+          — ce module renvoie-t-il l'en-tête Access-Control-Allow-Origin ?<br>
+          — le webhook est-il réglé sur un traitement immédiat, sans file d'attente ?</p></div>`);
+    }
+    b.disabled = false; b.textContent = "Essayer sur une photo d'exemple";
+  };
+
+  $("btn-retour").onclick = () => ecranAccueil();
+}
+
+function afficherIA(html) {
+  const z = $("resultat-ia");
+  if (z) z.innerHTML = html;
+}
+
 // --- Comparaison entrée / sortie -----------------------------------------
 
 async function ecranComparaisonEDL(message) {
@@ -1463,8 +1564,14 @@ function dessinerPiece(message) {
           <div class="ligne"><span>${echapper(p.nom_fichier)}</span>
           <span class="val ${p.statut_transfert === "confirme" ? "ok" : "ko"}">${
             p.statut_transfert === "confirme" ? "enregistrée" : "en attente"}</span></div>
-          <p class="note"><button class="lien" data-suppr-photo="${
-            echapper(p.photo_id)}">retirer de l'état des lieux</button></p></div>`).join("")
+          ${p.description ? `<p class="note">${echapper(p.description)}</p>` : ""}
+          <p class="note">
+            ${iaDisponible() ? (p.statut_transfert === "confirme"
+              ? `<button class="lien" style="color:#1f4e5f" data-decrire="${
+                  echapper(p.photo_id)}">${p.description ? "redécrire" : "décrire"}</button>`
+              : `<span class="gris">en attente d'envoi</span>`) : ""}
+            <button class="lien" data-suppr-photo="${
+              echapper(p.photo_id)}">retirer de l'état des lieux</button></p></div>`).join("")
         : `<p class="note">Aucune photo.</p>`}
       <input type="file" accept="image/*" capture="environment" id="appareil" class="cache">
       <button id="btn-photo">Prendre une photo</button>
@@ -1533,6 +1640,11 @@ function dessinerPiece(message) {
       VISITE = await modifierVisite(VISITE.visit_id, v => {
         const pc = v.pieces.find(x => x.piece_id === E.piece);
         const entree = { texte, etat: E.etat, proprete: E.proprete };
+      /* Si le texte reprend une proposition de l'IA, on le note : le
+         document doit pouvoir dire d'où vient chaque constatation. */
+      const propose = v.photos.some(x => x.rattachement === E.piece &&
+        x.description && normaliserLibelle(x.description) === normaliserLibelle(texte));
+      if (propose) entree.source = "ia_validee";
         if (enEdition) pc.constatations[i] = entree; else pc.constatations.push(entree);
       }) || VISITE;
     } catch (e) {
@@ -1548,6 +1660,26 @@ function dessinerPiece(message) {
     E.brouillonTexte = ""; E.etat = null; E.proprete = null; E.indexEdition = null;
     dessinerPiece();
   };
+
+  $("vue").querySelectorAll("[data-decrire]").forEach(b => b.onclick = async () => {
+    const id = b.getAttribute("data-decrire");
+    const photo = VISITE.photos.find(x => x.photo_id === id);
+    b.disabled = true; b.textContent = "lecture…";
+    let texte;
+    try {
+      texte = await decrirePhoto(VISITE, photo);
+    } catch (e) {
+      return dessinerPiece("Description impossible : " + e.message);
+    }
+    /* Le texte proposé va dans le champ de saisie, pas dans le constat :
+       c'est toi qui le corriges et l'enregistres. */
+    E.brouillonTexte = texte;
+    VISITE = await modifierVisite(VISITE.visit_id, v => {
+      const p = v.photos.find(x => x.photo_id === id);
+      if (p) { p.description = texte; p.description_source = "ia_proposee"; }
+    }) || VISITE;
+    dessinerPiece("Proposition de l'IA — relis-la et corrige avant d'ajouter");
+  });
 
   $("vue").querySelectorAll("[data-suppr-photo]").forEach(b => b.onclick = async () => {
     const id = b.getAttribute("data-suppr-photo");
