@@ -219,6 +219,10 @@ async function majPhotoDansVisite(visitId, photoId, itemId) {
   // l'écran affiche la version en base, jamais une copie divergente
   if (typeof VISITE !== "undefined" && VISITE && VISITE.visit_id === visitId) {
     VISITE.photos = visite.photos;
+    /* L'écran doit se redessiner DÈS la confirmation. Attendre une
+       minuterie laissait la photo affichée « en attente » alors qu'elle
+       était déjà déposée — et le bouton « décrire » restait caché. */
+    if (typeof prevenirEcran === "function") prevenirEcran(visitId);
   }
   await peutEtreSauvegarder(visite);
 }

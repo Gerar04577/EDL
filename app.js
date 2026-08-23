@@ -800,6 +800,26 @@ function cheminPhotoCompteur(rattachement) {
   return "compteurs.divers_photo_id";
 }
 
+/* Appelée par la file dès qu'une photo est confirmée par Microsoft.
+   Sans cela, l'écran gardait l'état d'avant l'envoi. */
+let _redessinPrevu = null;
+
+async function prevenirEcran(visitId) {
+  if (!VISITE || VISITE.visit_id !== visitId) return;
+  /* Plusieurs photos peuvent être confirmées coup sur coup : on regroupe
+     les redessins pour ne pas repeindre l'écran dix fois par seconde. */
+  if (_redessinPrevu) clearTimeout(_redessinPrevu);
+  _redessinPrevu = setTimeout(async () => {
+    _redessinPrevu = null;
+    const frais = await lireVisite(visitId);
+    if (!frais || !VISITE || VISITE.visit_id !== visitId) return;
+    VISITE = frais;
+    if (E.ecran === "piece") dessinerPiece();
+    else if (E.ecran === "releves") dessinerReleves();
+    else if (E.ecran === "visite") ecranVisiteReprise(VISITE);
+  }, 250);
+}
+
 // --- Réglage et essai du relais IA ---------------------------------------
 
 function ecranIA(message) {
@@ -1730,20 +1750,7 @@ function dessinerPiece(message) {
     ecranVisiteReprise(VISITE);
   };
 
-  /* La barre est calculée sur la visite RELUE, pas sur la copie en mémoire :
-     elle affichait sinon l'état d'avant la dernière photo. Et elle est
-     rafraîchie quelques secondes plus tard, le temps que l'envoi aboutisse. */
   majCompteurAttente(VISITE.photos.length);
-  [1200, 3000, 6000].forEach(delai => setTimeout(async () => {
-    if (E.ecran !== "piece") return;
-    const frais = await lireVisite(VISITE.visit_id);
-    if (!frais) return;
-    const change = JSON.stringify(frais.photos.map(p => p.statut_transfert)) !==
-                   JSON.stringify(VISITE.photos.map(p => p.statut_transfert));
-    VISITE = frais;
-    if (change) dessinerPiece();
-    else majCompteurAttente(VISITE.photos.length);
-  }, delai));
 }
 
 /* Le fichier de visite n'est plus déposé à chaque frappe : on attend
