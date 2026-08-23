@@ -300,11 +300,27 @@ async function supprimerBrouillon(visite) {
 }
 
 /* Compteur permanent, jamais masquable. */
-async function majCompteurAttente() {
+async function majCompteurAttente(nbPhotos) {
   const zone = document.getElementById("barre-attente");
   if (!zone) return;
   const n = await nombreEnAttente();
-  zone.textContent = n === 0 ? "Toutes les photos sont enregistrées"
-                             : n + (n > 1 ? " photos en attente d'envoi" : " photo en attente d'envoi");
-  zone.className = "barre " + (n === 0 ? "barre-ok" : "barre-attente");
+  if (n > 0) {
+    zone.textContent = n + (n > 1 ? " photos en attente d'envoi" : " photo en attente d'envoi");
+    zone.className = "barre barre-attente";
+    return;
+  }
+  /* Aucune photo en attente : encore faut-il qu'il y en ait eu.
+     « Toutes les photos sont enregistrées » sur une pièce vide n'a
+     aucun sens et fait croire à une photo fantôme. */
+  const total = (typeof nbPhotos === "number") ? nbPhotos
+    : (typeof VISITE !== "undefined" && VISITE ? VISITE.photos.length : 0);
+  if (total === 0) {
+    zone.textContent = "Aucune photo pour l'instant";
+    zone.className = "barre barre-neutre";
+  } else {
+    zone.textContent = total > 1
+      ? "Les " + total + " photos sont enregistrées"
+      : "La photo est enregistrée";
+    zone.className = "barre barre-ok";
+  }
 }

@@ -1,7 +1,7 @@
 /* EDL — Écrans
    Étape 3 : démarrage d'une visite. La capture arrive à l'étape suivante. */
 
-const E = {
+var E = {
   installee: false,
   connecte: false,
   liste: null,
@@ -348,7 +348,7 @@ function dessinerComposition(memorise) {
     </div>
     <div class="bloc"><h2>Compteurs</h2>
       ${inter("electricite_bi_horaire", "Électricité bi-horaire", r.electricite_bi_horaire)}
-      ${inter("ista_present", "Répartiteurs ISTA", r.ista_present)}
+      ${inter("ista_present", "ISTA — à suivre avec décompte charges", r.ista_present)}
     </div>
     <button id="btn-suite">Continuer</button>
     <button class="secondaire" id="btn-retour">Retour</button>`);
@@ -429,7 +429,7 @@ async function lancerVisite() {
 
 // --- Visite en cours -----------------------------------------------------
 
-let VISITE = null;
+var VISITE = null;
 
 async function ecranVisiteReprise(visite) {
   VISITE = visite;
@@ -448,17 +448,350 @@ async function ecranVisiteReprise(visite) {
           <span class="droite">${n} photo${n > 1 ? "s" : ""}${c ? " · " + c + " constat" + (c > 1 ? "s" : "") : ""}</span></button>`;
       }).join("")}
     </div>
+    <button class="secondaire" id="btn-releves">Compteurs, clés et état général</button>
     <button id="btn-cloturer">Terminer la visite</button>
     <button class="secondaire" id="btn-accueil">Retour à l'accueil</button>`);
 
   $("vue").querySelectorAll("[data-piece]").forEach(b =>
     b.onclick = () => ecranPiece(b.getAttribute("data-piece")));
+  $("btn-releves").onclick = () => ecranReleves();
   $("btn-cloturer").onclick = () => ecranCloture(VISITE);
   $("btn-accueil").onclick = async () => {
     await deposerMaintenant(VISITE);
     ecranAccueil();
   };
   majCompteurAttente();
+}
+
+// --- Relevés : compteurs, clés, équipements, état général ----------------
+
+async function ecranReleves(message) {
+  E.ecran = "releves";
+  VISITE = (await lireVisite(VISITE.visit_id)) || VISITE;
+  titre("Compteurs et relevés", VISITE.bien.unite_source);
+
+  if (VISITE.type === "EDLS" && (VISITE.options || {}).rappel_index_entree === true
+      && !E.rappelCharge) {
+    E.rappelCharge = true;
+    vue(`<p class="note">Lecture de l'état des lieux d'entrée…</p>`);
+    const rappel = await rappelerIndexEntree(VISITE);
+    if (rappel && rappel.compteurs) {
+      VISITE = await modifierVisite(VISITE.visit_id, v => {
+        const r = rappel.compteurs;
+        v.compteurs.electricite.index_entree_rappel = {
+          index_unique: r.electricite.index_unique,
+          index_jour: r.electricite.index_jour,
+          index_nuit: r.electricite.index_nuit,
+        };
+        v.compteurs.eau.index_entree_rappel = { index: r.eau.index };
+        (v.compteurs.ista || []).forEach((x, i) => {
+          const src = (r.ista || [])[i];
+          if (src) x.index_entree_rappel = { index_r: src.index_r, index_21: src.index_21 };
+        });
+        v.comparaison = v.comparaison || {};
+        v.comparaison.edle_visit_id = rappel.visit_id;
+        v.comparaison.edle_date = rappel.date;
+      }) || VISITE;
+    }
+  }
+  dessinerReleves(message);
+}
+
+function dessinerReleves(message) {
+  const V = VISITE, c = V.compteurs;
+  const sortie = V.type === "EDLS";
+
+  const champ = (id, valeur, rappel) =>
+    `<div class="ligne"><span>${id.libelle}${
+      rappel !== undefined && rappel !== null
+        ? ` <span class="gris">(entrée : ${echapper(String(rappel))})</span>` : ""}</span>
+      <input class="saisie-index" inputmode="numeric" data-releve="${id.chemin}"
+        value="${valeur === null || valeur === undefined ? "" : echapper(String(valeur))}"></div>`;
+
+  const photoDe = (r) => {
+    const p = photoCompteur(V, r);
+    return `<div class="ligne"><span class="note">Photo du compteur</span>
+      <span class="val ${p ? "ok" : "gris"}">${p ? "prise" : "conseillée"}</span></div>
+      <input type="file" accept="image/*" capture="environment" class="cache" id="app-${r}">
+      <button class="mini ${p ? "secondaire" : ""}" data-photo-compteur="${r}">${
+        p ? "Reprendre la photo" : "Photographier le compteur"}</button>`;
+  };
+
+  const rappelElec = c.electricite.index_entree_rappel || {};
+  const rappelEau = (c.eau.index_entree_rappel || {}).index;
+
+  let html = `<div class="barre" id="barre-attente">…</div>
+    ${message ? `<div class="succes">${echapper(message)}</div>` : ""}`;
+
+  if (sortie) {
+    const demande = (V.options || {}).rappel_index_entree === true;
+    html += `<div class="bloc"><h2>Index d'entrée</h2>
+      <div class="interrupteur"><span>Rappeler les index de l'état des lieux d'entrée</span>
+        <span class="segments">
+          <button class="seg${demande ? " actif" : ""}" data-rappel="oui">oui</button>
+          <button class="seg${demande === false ? " actif" : ""}" data-rappel="non">non</button>
+        </span></div>
+      <p class="note">${demande
+        ? "Les index d'entrée s'affichent en regard, et un index inférieur est signalé."
+        : "Aucun index d'entrée n'est lu ni affiché."}</p>
+    </div>`;
+  }
+
+  html += `<div class="bloc"><h2>Compteur électrique</h2>
+      ${champ({ libelle: "Numéro", chemin: "compteurs.electricite.numero" }, c.electricite.numero)}
+      ${c.electricite.bi_horaire
+        ? champ({ libelle: "Index jour", chemin: "compteurs.electricite.index_jour" },
+                c.electricite.index_jour, sortie ? rappelElec.index_jour : null) +
+          champ({ libelle: "Index nuit", chemin: "compteurs.electricite.index_nuit" },
+                c.electricite.index_nuit, sortie ? rappelElec.index_nuit : null)
+        : champ({ libelle: "Index", chemin: "compteurs.electricite.index_unique" },
+                c.electricite.index_unique, sortie ? rappelElec.index_unique : null)}
+      ${photoDe("compteur_electricite")}
+    </div>
+
+    <div class="bloc"><h2>Compteur d'eau</h2>
+      ${champ({ libelle: "Numéro", chemin: "compteurs.eau.numero" }, c.eau.numero)}
+      ${champ({ libelle: "Index", chemin: "compteurs.eau.index" }, c.eau.index, sortie ? rappelEau : null)}
+      ${photoDe("compteur_eau")}
+    </div>`;
+
+  if (((V.options || {}).reglages_unite || {}).ista_present) {
+    html += `<div class="bloc"><h2>ISTA — à suivre avec décompte charges</h2>`;
+    (c.ista || []).forEach((r, i) => {
+      const re = r.index_entree_rappel || {};
+      html += `<p class="note">Répartiteur ${i + 1}</p>
+        ${champ({ libelle: "Numéro", chemin: "compteurs.ista." + i + ".numero" }, r.numero)}
+        ${champ({ libelle: "Index R", chemin: "compteurs.ista." + i + ".index_r" }, r.index_r,
+                sortie ? re.index_r : null)}
+        ${champ({ libelle: "Index 21", chemin: "compteurs.ista." + i + ".index_21" }, r.index_21,
+                sortie ? re.index_21 : null)}
+        ${photoDe("compteur_ista_" + (i + 1))}
+        <button class="mini secondaire" data-suppr-ista="${i}">Retirer ce répartiteur</button>`;
+    });
+    html += `<button class="mini" id="btn-ajout-ista">Ajouter un répartiteur</button></div>`;
+  }
+
+  // gaz et mazout : présents, masqués tant qu'ils ne servent pas
+  html += `<div class="bloc"><h2>Autres compteurs</h2>
+    ${c.gaz ? champ({ libelle: "Gaz — numéro", chemin: "compteurs.gaz.numero" }, c.gaz.numero) +
+              champ({ libelle: "Gaz — index", chemin: "compteurs.gaz.index" }, c.gaz.index)
+            : `<button class="mini secondaire" data-ajout="gaz">Ajouter un compteur gaz</button>`}
+    ${c.mazout ? champ({ libelle: "Mazout — numéro", chemin: "compteurs.mazout.numero" }, c.mazout.numero) +
+                 champ({ libelle: "Mazout — index", chemin: "compteurs.mazout.index" }, c.mazout.index)
+               : `<button class="mini secondaire" data-ajout="mazout">Ajouter un compteur mazout</button>`}
+  </div>`;
+
+  html += `<div class="bloc"><h2>Clés remises</h2>
+    ${CLES_STANDARD.map(k => `<div class="ligne"><span>${k.libelle}</span>
+      <span class="compteur">
+        <button class="choix" style="width:auto;margin:0;padding:6px 13px" data-cle-moins="${k.cle}">−</button>
+        <input readonly value="${V.cles[k.cle] === null || V.cles[k.cle] === undefined
+          ? "—" : V.cles[k.cle]}">
+        <button class="choix" style="width:auto;margin:0;padding:6px 13px" data-cle-plus="${k.cle}">+</button>
+      </span></div>`).join("")}
+    <p class="note">« — » signifie sans objet.</p>
+  </div>`;
+
+  const oui_non = (chemin, libelle, valeur) =>
+    `<div class="interrupteur"><span>${libelle}</span><span class="segments">
+      <button class="seg${valeur === true ? " actif" : ""}" data-on="${chemin}">oui</button>
+      <button class="seg${valeur === false ? " actif" : ""}" data-off="${chemin}">non</button>
+    </span></div>`;
+
+  html += `<div class="bloc"><h2>Équipements</h2>
+    ${oui_non("equipements.sonnette.etat", "Sonnette fonctionnelle",
+              V.equipements.sonnette.etat === "fonctionnelle" ? true
+              : V.equipements.sonnette.etat === "hors_service" ? false : null)}
+    ${oui_non("equipements.detecteur_fumee.present", "Détecteur de fumée présent",
+              V.equipements.detecteur_fumee.present)}
+    <textarea rows="2" data-texte="equipements.detecteur_fumee.commentaire"
+      placeholder="Remarque sur le détecteur (piles, emplacement…)">${
+      echapper(V.equipements.detecteur_fumee.commentaire || "")}</textarea>
+  </div>
+
+  <div class="bloc"><h2>État général</h2>
+    ${oui_non("etat_general.degats_locatifs.constate", "Dégâts locatifs constatés",
+              V.etat_general.degats_locatifs.constate)}
+    <textarea rows="2" data-texte="etat_general.degats_locatifs.commentaire"
+      placeholder="Lesquels ?">${echapper(V.etat_general.degats_locatifs.commentaire || "")}</textarea>
+    ${oui_non("etat_general.proprete.propre", "Les lieux sont propres",
+              V.etat_general.proprete.propre)}
+    <textarea rows="2" data-texte="etat_general.proprete.commentaire"
+      placeholder="Précisions">${echapper(V.etat_general.proprete.commentaire || "")}</textarea>
+  </div>`;
+
+  if (sortie) {
+    html += `<div class="bloc"><h2>Estimation de nettoyage</h2>
+      <div class="ligne"><span>Heures estimées</span>
+        <input class="saisie-index" inputmode="decimal" data-nettoyage
+          value="${V.chiffrage && V.chiffrage.estimation_nettoyage_heures !== undefined
+            && V.chiffrage.estimation_nettoyage_heures !== null
+            ? V.chiffrage.estimation_nettoyage_heures : ""}"></div>
+      <p class="note">Appréciation sur place, ni plafond ni forfait.
+      Ordre de grandeur habituel : jusqu'à 10 h pour un studio, 14 h pour un appartement.</p>
+    </div>`;
+  }
+
+  html += `<div class="bloc"><h2>Divers</h2>
+    <textarea rows="3" data-texte="divers"
+      placeholder="Remarques générales">${echapper(V.divers || "")}</textarea></div>`;
+
+  const conseils = controlerReleves(V);
+  const anomalies = controlerProgression(V);
+  if (anomalies.length)
+    html += `<div class="erreur"><strong>À vérifier</strong>${
+      anomalies.map(x => echapper(x)).join("<br>")}</div>`;
+  if (conseils.length)
+    html += `<div class="bloc"><h2>Non renseigné</h2>
+      <p class="note">${conseils.map(m => echapper(m)).join(", ")}.
+      Rien n'est obligatoire : tu peux clôturer sans.</p></div>`;
+
+  html += `<button class="secondaire" id="btn-retour">Retour aux pièces</button>`;
+  vue(html);
+  brancherReleves();
+  majCompteurAttente(V.photos.length);
+}
+
+function brancherReleves() {
+  const ecrire = async (chemin, valeur) => {
+    VISITE = await modifierVisite(VISITE.visit_id, v => {
+      const parts = chemin.split(".");
+      let cible = v;
+      for (let i = 0; i < parts.length - 1; i++) {
+        const k = parts[i];
+        if (cible[k] === null || cible[k] === undefined) cible[k] = {};
+        cible = cible[k];
+      }
+      cible[parts[parts.length - 1]] = valeur;
+    }) || VISITE;
+  };
+
+  $("vue").querySelectorAll("[data-releve]").forEach(i => {
+    i.onchange = async () => {
+      const brut = i.value.trim();
+      const chemin = i.getAttribute("data-releve");
+      /* Les index sont des nombres : conservés en texte, la comparaison
+         avec l'index d'entrée se ferait alphabétiquement. */
+      let v = brut === "" ? null : brut;
+      if (v !== null && /index/.test(chemin)) {
+        const n = Number(String(v).replace(",", "."));
+        v = isNaN(n) ? null : n;
+      }
+      await ecrire(chemin, v);
+      programmerDepot();
+      dessinerReleves();
+    };
+  });
+
+  $("vue").querySelectorAll("[data-texte]").forEach(t => {
+    t.onchange = async () => {
+      await ecrire(t.getAttribute("data-texte"), t.value);
+      programmerDepot();
+    };
+  });
+
+  $("vue").querySelectorAll("[data-on]").forEach(b => b.onclick = async () => {
+    const chemin = b.getAttribute("data-on");
+    await ecrire(chemin, chemin.includes("sonnette") ? "fonctionnelle" : true);
+    programmerDepot(); dessinerReleves();
+  });
+  $("vue").querySelectorAll("[data-off]").forEach(b => b.onclick = async () => {
+    const chemin = b.getAttribute("data-off");
+    await ecrire(chemin, chemin.includes("sonnette") ? "hors_service" : false);
+    programmerDepot(); dessinerReleves();
+  });
+
+  $("vue").querySelectorAll("[data-rappel]").forEach(b => b.onclick = async () => {
+    const oui = b.getAttribute("data-rappel") === "oui";
+    await ecrire("options.rappel_index_entree", oui);
+    if (!oui) {
+      VISITE = await modifierVisite(VISITE.visit_id, v => {
+        delete v.compteurs.electricite.index_entree_rappel;
+        delete v.compteurs.eau.index_entree_rappel;
+        (v.compteurs.ista || []).forEach(x => { delete x.index_entree_rappel; });
+      }) || VISITE;
+      E.rappelCharge = false;
+      return dessinerReleves("Rappel des index d'entrée désactivé");
+    }
+    E.rappelCharge = false;
+    ecranReleves("Lecture de l'état des lieux d'entrée…");
+  });
+
+  $("vue").querySelectorAll("[data-cle-plus]").forEach(b => b.onclick = async () => {
+    const k = b.getAttribute("data-cle-plus");
+    await ecrire("cles." + k, (VISITE.cles[k] || 0) + 1);
+    dessinerReleves();
+  });
+  $("vue").querySelectorAll("[data-cle-moins]").forEach(b => b.onclick = async () => {
+    const k = b.getAttribute("data-cle-moins");
+    const n = VISITE.cles[k];
+    await ecrire("cles." + k, (n === null || n === undefined || n <= 1) ? null : n - 1);
+    dessinerReleves();
+  });
+
+  $("vue").querySelectorAll("[data-ajout]").forEach(b => b.onclick = async () => {
+    await ecrire("compteurs." + b.getAttribute("data-ajout"),
+                 { numero: null, index: null, photo_id: null });
+    dessinerReleves();
+  });
+
+  if ($("btn-ajout-ista")) $("btn-ajout-ista").onclick = async () => {
+    VISITE = await modifierVisite(VISITE.visit_id, v => {
+      v.compteurs.ista.push({ emplacement: null, numero: null, index_r: null,
+                              index_21: null, photo_id: null });
+    }) || VISITE;
+    dessinerReleves();
+  };
+  $("vue").querySelectorAll("[data-suppr-ista]").forEach(b => b.onclick = async () => {
+    const i = parseInt(b.getAttribute("data-suppr-ista"), 10);
+    VISITE = await modifierVisite(VISITE.visit_id, v => { v.compteurs.ista.splice(i, 1); }) || VISITE;
+    dessinerReleves();
+  });
+
+  const nett = $("vue").querySelector("[data-nettoyage]");
+  if (nett) nett.onchange = async () => {
+    const val = nett.value.trim();
+    VISITE = await modifierVisite(VISITE.visit_id, v => {
+      v.chiffrage = v.chiffrage || {};
+      v.chiffrage.estimation_nettoyage_heures = val === "" ? null : parseFloat(val.replace(",", "."));
+    }) || VISITE;
+    programmerDepot();
+  };
+
+  $("vue").querySelectorAll("[data-photo-compteur]").forEach(b => b.onclick = () => {
+    const r = b.getAttribute("data-photo-compteur");
+    const input = $("app-" + r);
+    input.onchange = async (ev) => {
+      const fichier = ev.target.files && ev.target.files[0];
+      if (!fichier) return;
+      b.disabled = true; b.textContent = "Enregistrement…";
+      try {
+        const ancienne = photoCompteur(VISITE, r);
+        if (ancienne) await retirerPhoto(VISITE.visit_id, ancienne.photo_id);
+        VISITE = (await lireVisite(VISITE.visit_id)) || VISITE;
+        const id = await ajouterPhoto(VISITE, r, fichier);
+        await ecrire(cheminPhotoCompteur(r), id);
+      } catch (e) {
+        return dessinerReleves("Photo non enregistrée : " + e.message);
+      }
+      VISITE = (await lireVisite(VISITE.visit_id)) || VISITE;
+      dessinerReleves("Photo du compteur enregistrée");
+    };
+    input.click();
+  });
+
+  $("btn-retour").onclick = async () => {
+    await deposerMaintenant(VISITE);
+    ecranVisiteReprise(VISITE);
+  };
+}
+
+function cheminPhotoCompteur(rattachement) {
+  if (rattachement === "compteur_electricite") return "compteurs.electricite.photo_id";
+  if (rattachement === "compteur_eau") return "compteurs.eau.photo_id";
+  const m = rattachement.match(/^compteur_ista_(\d+)$/);
+  if (m) return "compteurs.ista." + (parseInt(m[1], 10) - 1) + ".photo_id";
+  return "compteurs.divers_photo_id";
 }
 
 // --- Clôture d'une visite ------------------------------------------------
@@ -489,6 +822,21 @@ async function ecranCloture(visite) {
       ${piecesVides.map(p => echapper(p.libelle)).join(", ")}</div>`;
   }
 
+  const conseils = controlerReleves(visite);
+  const anomalies = controlerProgression(visite);
+  if (anomalies.length) {
+    html += `<div class="avert"><strong>Index à vérifier</strong>${
+      anomalies.map(x => echapper(x)).join("<br>")}<br><br>
+      Cela n'empêche pas de clôturer.</div>`;
+  }
+  if (conseils.length) {
+    html += `<div class="avert"><strong>Relevés non renseignés</strong>
+      ${conseils.map(m => echapper(m)).join(", ")}.<br>
+      Tu peux clôturer malgré tout.</div>`;
+  }
+
+  /* Seules les photos non encore envoyées empêchent la clôture :
+     elles seraient perdues. Tout le reste relève de ton appréciation. */
   if (attente > 0) {
     html += `<div class="erreur"><strong>Clôture impossible</strong>
       ${attente} photo(s) ne sont pas encore enregistrées dans OneDrive.
@@ -711,7 +1059,7 @@ function dessinerPiece(message) {
     await deposerMaintenant(VISITE);
     ecranVisiteReprise(VISITE);
   };
-  majCompteurAttente();
+  majCompteurAttente(photos.length);
 }
 
 /* Le fichier de visite n'est plus déposé à chaque frappe : on attend

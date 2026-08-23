@@ -218,6 +218,7 @@ async function creerVisite(param) {
 
     options: {
       chiffrage_actif: param.type === "EDLS" ? param.chiffrage === true : false,
+      rappel_index_entree: false,
       pret_meubles_actif: param.pret_meubles === true,
       composition: param.composition,
       reglages_unite: param.reglages,

@@ -4,7 +4,7 @@
 
 var CONFIG = {
 
-  version_app: "0.6.3",
+  version_app: "0.7.1",
 
   // Identité du bailleur, reprise dans chaque état des lieux
   bailleur: "GERARD Jean-Marc",
