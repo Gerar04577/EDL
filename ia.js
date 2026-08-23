@@ -133,14 +133,22 @@ async function decrirePhoto(visite, photo) {
 /* Lien de téléchargement pré-authentifié, fourni par Microsoft Graph. */
 async function lienTelechargement(visite, photo) {
   const d = visite.bien;
+  /* Aucun filtre de champs : demander « $select » écarte justement le lien
+     de téléchargement, que Microsoft ne renvoie que dans la réponse
+     complète. Le nom de la propriété a changé selon les versions, on
+     accepte les deux. */
   const url = d.dossier_cible_drive_id
-    ? `/drives/${d.dossier_cible_drive_id}/items/${photo.onedrive_item_id}?$select=id,@microsoft.graph.downloadUrl`
-    : `/me/drive/items/${photo.onedrive_item_id}?$select=id,@microsoft.graph.downloadUrl`;
+    ? `/drives/${d.dossier_cible_drive_id}/items/${photo.onedrive_item_id}`
+    : `/me/drive/items/${photo.onedrive_item_id}`;
   const res = await appelGraph(url);
   if (!res.ok) throw new Error("Lien de la photo : " + await detailErreur(res));
   const item = await res.json();
-  const lien = item["@microsoft.graph.downloadUrl"];
-  if (!lien) throw new Error("Microsoft n'a pas fourni de lien de téléchargement.");
+  const lien = item["@microsoft.graph.downloadUrl"] || item["@content.downloadUrl"];
+  if (!lien) {
+    await journaliser("lien_absent", { champs: Object.keys(item).join(", ").slice(0, 300) });
+    throw new Error("Microsoft n'a pas renvoyé de lien de téléchargement pour cette photo. " +
+      "Réessaie dans quelques secondes : le fichier vient peut-être d'être déposé.");
+  }
   return lien;
 }
 
