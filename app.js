@@ -449,12 +449,15 @@ async function ecranVisiteReprise(visite) {
       }).join("")}
     </div>
     <button class="secondaire" id="btn-releves">Compteurs, clés et état général</button>
+    ${visite.type === "EDLS"
+      ? `<button class="secondaire" id="btn-comparer-edl">Comparer avec l'entrée</button>` : ""}
     <button id="btn-cloturer">Terminer la visite</button>
     <button class="secondaire" id="btn-accueil">Retour à l'accueil</button>`);
 
   $("vue").querySelectorAll("[data-piece]").forEach(b =>
     b.onclick = () => ecranPiece(b.getAttribute("data-piece")));
   $("btn-releves").onclick = () => ecranReleves();
+  if ($("btn-comparer-edl")) $("btn-comparer-edl").onclick = () => ecranComparaisonEDL();
   $("btn-cloturer").onclick = () => ecranCloture(VISITE);
   $("btn-accueil").onclick = async () => {
     await deposerMaintenant(VISITE);
@@ -794,6 +797,212 @@ function cheminPhotoCompteur(rattachement) {
   return "compteurs.divers_photo_id";
 }
 
+// --- Comparaison entrée / sortie -----------------------------------------
+
+async function ecranComparaisonEDL(message) {
+  E.ecran = "comparaison_edl";
+  VISITE = (await lireVisite(VISITE.visit_id)) || VISITE;
+  const V = VISITE;
+  titre("Comparaison entrée / sortie", V.bien.unite_source);
+
+  const dejaFaite = V.comparaison && V.comparaison.lignes && V.comparaison.lignes.length;
+  if (!dejaFaite) return ecranComparaisonAvant(message);
+  dessinerComparaisonEDL(message);
+}
+
+/* Premier écran : on rappelle pourquoi l'entrée est restée fermée. */
+function ecranComparaisonAvant(message) {
+  const V = VISITE;
+  const constats = V.pieces.reduce((n, p) => n + p.constatations.length, 0);
+
+  vue(`${message ? `<div class="succes">${echapper(message)}</div>` : ""}
+    <div class="bloc"><h2>Avant de comparer</h2>
+      <p class="note">L'état des lieux d'entrée est resté fermé pendant ta visite,
+      volontairement : rédiger en l'ayant sous les yeux conduit à recopier, et un
+      constat de sortie qui ressemble à une copie de l'entrée perd sa valeur.</p>
+      <p class="note">Tu as rédigé ${constats} constatation${constats > 1 ? "s" : ""}.
+      Tu pourras encore les corriger après la comparaison.</p>
+    </div>
+    <button id="btn-lancer">Ouvrir l'état des lieux d'entrée</button>
+    <button class="secondaire" id="btn-retour">Retour aux pièces</button>`);
+
+  $("btn-lancer").onclick = () => lancerComparaison();
+  $("btn-retour").onclick = () => ecranVisiteReprise(VISITE);
+}
+
+async function lancerComparaison() {
+  vue(`<p class="note">Lecture de l'état des lieux d'entrée…</p>`);
+  const r = await chargerEtatDesLieuxEntree(VISITE);
+
+  if (r.statut === "complet") {
+    const lignes = construireLignesComparaison(VISITE, r.edle);
+    lignes.forEach(l => { l.suggestion = suggererCategorie(l); });
+    VISITE = await modifierVisite(VISITE.visit_id, v => {
+      v.comparaison = v.comparaison || {};
+      v.comparaison.edle_visit_id = r.edle.visit_id;
+      v.comparaison.edle_date = r.edle.date_debut;
+      v.comparaison.source = r.nom_fichier;
+      v.comparaison.lignes = lignes;
+    }) || VISITE;
+    return dessinerComparaisonEDL(lignes.length + " écart(s) à classer");
+  }
+
+  // aucun fichier de données : entrée antérieure à l'application
+  let html = "";
+  if (r.statut === "ancien_document") {
+    html = `<div class="avert"><strong>Comparaison automatique impossible</strong>
+        L'état des lieux d'entrée a été fait avant l'application : il n'existe
+        que sous forme de document. Ouvre-le et compare à l'œil.</div>
+      <div class="bloc"><h2>Document d'entrée</h2>
+        ${r.documents.map(d => `<div class="ligne">
+          <span>${echapper(d.nom)}</span>
+          <span class="val">${d.modifie_le
+            ? new Date(d.modifie_le).toLocaleDateString("fr-BE") : ""}</span></div>
+          ${d.url ? `<p class="note"><a href="${echapper(d.url)}" target="_blank">
+            Ouvrir dans OneDrive</a></p>` : ""}`).join("")}
+        ${r.photos ? `<p class="note">${r.photos} photographie(s) dans le dossier d'entrée.</p>` : ""}
+      </div>`;
+  } else if (r.statut === "vide") {
+    html = `<div class="avert"><strong>Dossier d'entrée vide</strong>
+      Aucun état des lieux d'entrée n'a été trouvé. La comparaison n'est pas possible.</div>`;
+  } else if (r.statut === "dossier_introuvable") {
+    html = `<div class="avert"><strong>Dossier EDLE introuvable</strong>
+      Le dossier d'entrée n'existe pas à côté du dossier de sortie.</div>`;
+  } else {
+    html = `<div class="erreur"><strong>Lecture impossible</strong>${
+      echapper(r.message || "erreur inconnue")}</div>`;
+  }
+
+  vue(html + `<button class="secondaire" id="btn-retour">Retour aux pièces</button>`);
+  $("btn-retour").onclick = () => ecranVisiteReprise(VISITE);
+}
+
+function dessinerComparaisonEDL(message) {
+  const V = VISITE;
+  const comp = V.comparaison || {};
+  const lignes = comp.lignes || [];
+  const n = compterParCategorie(comp);
+  const chiffre = V.options && V.options.chiffrage_actif;
+
+  titre("Comparaison entrée / sortie", V.bien.unite_source);
+
+  let html = `${message ? `<div class="succes">${echapper(message)}</div>` : ""}
+    <div class="bloc"><h2>Bilan</h2>
+      <div class="ligne"><span>État des lieux d'entrée</span><span class="val">${
+        comp.edle_date ? new Date(comp.edle_date).toLocaleDateString("fr-BE") : "—"}</span></div>
+      <div class="ligne"><span>Déjà présent à l'entrée</span><span class="val gris">${n.deja_present}</span></div>
+      <div class="ligne"><span>Aggravé</span><span class="val attention">${n.aggrave}</span></div>
+      <div class="ligne"><span>Nouveau</span><span class="val ko">${n.nouveau}</span></div>
+      <div class="ligne"><span>Non classé</span><span class="val ${
+        n.non_classe ? "ko" : "ok"}">${n.non_classe}</span></div>
+      <p class="note">Le classement t'appartient : l'application rapproche les textes,
+      elle ne juge pas ce qui relève de l'usure normale.</p>
+    </div>`;
+
+  const parPiece = {};
+  lignes.forEach((l, i) => { (parPiece[l.piece] = parPiece[l.piece] || []).push({ l, i }); });
+
+  Object.keys(parPiece).forEach(piece => {
+    html += `<div class="bloc"><h2>${echapper(piece)}</h2>`;
+    parPiece[piece].forEach(({ l, i }) => {
+      html += `<div class="comp ${l.categorie ? "" : "comp-alerte"}">
+        <p class="note"><strong>À l'entrée :</strong> ${
+          echapper(l.texte_entree || "rien de signalé")}</p>
+        <p class="note"><strong>À la sortie :</strong> ${
+          echapper(l.texte_sortie || "rien de signalé")}</p>
+        ${l.piece_absente_entree
+          ? `<p class="note attention">Cette pièce n'existait pas dans l'état des lieux d'entrée.</p>`
+          : ""}
+        <div class="segments">${CATEGORIES.map(c =>
+          `<button class="seg${l.categorie === c.cle ? " actif" : ""}"
+             data-cat="${i}:${c.cle}">${c.libelle}</button>`).join("")}</div>
+        ${l.suggestion && !l.categorie
+          ? `<p class="note">Suggestion : ${echapper(
+              (CATEGORIES.find(c => c.cle === l.suggestion) || {}).libelle || "")}
+             — à confirmer.</p>` : ""}
+        ${chiffre && (l.categorie === "aggrave" || l.categorie === "nouveau")
+          ? `<div class="ligne"><span>Montant retenu</span>
+             <input class="saisie-index" inputmode="decimal" data-montant="${i}"
+               value="${l.montant === null || l.montant === undefined ? "" : l.montant}"></div>`
+          : ""}
+      </div>`;
+    });
+    html += `</div>`;
+  });
+
+  if (chiffre) {
+    const t = totaliserComparaison(comp, V.chiffrage);
+    html += `<div class="bloc"><h2>Montants</h2>
+      <div class="ligne"><span>Dégâts retenus</span><span class="val">${
+        t.total_degats.toFixed(2).replace(".", ",")} €</span></div>
+      <div class="ligne"><span>Nettoyage</span>
+        <input class="saisie-index" inputmode="decimal" data-cout="nettoyage"
+          value="${(V.chiffrage || {}).cout_nettoyage ?? ""}"></div>
+      <div class="ligne"><span>Chômage locatif</span>
+        <input class="saisie-index" inputmode="decimal" data-cout="chomage"
+          value="${(V.chiffrage || {}).chomage_locatif ?? ""}"></div>
+      <div class="ligne"><span><strong>Total TVAC</strong></span>
+        <span class="val"><strong>${t.total_tvac.toFixed(2).replace(".", ",")} €</strong></span></div>
+      <p class="note">Seuls « aggravé » et « nouveau » sont comptés.</p>
+    </div>`;
+  }
+
+  html += `<button class="secondaire" id="btn-refaire">Refaire la comparaison</button>
+    <button class="secondaire" id="btn-retour">Retour aux pièces</button>`;
+  vue(html);
+
+  $("vue").querySelectorAll("[data-cat]").forEach(b => b.onclick = async () => {
+    const [i, cle] = b.getAttribute("data-cat").split(":");
+    const rang = parseInt(i, 10);
+    VISITE = await modifierVisite(VISITE.visit_id, v => {
+      const l = v.comparaison.lignes[rang];
+      l.categorie = (l.categorie === cle) ? null : cle;
+      if (l.categorie !== "aggrave" && l.categorie !== "nouveau") l.montant = null;
+    }) || VISITE;
+    programmerDepot();
+    dessinerComparaisonEDL();
+  });
+
+  $("vue").querySelectorAll("[data-montant]").forEach(inp => inp.onchange = async () => {
+    const rang = parseInt(inp.getAttribute("data-montant"), 10);
+    const val = inp.value.trim().replace(",", ".");
+    VISITE = await modifierVisite(VISITE.visit_id, v => {
+      v.comparaison.lignes[rang].montant = val === "" ? null : Number(val);
+    }) || VISITE;
+    await recalculerChiffrage();
+    programmerDepot();
+    dessinerComparaisonEDL();
+  });
+
+  $("vue").querySelectorAll("[data-cout]").forEach(inp => inp.onchange = async () => {
+    const quoi = inp.getAttribute("data-cout");
+    const val = inp.value.trim().replace(",", ".");
+    VISITE = await modifierVisite(VISITE.visit_id, v => {
+      v.chiffrage = v.chiffrage || {};
+      v.chiffrage[quoi === "nettoyage" ? "cout_nettoyage" : "chomage_locatif"] =
+        val === "" ? null : Number(val);
+    }) || VISITE;
+    await recalculerChiffrage();
+    programmerDepot();
+    dessinerComparaisonEDL();
+  });
+
+  $("btn-refaire").onclick = () => lancerComparaison();
+  $("btn-retour").onclick = async () => {
+    await deposerMaintenant(VISITE);
+    ecranVisiteReprise(VISITE);
+  };
+}
+
+async function recalculerChiffrage() {
+  const t = totaliserComparaison(VISITE.comparaison, VISITE.chiffrage);
+  VISITE = await modifierVisite(VISITE.visit_id, v => {
+    v.chiffrage = v.chiffrage || {};
+    v.chiffrage.total_degats = t.total_degats;
+    v.chiffrage.total_tvac = t.total_tvac;
+  }) || VISITE;
+}
+
 // --- Clôture : identité, lecture, signatures, PDF ------------------------
 
 async function ecranCloture(visite) {
@@ -1110,6 +1319,26 @@ async function signerEtDeposer(blocs) {
       nettoyerLibelle(V.bien.unite_source)}_${V.visit_id.split("_").pop()}.pdf`;
     const item = await deposerPdf(V, nom, donnees);
 
+    /* Le rapport de comparaison est un document distinct, non signé :
+       contester le classement ne doit pas fragiliser le constat. */
+    let comparaisonDeposee = null;
+    if (V.type === "EDLS" && V.comparaison && (V.comparaison.lignes || []).length) {
+      try {
+        b.textContent = "Dépôt du rapport de comparaison…";
+        const docComp = await genererRapportComparaison(V);
+        const donneesComp = docComp.output("arraybuffer");
+        const nomComp = `COMPARAISON_${V.date_signature.slice(0, 10)}_${
+          nettoyerLibelle(V.bien.unite_source)}_${V.visit_id.split("_").pop()}.pdf`;
+        const itemComp = await deposerPdf(V, nomComp, donneesComp);
+        comparaisonDeposee = {
+          nom: nomComp, id: itemComp ? itemComp.id : null,
+          empreinte: await empreinteSha256(donneesComp),
+        };
+      } catch (e) {
+        await journaliser("comparaison_depot_echoue", String(e && e.message));
+      }
+    }
+
     VISITE = await modifierVisite(VISITE.visit_id, v => {
       v.statut = "signee";
       v.date_signature = V.date_signature;
@@ -1117,6 +1346,11 @@ async function signerEtDeposer(blocs) {
       v.preuve.hash_pdf_pv_sha256 = empreinte;
       v.preuve.pv_onedrive_item_id = item ? item.id : null;
       v.preuve.pv_nom_fichier = nom;
+      if (comparaisonDeposee) {
+        v.preuve.hash_pdf_comparaison_sha256 = comparaisonDeposee.empreinte;
+        v.preuve.comparaison_onedrive_item_id = comparaisonDeposee.id;
+        v.preuve.comparaison_nom_fichier = comparaisonDeposee.nom;
+      }
       v.preuve.horodatage_local = V.date_signature;
       v.preuve.lu_et_approuve = true;
       v.preuve.courriel_destinataires =
@@ -1134,6 +1368,8 @@ async function signerEtDeposer(blocs) {
           new Date(V.date_signature).toLocaleString("fr-BE")}</span></div>
         <div class="ligne"><span>Signatures</span><span class="val">${blocs.length}</span></div>
       </div>
+      ${comparaisonDeposee ? `<div class="bloc"><h2>Rapport de comparaison</h2>
+        <p class="note">${echapper(comparaisonDeposee.nom)}</p></div>` : ""}
       <div class="avert"><strong>À faire maintenant</strong>
         Envoie le PDF au locataire depuis OneDrive, le jour même :
         sa réception fait partie de la preuve.</div>

@@ -1,0 +1,245 @@
+/* EDL — Comparaison entrée / sortie
+
+   Trois temps, dans cet ordre, et l'ordre compte :
+     1. la sortie est rédigée à l'aveugle, l'entrée reste fermée
+     2. la comparaison est demandée explicitement
+     3. le classement de chaque écart est un choix humain
+
+   Rédiger en ayant l'entrée sous les yeux conduit à recopier. Le constat
+   de sortie ressemblerait alors à une copie de l'entrée plutôt qu'à une
+   observation, ce qui l'affaiblit devant le juge de paix.
+*/
+
+var CATEGORIES = [
+  { cle: "deja_present", libelle: "déjà présent à l'entrée", chiffrable: false },
+  { cle: "aggrave",      libelle: "aggravé",                 chiffrable: true },
+  { cle: "nouveau",      libelle: "nouveau",                 chiffrable: true },
+];
+
+/* Va chercher l'état des lieux d'entrée dans le dossier EDLE voisin.
+   Trois issues : le fichier de données (comparaison ligne à ligne),
+   un ancien PDF seul (lecture à l'œil), ou rien. */
+async function chargerEtatDesLieuxEntree(visite) {
+  if (visite.type !== "EDLS") return { statut: "sans_objet" };
+  try {
+    const parent = await refParentEDLE(visite);
+    if (!parent) return { statut: "dossier_introuvable" };
+
+    const contenu = await enfantsDeRef(parent);
+    const fichiers = contenu.filter(e => e.file);
+
+    const donnees = fichiers
+      .filter(e => /^visite_.*\.json$/i.test(e.name || ""))
+      .sort((a, b) => String(b.lastModifiedDateTime || "")
+                        .localeCompare(String(a.lastModifiedDateTime || "")));
+
+    if (donnees.length) {
+      const edle = await telechargerJson(refDe(donnees[0], parent.driveId));
+      if (edle && edle.pieces) {
+        return { statut: "complet", edle, nom_fichier: donnees[0].name };
+      }
+    }
+
+    /* Pas de fichier de données : l'entrée est antérieure à l'application.
+       On propose l'ancien document à la lecture, sans rapprochement. */
+    const documents = fichiers
+      .filter(e => /\.(pdf|docx?)$/i.test(e.name || ""))
+      .sort((a, b) => String(b.lastModifiedDateTime || "")
+                        .localeCompare(String(a.lastModifiedDateTime || "")));
+    if (documents.length) {
+      return {
+        statut: "ancien_document",
+        documents: documents.map(e => ({
+          nom: e.name,
+          url: e.webUrl || null,
+          modifie_le: e.lastModifiedDateTime || null,
+        })),
+        photos: fichiers.filter(e => /\.jpe?g$/i.test(e.name || "")).length,
+      };
+    }
+
+    return { statut: "vide", photos: 0 };
+  } catch (e) {
+    await journaliser("edle_lecture_echouee", String(e && e.message));
+    return { statut: "erreur", message: e.message };
+  }
+}
+
+/* Rapproche les constatations d'entrée et de sortie, pièce par pièce.
+   L'application ne juge rien : elle met en regard et laisse trancher. */
+function construireLignesComparaison(visite, edle) {
+  const lignes = [];
+
+  const parLibelle = {};
+  (edle.pieces || []).forEach(p => {
+    parLibelle[normaliserLibelle(p.libelle)] = p;
+  });
+
+  visite.pieces.forEach(piece => {
+    const entree = parLibelle[normaliserLibelle(piece.libelle)];
+    const constatsEntree = entree ? (entree.constatations || []) : [];
+    const constatsSortie = piece.constatations || [];
+    const maximum = Math.max(constatsEntree.length, constatsSortie.length);
+
+    if (maximum === 0) return;
+
+    for (let i = 0; i < maximum; i++) {
+      const e = constatsEntree[i] || null;
+      const s = constatsSortie[i] || null;
+      lignes.push({
+        piece_id: piece.piece_id,
+        piece: piece.libelle,
+        rang: i,
+        texte_entree: e ? (e.texte || resumeQualites(e)) : null,
+        etat_entree: e ? e.etat : null,
+        proprete_entree: e ? e.proprete : null,
+        texte_sortie: s ? (s.texte || resumeQualites(s)) : null,
+        etat_sortie: s ? s.etat : null,
+        proprete_sortie: s ? s.proprete : null,
+        categorie: null,          // à trancher par l'utilisateur
+        montant: null,
+        piece_absente_entree: !entree,
+      });
+    }
+  });
+
+  return lignes;
+}
+
+function normaliserLibelle(s) {
+  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function resumeQualites(c) {
+  const t = [];
+  if (c.etat) t.push(({ neuf: "état neuf", bon_etat: "bon état",
+                        usage: "usagé", degrade: "dégradé" })[c.etat] || c.etat);
+  if (c.proprete) t.push(({ propre: "propre", a_nettoyer: "à nettoyer",
+                            sale: "sale" })[c.proprete] || c.proprete);
+  return t.join(", ") || "—";
+}
+
+/* Suggestion, jamais une décision : elle sert seulement à ordonner le
+   travail. Une ligne suggérée reste à confirmer. */
+function suggererCategorie(ligne) {
+  if (!ligne.texte_entree) return "nouveau";
+  if (!ligne.texte_sortie) return "deja_present";
+  const rang = { neuf: 0, bon_etat: 1, usage: 2, degrade: 3 };
+  const a = rang[ligne.etat_entree], b = rang[ligne.etat_sortie];
+  if (a !== undefined && b !== undefined && b > a) return "aggrave";
+  if (normaliserLibelle(ligne.texte_entree) === normaliserLibelle(ligne.texte_sortie))
+    return "deja_present";
+  return null;
+}
+
+/* Le total ne retient que « aggravé » et « nouveau ».
+   Ce qui était déjà là à l'entrée n'est pas imputable au locataire. */
+function totaliserComparaison(comparaison, chiffrage) {
+  const lignes = (comparaison && comparaison.lignes) || [];
+  const retenues = lignes.filter(l =>
+    (l.categorie === "aggrave" || l.categorie === "nouveau") &&
+    l.montant !== null && l.montant !== undefined);
+  const degats = retenues.reduce((s, l) => s + Number(l.montant), 0);
+
+  const c = chiffrage || {};
+  const nettoyage = Number(c.cout_nettoyage || 0);
+  const chomage = Number(c.chomage_locatif || 0);
+
+  return {
+    total_degats: Math.round(degats * 100) / 100,
+    cout_nettoyage: nettoyage || null,
+    chomage_locatif: chomage || null,
+    total_tvac: Math.round((degats + nettoyage + chomage) * 100) / 100,
+    lignes_retenues: retenues.length,
+    lignes_non_classees: lignes.filter(l => !l.categorie).length,
+  };
+}
+
+function compterParCategorie(comparaison) {
+  const n = { deja_present: 0, aggrave: 0, nouveau: 0, non_classe: 0 };
+  ((comparaison && comparaison.lignes) || []).forEach(l => {
+    if (l.categorie && n[l.categorie] !== undefined) n[l.categorie]++;
+    else n.non_classe++;
+  });
+  return n;
+}
+
+/* Rapport de comparaison — document distinct du procès-verbal, non signé.
+   Contester le classement ne doit pas fragiliser le constat lui-même. */
+async function genererRapportComparaison(visite) {
+  const doc = nouveauDocument();
+  const p = creerPlume(doc);
+  const V = visite;
+  const comp = V.comparaison || {};
+  const lignes = comp.lignes || [];
+
+  p.titre("RAPPORT DE COMPARAISON ENTRÉE / SORTIE");
+  p.paragraphe(V.bien.adresse_complete || V.bien.unite_source, { gras: true, taille: 11 });
+  p.paragraphe(V.bien.immeuble + " — " + V.bien.unite_source);
+  p.saut(4);
+
+  p.paragraphe("Ce rapport est annexé au procès-verbal d'état des lieux de sortie. " +
+    "Il n'est pas signé : il expose le rapprochement entre les constatations d'entrée " +
+    "et celles de sortie, et le classement retenu par le bailleur.");
+  p.saut(4);
+
+  p.ligne("État des lieux d'entrée", comp.edle_date
+    ? new Date(comp.edle_date).toLocaleDateString("fr-BE") : "—");
+  p.ligne("État des lieux de sortie", dateFr(V.date_debut));
+  p.ligne("Écarts examinés", lignes.length);
+  p.saut(6);
+
+  CATEGORIES.forEach(cat => {
+    const groupe = lignes.filter(l => l.categorie === cat.cle);
+    if (!groupe.length) return;
+    p.titre(cat.libelle.toUpperCase() + "  —  " + groupe.length);
+    groupe.forEach(l => {
+      p.sousTitre(l.piece);
+      p.paragraphe("À l'entrée : " + (l.texte_entree || "rien de signalé"), { retrait: 2 });
+      p.paragraphe("À la sortie : " + (l.texte_sortie || "rien de signalé"), { retrait: 2 });
+      if (cat.chiffrable && l.montant !== null && l.montant !== undefined)
+        p.paragraphe("Montant retenu : " + euro(l.montant), { retrait: 2, gras: true });
+      p.saut(3);
+    });
+    p.saut(3);
+  });
+
+  const nonClassees = lignes.filter(l => !l.categorie);
+  if (nonClassees.length) {
+    p.titre("NON CLASSÉ  —  " + nonClassees.length);
+    p.paragraphe("Ces écarts n'ont pas été classés et ne sont retenus dans aucun montant.");
+    nonClassees.forEach(l => {
+      p.sousTitre(l.piece);
+      p.paragraphe("À l'entrée : " + (l.texte_entree || "rien de signalé"), { retrait: 2 });
+      p.paragraphe("À la sortie : " + (l.texte_sortie || "rien de signalé"), { retrait: 2 });
+      p.saut(3);
+    });
+  }
+
+  if (V.options && V.options.chiffrage_actif) {
+    const t = totaliserComparaison(comp, V.chiffrage);
+    p.titre("MONTANTS");
+    p.paragraphe("Seuls les écarts classés « aggravé » ou « nouveau » sont retenus. " +
+      "Ce qui était déjà présent à l'entrée n'est pas imputable au preneur.");
+    p.saut(3);
+    p.ligne("Dégâts retenus (" + t.lignes_retenues + " ligne(s))", euro(t.total_degats));
+    if (t.cout_nettoyage) p.ligne("Nettoyage", euro(t.cout_nettoyage));
+    if (t.chomage_locatif) p.ligne("Chômage locatif", euro(t.chomage_locatif));
+    p.filet();
+    doc.setFont("helvetica", "bold");
+    p.ligne("TOTAL TVAC", euro(t.total_tvac));
+    doc.setFont("helvetica", "normal");
+  }
+
+  const total = doc.getNumberOfPages();
+  for (let i = 1; i <= total; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8); doc.setTextColor(140);
+    doc.text("Comparaison — " + V.bien.unite_source + " — " + V.visit_id,
+             PDF_MARGE, PDF_HAUTEUR - 10);
+    doc.text(i + " / " + total, PDF_LARGEUR - PDF_MARGE, PDF_HAUTEUR - 10, { align: "right" });
+    doc.setTextColor(0);
+  }
+  return doc;
+}
