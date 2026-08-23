@@ -51,6 +51,11 @@ var AIDE = [
       "L'application prépare une fiche par pièce.",
       "Ces réglages sont mémorisés : à la prochaine visite de la même unité, ils " +
       "reviennent tout seuls.",
+      "Tu peux les corriger en cours de visite : bouton « Modifier la composition » " +
+      "sur l'écran des pièces. Ajoute une cave oubliée, une chambre de plus, ou change " +
+      "un réglage de compteur.",
+      "Une pièce qui contient déjà des photos ou des constats ne peut pas être retirée : " +
+      "l'application refuse et te dit ce qu'elle contient.",
     ],
   },
   {

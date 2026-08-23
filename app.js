@@ -626,6 +626,7 @@ async function ecranVisiteReprise(visite) {
           <span class="droite">${n} photo${n > 1 ? "s" : ""}${c ? " · " + c + " constat" + (c > 1 ? "s" : "") : ""}</span></button>`;
       }).join("")}
     </div>
+    <button class="secondaire" id="btn-composition">Modifier la composition</button>
     <button class="secondaire" id="btn-releves">Compteurs, clés et état général</button>
     ${visite.type === "EDLS"
       ? `<button class="secondaire" id="btn-comparer-edl">Comparer avec l'entrée</button>` : ""}
@@ -634,6 +635,7 @@ async function ecranVisiteReprise(visite) {
 
   $("vue").querySelectorAll("[data-piece]").forEach(b =>
     b.onclick = () => ecranPiece(b.getAttribute("data-piece")));
+  $("btn-composition").onclick = () => ecranModifierComposition();
   $("btn-releves").onclick = () => ecranReleves();
   if ($("btn-comparer-edl")) $("btn-comparer-edl").onclick = () => ecranComparaisonEDL();
   $("btn-cloturer").onclick = () => ecranCloture(VISITE);
@@ -642,6 +644,158 @@ async function ecranVisiteReprise(visite) {
     ecranAccueil();
   };
   majCompteurAttente();
+}
+
+// --- Modifier la composition d'une visite en cours -----------------------
+
+/* La composition se découvre sur place : une cave, une chambre de plus.
+   Elle doit rester modifiable tant que la visite n'est pas signée. */
+function ecranModifierComposition(message) {
+  E.ecran = "modif_composition";
+  const V = VISITE;
+  const c = JSON.parse(JSON.stringify(V.options.composition || {}));
+  const r = JSON.parse(JSON.stringify(V.options.reglages_unite || {}));
+  E.compoTravail = E.compoTravail || c;
+  E.reglagesTravail = E.reglagesTravail || r;
+  dessinerModifComposition(message);
+}
+
+function dessinerModifComposition(message) {
+  const V = VISITE;
+  const c = E.compoTravail, r = E.reglagesTravail;
+  const futures = construirePieces(c);
+  const actuelles = V.pieces;
+
+  /* Une pièce qui contient déjà quelque chose ne peut pas disparaître :
+     on perdrait des constats ou des photos déjà déposées. */
+  const occupee = (p) => p.constatations.length > 0 ||
+    V.photos.some(x => x.rattachement === p.piece_id);
+  const libelles = futures.map(x => x.libelle);
+  const perdues = actuelles.filter(p => !libelles.includes(p.libelle) && occupee(p));
+  const supprimees = actuelles.filter(p => !libelles.includes(p.libelle) && !occupee(p));
+  const ajoutees = futures.filter(x => !actuelles.some(p => p.libelle === x.libelle));
+
+  titre("Modifier la composition", V.bien.unite_source);
+
+  const inter = (cle, libelle, valeur, cible) =>
+    `<div class="interrupteur"><span>${libelle}</span>
+     <button class="choix" style="width:auto;margin:0;padding:7px 16px"
+       data-bascule="${cible}:${cle}">${valeur ? "oui" : "non"}</button></div>`;
+  const nombre = (cle, libelle, valeur) =>
+    `<div class="interrupteur"><span>${libelle}</span><span class="compteur">
+      <button class="choix" style="width:auto;margin:0;padding:7px 14px" data-moins="${cle}">−</button>
+      <input readonly value="${valeur}">
+      <button class="choix" style="width:auto;margin:0;padding:7px 14px" data-plus="${cle}">+</button>
+     </span></div>`;
+
+  let html = `${message ? `<div class="succes">${echapper(message)}</div>` : ""}
+    <div class="bloc"><h2>Pièces</h2>
+      ${inter("sejour", "Séjour", c.sejour, "c")}
+      ${inter("cuisine", "Cuisine", c.cuisine, "c")}
+      ${nombre("nb_chambres", "Chambres", c.nb_chambres)}
+      ${nombre("nb_salles_de_bain", "Salles de bain", c.nb_salles_de_bain)}
+      ${inter("hall", "Hall", c.hall, "c")}
+      ${inter("cave", "Cave", c.cave, "c")}
+      ${inter("terrasse", "Terrasse / jardin", c.terrasse, "c")}
+      ${inter("grenier", "Grenier", c.grenier, "c")}
+      ${inter("buanderie", "Buanderie", c.buanderie, "c")}
+      ${inter("garage", "Garage", c.garage, "c")}
+    </div>
+    <div class="bloc"><h2>Compteurs</h2>
+      ${inter("electricite_bi_horaire", "Électricité bi-horaire", r.electricite_bi_horaire, "r")}
+      ${inter("ista_present", "ISTA — à suivre avec décompte charges", r.ista_present, "r")}
+    </div>`;
+
+  if (V.type === "EDLS") {
+    html += `<div class="bloc"><h2>Chiffrage</h2>
+      ${inter("chiffrage_actif", "Chiffrage des dégâts", V.options.chiffrage_actif, "o")}
+    </div>`;
+  }
+
+  html += `<div class="bloc"><h2>Ce qui va changer</h2>
+    ${ajoutees.length
+      ? `<p class="note">À ajouter : ${ajoutees.map(x => echapper(x.libelle)).join(", ")}</p>`
+      : ""}
+    ${supprimees.length
+      ? `<p class="note">À retirer, encore vides : ${
+          supprimees.map(x => echapper(x.libelle)).join(", ")}</p>` : ""}
+    ${!ajoutees.length && !supprimees.length && !perdues.length
+      ? `<p class="note">Aucun changement.</p>` : ""}
+  </div>`;
+
+  if (perdues.length) {
+    html += `<div class="erreur"><strong>Impossible de retirer ${
+      perdues.length > 1 ? "ces pièces" : "cette pièce"}</strong>
+      ${perdues.map(p => echapper(p.libelle) + " — " + p.constatations.length +
+        " constat(s), " + V.photos.filter(x => x.rattachement === p.piece_id).length +
+        " photo(s)").join("<br>")}<br><br>
+      Retire d'abord leur contenu, ou laisse-les en place.</div>
+      <button disabled>Appliquer</button>`;
+  } else {
+    html += `<button id="btn-appliquer">Appliquer</button>`;
+  }
+  html += `<button class="secondaire" id="btn-retour">Annuler</button>`;
+  vue(html);
+
+  $("vue").querySelectorAll("[data-bascule]").forEach(b => b.onclick = () => {
+    const [cible, cle] = b.getAttribute("data-bascule").split(":");
+    if (cible === "c") c[cle] = !c[cle];
+    else if (cible === "r") r[cle] = !r[cle];
+    else E.chiffrageTravail = !(E.chiffrageTravail === undefined
+      ? V.options.chiffrage_actif : E.chiffrageTravail);
+    if (cible === "o") V.options.chiffrage_actif = E.chiffrageTravail;
+    dessinerModifComposition();
+  });
+  $("vue").querySelectorAll("[data-plus]").forEach(b => b.onclick = () => {
+    const k = b.getAttribute("data-plus"); c[k] = Math.min(9, c[k] + 1);
+    dessinerModifComposition();
+  });
+  $("vue").querySelectorAll("[data-moins]").forEach(b => b.onclick = () => {
+    const k = b.getAttribute("data-moins"); c[k] = Math.max(0, c[k] - 1);
+    dessinerModifComposition();
+  });
+
+  if ($("btn-appliquer")) $("btn-appliquer").onclick = async () => {
+    try {
+      VISITE = await modifierVisite(VISITE.visit_id, v => {
+        const attendues = construirePieces(E.compoTravail);
+        const parLibelle = {};
+        v.pieces.forEach(p => { parLibelle[p.libelle] = p; });
+
+        /* Les pièces conservées gardent leur identifiant : les photos
+           déjà prises restent rattachées. */
+        let maxNum = 0;
+        v.pieces.forEach(p => {
+          const n = parseInt(String(p.piece_id).replace(/\D/g, ""), 10) || 0;
+          if (n > maxNum) maxNum = n;
+        });
+        v.pieces = attendues.map(x => {
+          if (parLibelle[x.libelle]) return parLibelle[x.libelle];
+          return { piece_id: "p" + (++maxNum), libelle: x.libelle, constatations: [] };
+        });
+        v.options.composition = E.compoTravail;
+        v.options.reglages_unite = E.reglagesTravail;
+        if (v.type === "EDLS" && E.chiffrageTravail !== undefined)
+          v.options.chiffrage_actif = E.chiffrageTravail;
+        if (v.options.reglages_unite.electricite_bi_horaire !==
+            v.compteurs.electricite.bi_horaire) {
+          v.compteurs.electricite.bi_horaire = v.options.reglages_unite.electricite_bi_horaire;
+        }
+      }) || VISITE;
+      memoriserReglages(VISITE.bien.immeuble_id, VISITE.bien.unite_source,
+        E.compoTravail, E.reglagesTravail);
+    } catch (e) {
+      return dessinerModifComposition("Modification impossible : " + e.message);
+    }
+    E.compoTravail = null; E.reglagesTravail = null; E.chiffrageTravail = undefined;
+    programmerDepot();
+    ecranVisiteReprise(VISITE);
+  };
+
+  $("btn-retour").onclick = () => {
+    E.compoTravail = null; E.reglagesTravail = null; E.chiffrageTravail = undefined;
+    ecranVisiteReprise(VISITE);
+  };
 }
 
 // --- Relevés : compteurs, clés, équipements, état général ----------------
