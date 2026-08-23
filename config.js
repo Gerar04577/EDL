@@ -78,7 +78,7 @@ var CONFIG = {
     // Retrait de gemini-2.5-flash-lite annoncé pour le 16 octobre 2026
     modele: "gemini-2.5-flash-lite",
     // Webhook Make servant de relais. Vide = bouton "Décrire" désactivé.
-    webhook_ia: "",
+    webhook_ia: "https://hook.eu1.make.com/5p8rcj4n88cai47jncv8oqjum7bznkxe",
   },
 
   // --- Fin de visite -----------------------------------------------------
