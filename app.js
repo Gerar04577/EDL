@@ -1041,6 +1041,7 @@ function ecranFinVisite(visite, message) {
      à l'envoi du procès-verbal signé. */
   if (E.finRapport === undefined) E.finRapport = false;
   if (E.finCourriel === undefined) E.finCourriel = destinataires.length > 0;
+  if (E.finLien === undefined) E.finLien = true;
 
   titre("Rapport et courriel", V.bien.unite_source);
 
@@ -1055,9 +1056,13 @@ function ecranFinVisite(visite, message) {
     <div class="bloc"><h2>Ce qui sera fait</h2>
       ${inter("courriel", "Courriel au locataire, procès-verbal signé joint",
               E.finCourriel, destinataires.length === 0)}
+      ${inter("lien", "Lien vers les photographies, en lecture seule", E.finLien)}
       ${inter("rapport", "Rapport Word (nécessite un modèle dans Make)", E.finRapport)}
       <p class="note">L'envoi du procès-verbal le jour même établit que le
       locataire en a reçu copie : cela fait partie de la preuve.</p>
+      <p class="note">Le lien ne donne accès qu'au dossier de cette visite —
+      ${V.type === "EDLS" ? "EDLS" : "EDLE"} — et à rien d'autre. Ni le bail,
+      ni les autres locataires, ni le reste de OneDrive.</p>
       <p class="note">Le document signé est déjà déposé dans OneDrive.
       Un échec d'envoi ne remet rien en cause.</p>
     </div>
@@ -1081,12 +1086,16 @@ function ecranFinVisite(visite, message) {
 
   $("vue").querySelectorAll("[data-fin-oui]").forEach(b => b.onclick = () => {
     const k = b.getAttribute("data-fin-oui");
-    if (k === "rapport") E.finRapport = true; else E.finCourriel = true;
+    if (k === "rapport") E.finRapport = true;
+    else if (k === "lien") E.finLien = true;
+    else E.finCourriel = true;
     ecranFinVisite(visite);
   });
   $("vue").querySelectorAll("[data-fin-non]").forEach(b => b.onclick = () => {
     const k = b.getAttribute("data-fin-non");
-    if (k === "rapport") E.finRapport = false; else E.finCourriel = false;
+    if (k === "rapport") E.finRapport = false;
+    else if (k === "lien") E.finLien = false;
+    else E.finCourriel = false;
     ecranFinVisite(visite);
   });
 
@@ -1104,7 +1113,8 @@ function ecranFinVisite(visite, message) {
     b.disabled = true; b.textContent = "Envoi en cours…";
     try {
       const reponse = await envoyerFinVisite(V,
-        { rapport: E.finRapport, courriel: E.finCourriel, message: E.finMessage });
+        { rapport: E.finRapport, courriel: E.finCourriel,
+          lien: E.finLien, message: E.finMessage });
       VISITE = await modifierVisite(V.visit_id, v => {
         v.preuve = v.preuve || {};
         v.preuve.execution_make_id = String(reponse).slice(0, 120);

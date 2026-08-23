@@ -135,6 +135,11 @@ var AIDE = [
       "Word » sur non, et « Courriel » sur oui.",
       "L'envoi le jour même établit que le locataire a reçu copie : cela fait partie " +
       "de la preuve.",
+      "Le courriel contient aussi un lien vers les photographies, en lecture seule. " +
+      "Ce lien ne donne accès qu'au dossier de la visite — EDLE ou EDLS — et à rien " +
+      "d'autre : ni le bail, ni les autres locataires, ni le reste de OneDrive.",
+      "Tu peux le désactiver au cas par cas, avec l'interrupteur « Lien vers les " +
+      "photographies ».",
     ],
     attention: "Après signature, le document ne peut plus être modifié. Une correction " +
       "exige de créer une nouvelle version — voir la section suivante.",

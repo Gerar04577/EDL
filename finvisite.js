@@ -36,7 +36,7 @@ function finVisiteDisponible() {
 /* Résumé transmis à Make. Volontairement plat : les modules de Make
    manipulent mal les structures imbriquées, et un champ par ligne se
    mappe sans effort dans le modèle Word. */
-function resumePourMake(visite) {
+function resumePourMake(visite, lien) {
   const V = visite;
   const sortie = V.type === "EDLS";
   const c = V.compteurs || {};
@@ -115,7 +115,8 @@ function resumePourMake(visite) {
     objet_courriel: "Transmission de votre état des lieux signé — " +
       (V.bien.adresse_complete || V.bien.unite_source || "") + " — " +
       (V.edl_id || V.visit_id) + " " + (V.version_doc || "V1"),
-    corps_courriel: corpsCourriel(V),
+    corps_courriel: corpsCourriel(V, lien || null),
+    lien_photos: lien || "",
     nb_reserves: String(((V.reserves || []).length)),
     reserves: (V.reserves || []).map((r, i) =>
       (i + 1) + ". " + (r.auteur || "Le preneur") +
@@ -139,6 +140,36 @@ function nomBailleurComplet(V) {
     : p.bailleur;
 }
 
+/* Lien de consultation vers le dossier de la visite — EDLE ou EDLS,
+   jamais le dossier du locataire, qui contiendrait son bail.
+   Lecture seule. Créé par l'application, qui est déjà connectée à
+   OneDrive : aucun module Make supplémentaire. */
+async function lienDossierVisite(visite) {
+  const d = visite.bien || {};
+  if (!d.dossier_cible_item_id) return null;
+  const chemin = d.dossier_cible_drive_id
+    ? `/drives/${d.dossier_cible_drive_id}/items/${d.dossier_cible_item_id}/createLink`
+    : `/me/drive/items/${d.dossier_cible_item_id}/createLink`;
+  try {
+    const res = await appelGraph(chemin, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "view", scope: "anonymous" }),
+    });
+    if (!res.ok) {
+      await journaliser("lien_partage_echoue", await detailErreur(res));
+      return null;
+    }
+    const o = await res.json();
+    const url = o && o.link && o.link.webUrl;
+    await journaliser("lien_partage_cree", { visit_id: visite.visit_id, ok: !!url });
+    return url || null;
+  } catch (e) {
+    await journaliser("lien_partage_echoue", String(e && e.message));
+    return null;
+  }
+}
+
 function horodatageComplet(iso) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -157,8 +188,9 @@ function horodatageComplet(iso) {
    Deux précautions de vocabulaire : on parle de TRANSMISSION d'un
    exemplaire, jamais de délivrance ; et l'envoi n'est jamais présenté
    comme la preuve d'une lecture par le destinataire. */
-function corpsCourriel(V) {
+function corpsCourriel(V, lien) {
   const reserves = V.reserves || [];
+  const nbPhotos = (V.photos || []).length;
   return [
     "Madame, Monsieur,",
     "",
@@ -171,6 +203,17 @@ function corpsCourriel(V) {
       "finalisé et signé, comprenant les descriptions, relevés, observations et " +
       "photographies faisant partie du rapport présenté lors de sa validation.",
     "",
+    lien
+      ? "Les " + nbPhotos + " photographie(s) faisant partie du rapport sont " +
+        "consultables à l'adresse suivante, en lecture seule :"
+      : "",
+    lien || "",
+    lien
+      ? "Chaque photographie est identifiée dans le rapport par son nom et son " +
+        "empreinte, ce qui permet de vérifier à tout moment qu'elle correspond " +
+        "bien à celle qui vous a été présentée."
+      : "",
+    lien ? "" : null,
     "Référence : " + (V.edl_id || V.visit_id),
     "Version : " + (V.version_doc || "V1"),
     "Date et heure de validation : " + horodatageComplet(V.date_signature),
@@ -189,7 +232,7 @@ function corpsCourriel(V) {
     "",
     "Bien cordialement,",
     nomBailleurComplet(V),
-  ].join("\n");
+  ].filter(x => x !== null).join("\n");
 }
 
 /* Envoi. Comme pour l'IA : champs de formulaire, aucun en-tête
@@ -200,8 +243,14 @@ async function envoyerFinVisite(visite, options) {
   if (!cible) throw new Error(
     "Aucune adresse enregistrée. Accueil → « Rapport et courriel ».");
 
-  const champs = resumePourMake(visite);
   const o = options || {};
+  /* Le lien est créé au moment de l'envoi, pas à la signature : il ne
+     figure donc pas dans le document signé, qui doit rester intemporel. */
+  let lien = null;
+  if (o.courriel !== false && o.lien !== false) {
+    lien = await lienDossierVisite(visite);
+  }
+  const champs = resumePourMake(visite, lien);
   champs.faire_rapport = o.rapport === false ? "non" : "oui";
   champs.faire_courriel = o.courriel === false ? "non" : "oui";
   champs.message = o.message || "";
