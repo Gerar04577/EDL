@@ -17,15 +17,35 @@
 */
 
 var IA_DELAI_MS = 45000;
+var CLE_WEBHOOK_IA = "edl_webhook_ia";
+
+/* L'adresse est conservée SUR L'APPAREIL. Le fichier de configuration
+   ne sert que de valeur de repli : sans cela, il fallait redéposer un
+   fichier sur GitHub à chaque changement de relais. */
+function adresseRelais() {
+  let locale = null;
+  try { locale = localStorage.getItem(CLE_WEBHOOK_IA); } catch (_) {}
+  const source = (locale && locale.trim())
+    ? locale
+    : ((CONFIG.ia && CONFIG.ia.webhook_ia) || "");
+  return String(source).trim();
+}
+
+function enregistrerAdresseRelais(url) {
+  try { localStorage.setItem(CLE_WEBHOOK_IA, String(url || "").trim()); return true; }
+  catch (_) { return false; }
+}
 
 function iaDisponible() {
-  return !!(CONFIG.ia && CONFIG.ia.webhook_ia && CONFIG.ia.webhook_ia.trim());
+  return adresseRelais().length > 0;
 }
 
 /* Envoi en champs de formulaire : aucun en-tête personnalisé, aucun
    contenu JSON, donc aucune requête préalable. */
 async function appelerRelaisIA(champs) {
-  if (!iaDisponible()) throw new Error("Aucun relais configuré");
+  const cible = adresseRelais();
+  if (!cible) throw new Error(
+    "Aucune adresse de relais enregistrée. Accueil → « Description par IA ».");
 
   const corps = new URLSearchParams();
   Object.keys(champs).forEach(k => corps.append(k, String(champs[k] == null ? "" : champs[k])));
@@ -35,7 +55,7 @@ async function appelerRelaisIA(champs) {
 
   let res;
   try {
-    res = await fetch(CONFIG.ia.webhook_ia, {
+    res = await fetch(cible, {
       method: "POST",
       body: corps,                  // le navigateur pose lui-même le bon type
       signal: controleur.signal,

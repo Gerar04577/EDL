@@ -819,10 +819,10 @@ function ecranIA(message) {
       <p class="note">Scénario <strong>EDL-IA-PHOTO</strong>. La clé Gemini reste
       chez Make, jamais dans l'application.</p>
       <textarea id="url-ia" rows="2"
-        placeholder="https://hook.eu2.make.com/…">${
-        echapper((CONFIG.ia && CONFIG.ia.webhook_ia) || "")}</textarea>
-      <p class="note">Cette adresse doit aussi être collée dans <code>config.js</code>
-      pour être conservée après une mise à jour.</p>
+        placeholder="https://hook.eu1.make.com/…">${echapper(adresseRelais())}</textarea>
+      <button class="mini" id="btn-garder">Enregistrer cette adresse</button>
+      <p class="note">Elle est conservée sur cet appareil. Le fichier
+      <code>config.js</code> ne sert que de valeur de repli.</p>
     </div>
 
     <div class="bloc"><h2>1. Apprendre la structure à Make</h2>
@@ -843,6 +843,18 @@ function ecranIA(message) {
 
     <div id="resultat-ia"></div>
     <button class="secondaire" id="btn-retour">Retour à l'accueil</button>`);
+
+  $("btn-garder").onclick = () => {
+    const url = $("url-ia").value.trim();
+    if (!url) return afficherIA(`<div class="erreur">Le champ est vide.</div>`);
+    const ok = enregistrerAdresseRelais(url);
+    afficherIA(ok
+      ? `<div class="succes">Adresse enregistrée sur cet appareil</div>
+         <div class="bloc"><p class="note">Le bouton « décrire » est maintenant actif
+         sous chaque photo déjà enregistrée dans OneDrive.</p></div>`
+      : `<div class="erreur">Enregistrement refusé par le navigateur.</div>`);
+    titre("Description par IA", iaDisponible() ? "Relais configuré" : "Relais non configuré");
+  };
 
   $("btn-echantillon").onclick = async () => {
     const url = $("url-ia").value.trim();
@@ -866,8 +878,7 @@ function ecranIA(message) {
     const url = $("url-ia").value.trim();
     if (!url) return afficherIA(`<div class="erreur">Colle d'abord l'adresse du webhook.</div>`);
     const b = $("btn-essai"); b.disabled = true; b.textContent = "Appel en cours…";
-    const ancienne = CONFIG.ia.webhook_ia;
-    CONFIG.ia.webhook_ia = url;
+    enregistrerAdresseRelais(url);
     try {
       const texte = await appelerRelaisIA({
         action: "decrire", item_id: "ECHANTILLON", drive_id: "",
@@ -879,7 +890,6 @@ function ecranIA(message) {
         <div class="bloc"><h2>Texte reçu</h2>
           <p class="note">${echapper(nettoyerReponseIA(texte) || texte || "(vide)")}</p></div>`);
     } catch (e) {
-      CONFIG.ia.webhook_ia = ancienne;
       afficherIA(`<div class="erreur"><strong>Échec</strong>${echapper(e.message)}</div>
         <div class="bloc"><h2>Points à vérifier dans Make</h2>
           <p class="note">— le scénario est-il activé ?<br>
@@ -1566,10 +1576,10 @@ function dessinerPiece(message) {
             p.statut_transfert === "confirme" ? "enregistrée" : "en attente"}</span></div>
           ${p.description ? `<p class="note">${echapper(p.description)}</p>` : ""}
           <p class="note">
-            ${iaDisponible() ? (p.statut_transfert === "confirme"
+            ${p.statut_transfert === "confirme"
               ? `<button class="lien" style="color:#1f4e5f" data-decrire="${
                   echapper(p.photo_id)}">${p.description ? "redécrire" : "décrire"}</button>`
-              : `<span class="gris">en attente d'envoi</span>`) : ""}
+              : `<span class="gris">en attente d'envoi</span>`}
             <button class="lien" data-suppr-photo="${
               echapper(p.photo_id)}">retirer de l'état des lieux</button></p></div>`).join("")
         : `<p class="note">Aucune photo.</p>`}
@@ -1664,6 +1674,10 @@ function dessinerPiece(message) {
   $("vue").querySelectorAll("[data-decrire]").forEach(b => b.onclick = async () => {
     const id = b.getAttribute("data-decrire");
     const photo = VISITE.photos.find(x => x.photo_id === id);
+    if (!iaDisponible()) {
+      return dessinerPiece("Aucun relais IA enregistré — va dans " +
+        "Accueil → Description par IA pour coller l'adresse Make.");
+    }
     b.disabled = true; b.textContent = "lecture…";
     let texte;
     try {
@@ -1707,7 +1721,7 @@ function dessinerPiece(message) {
       avert(`<div class="erreur"><strong>Photo non enregistrée</strong>${echapper(e.message)}</div>`);
     }
     VISITE = (await lireVisite(VISITE.visit_id)) || VISITE;
-    dessinerPiece("Photo enregistrée");
+    dessinerPiece();
   };
 
   $("btn-retour").onclick = async () => {
@@ -1715,7 +1729,21 @@ function dessinerPiece(message) {
     await deposerMaintenant(VISITE);
     ecranVisiteReprise(VISITE);
   };
-  majCompteurAttente(photos.length);
+
+  /* La barre est calculée sur la visite RELUE, pas sur la copie en mémoire :
+     elle affichait sinon l'état d'avant la dernière photo. Et elle est
+     rafraîchie quelques secondes plus tard, le temps que l'envoi aboutisse. */
+  majCompteurAttente(VISITE.photos.length);
+  [1200, 3000, 6000].forEach(delai => setTimeout(async () => {
+    if (E.ecran !== "piece") return;
+    const frais = await lireVisite(VISITE.visit_id);
+    if (!frais) return;
+    const change = JSON.stringify(frais.photos.map(p => p.statut_transfert)) !==
+                   JSON.stringify(VISITE.photos.map(p => p.statut_transfert));
+    VISITE = frais;
+    if (change) dessinerPiece();
+    else majCompteurAttente(VISITE.photos.length);
+  }, delai));
 }
 
 /* Le fichier de visite n'est plus déposé à chaque frappe : on attend

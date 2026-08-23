@@ -4,7 +4,7 @@
 
 var CONFIG = {
 
-  version_app: "0.9.2",
+  version_app: "0.9.3",
 
   /* Protocole de signature imprimé en page 1 du procès-verbal.
      Laisser vide tant que l'avocat n'a pas rendu son texte :
@@ -75,10 +75,10 @@ var CONFIG = {
 
   // --- Intelligence artificielle ----------------------------------------
   ia: {
-    // Retrait de gemini-2.5-flash-lite annoncé pour le 16 octobre 2026
-    modele: "gemini-2.5-flash-lite",
+    // gemini-2.5-flash-lite fermé aux nouveaux comptes (constaté le 23/08/2026)
+    modele: "gemini-3.5-flash-lite",
     // Webhook Make servant de relais. Vide = bouton "Décrire" désactivé.
-    webhook_ia: "https://hook.eu1.make.com/5p8rcj4n88cai47jncv8oqjum7bznkxe",
+    webhook_ia: "",
   },
 
   // --- Fin de visite -----------------------------------------------------
