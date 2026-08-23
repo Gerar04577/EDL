@@ -4,7 +4,12 @@
 
 var CONFIG = {
 
-  version_app: "0.7.1",
+  version_app: "0.8.0",
+
+  /* Protocole de signature imprimé en page 1 du procès-verbal.
+     Laisser vide tant que l'avocat n'a pas rendu son texte :
+     l'application utilise alors une version provisoire, signalée comme telle. */
+  protocole: [],
 
   // Identité du bailleur, reprise dans chaque état des lieux
   bailleur: "GERARD Jean-Marc",

@@ -794,23 +794,24 @@ function cheminPhotoCompteur(rattachement) {
   return "compteurs.divers_photo_id";
 }
 
-// --- Clôture d'une visite ------------------------------------------------
+// --- Clôture : identité, lecture, signatures, PDF ------------------------
 
 async function ecranCloture(visite) {
   E.ecran = "cloture";
+  VISITE = (await lireVisite(visite.visit_id)) || visite;
+  const V = VISITE;
   const attente = await nombreEnAttente();
-  const constats = visite.pieces.reduce((n, p) => n + p.constatations.length, 0);
-  const piecesVides = visite.pieces.filter(p =>
-    p.constatations.length === 0 &&
-    !visite.photos.some(ph => ph.rattachement === p.piece_id));
+  const constats = V.pieces.reduce((n, p) => n + p.constatations.length, 0);
+  const piecesVides = V.pieces.filter(p =>
+    p.constatations.length === 0 && !V.photos.some(ph => ph.rattachement === p.piece_id));
 
-  titre("Terminer la visite", visite.bien.unite_source);
+  titre("Terminer la visite", V.bien.unite_source);
 
   let html = `<div class="bloc"><h2>Récapitulatif</h2>
-    <div class="ligne"><span>Type</span><span class="val">${visite.type}</span></div>
+    <div class="ligne"><span>Type</span><span class="val">${V.type}</span></div>
     <div class="ligne"><span>Locataire</span><span class="val">${
-      echapper(visite.bien.dossier_locataire_onedrive)}</span></div>
-    <div class="ligne"><span>Photos</span><span class="val">${visite.photos.length}</span></div>
+      echapper(V.bien.dossier_locataire_onedrive)}</span></div>
+    <div class="ligne"><span>Photos</span><span class="val">${V.photos.length}</span></div>
     <div class="ligne"><span>Constatations</span><span class="val">${constats}</span></div>
     <div class="ligne"><span>Photos en attente d'envoi</span><span class="val ${
       attente ? "ko" : "ok"}">${attente}</span></div>
@@ -822,8 +823,8 @@ async function ecranCloture(visite) {
       ${piecesVides.map(p => echapper(p.libelle)).join(", ")}</div>`;
   }
 
-  const conseils = controlerReleves(visite);
-  const anomalies = controlerProgression(visite);
+  const conseils = controlerReleves(V);
+  const anomalies = controlerProgression(V);
   if (anomalies.length) {
     html += `<div class="avert"><strong>Index à vérifier</strong>${
       anomalies.map(x => echapper(x)).join("<br>")}<br><br>
@@ -835,44 +836,331 @@ async function ecranCloture(visite) {
       Tu peux clôturer malgré tout.</div>`;
   }
 
-  /* Seules les photos non encore envoyées empêchent la clôture :
-     elles seraient perdues. Tout le reste relève de ton appréciation. */
   if (attente > 0) {
     html += `<div class="erreur"><strong>Clôture impossible</strong>
       ${attente} photo(s) ne sont pas encore enregistrées dans OneDrive.
-      Reviens quand le réseau sera disponible : la barre doit être verte.</div>
-      <button disabled>Terminer la visite</button>`;
+      Reviens quand le réseau sera disponible.</div>
+      <button disabled>Signer et clôturer</button>`;
   } else {
-    html += `<button id="btn-confirmer">Terminer et déposer le dossier</button>`;
+    html += `<button id="btn-identites">Passer à la signature</button>`;
   }
   html += `<button class="secondaire" id="btn-retour">Retour</button>`;
   vue(html);
 
-  if ($("btn-confirmer")) $("btn-confirmer").onclick = async () => {
-    $("btn-confirmer").disabled = true;
-    $("btn-confirmer").textContent = "Dépôt en cours…";
-    let aJour = null, ok = false;
-    try {
-      aJour = await modifierVisite(visite.visit_id, v => {
-        v.statut = "terminee";
-        v.date_cloture = new Date().toISOString();
-      });
-      ok = await deposerMaintenant(aJour || visite);
-    } catch (e) {
-      vue(`<div class="erreur"><strong>Clôture impossible</strong>${echapper(e.message)}</div>
-           <button class="secondaire" id="btn-retour">Retour</button>`);
-      $("btn-retour").onclick = () => ecranVisiteReprise(visite);
-      return;
-    }
-    await journaliser("visite_terminee", { visit_id: visite.visit_id, depot: ok });
-    vue(`<div class="succes">Visite terminée${
-      ok ? " et dossier déposé dans OneDrive." : "."}</div>
-      ${ok ? "" : `<div class="avert"><strong>Dépôt non confirmé</strong>
-        Le dossier sera redéposé au prochain retour du réseau.</div>`}
+  if ($("btn-identites")) $("btn-identites").onclick = () => ecranIdentites();
+  $("btn-retour").onclick = () => ecranVisiteReprise(V);
+}
+
+// --- Identité des preneurs ----------------------------------------------
+
+function ecranIdentites(message) {
+  E.ecran = "identites";
+  const V = VISITE;
+  titre("Identité des signataires", "Étape 1 sur 3");
+
+  vue(`${message ? `<div class="succes">${echapper(message)}</div>` : ""}
+    <div class="bloc"><h2>Vérification</h2>
+      <p class="note">Demande la carte d'identité et relève le <strong>numéro de la carte</strong>,
+      celui inscrit au recto. <strong>Jamais le numéro de Registre national</strong> :
+      sa collecte est interdite au bailleur.</p>
+      <p class="note">Aucune photographie de carte d'identité n'est prise ni conservée.</p>
+    </div>
+    ${(V.parties.preneurs || []).map((x, i) => `<div class="bloc">
+      <h2>Preneur ${i + 1}</h2>
+      <div class="ligne"><span>Nom</span><span class="val">${echapper(x.nom_complet)}</span></div>
+      <div class="ligne"><span>Carte d'identité</span>
+        <input class="saisie-carte" inputmode="numeric" maxlength="15"
+          placeholder="000-0000000-00" data-carte="${i}"
+          value="${echapper(x.numero_carte_identite || "")}"></div>
+      <div class="ligne"><span>Courriel</span>
+        <input class="saisie-mail" inputmode="email" data-mail="${i}"
+          placeholder="pour l'envoi du document"
+          value="${echapper(x.email || "")}"></div>
+      <div class="interrupteur"><span>Identité vérifiée sur présentation de la carte</span>
+        <span class="segments">
+          <button class="seg${x.identite_verifiee === true ? " actif" : ""}"
+            data-verif-oui="${i}">oui</button>
+          <button class="seg${x.identite_verifiee === false ? " actif" : ""}"
+            data-verif-non="${i}">non</button>
+        </span></div>
+    </div>`).join("")}
+    ${(V.parties.preneurs || []).length === 0
+      ? `<div class="avert"><strong>Aucun preneur enregistré</strong>
+         Cette unité était inoccupée dans la liste. Le document sera signé
+         par le bailleur seul.</div>` : ""}
+    <button id="btn-lecture">Continuer</button>
+    <button class="secondaire" id="btn-retour">Retour</button>`);
+
+  const ecrirePreneur = async (i, champ, valeur) => {
+    VISITE = await modifierVisite(VISITE.visit_id, v => {
+      v.parties.preneurs[i][champ] = valeur;
+    }) || VISITE;
+  };
+
+  $("vue").querySelectorAll("[data-carte]").forEach(inp => {
+    inp.onchange = async () => {
+      const i = parseInt(inp.getAttribute("data-carte"), 10);
+      /* Un numéro de Registre national commence par la date de naissance
+         et compte onze chiffres : on le refuse explicitement. */
+      const chiffres = inp.value.replace(/\D/g, "");
+      if (chiffres.length === 11) {
+        return ecranIdentites("Ce numéro ressemble à un Registre national — " +
+          "utilise le numéro de la CARTE, au recto.");
+      }
+      await ecrirePreneur(i, "numero_carte_identite", inp.value.trim() || null);
+    };
+  });
+  $("vue").querySelectorAll("[data-mail]").forEach(inp => {
+    inp.onchange = async () => {
+      const i = parseInt(inp.getAttribute("data-mail"), 10);
+      await ecrirePreneur(i, "email", inp.value.trim() || null);
+    };
+  });
+  $("vue").querySelectorAll("[data-verif-oui]").forEach(b => b.onclick = async () => {
+    await ecrirePreneur(parseInt(b.getAttribute("data-verif-oui"), 10), "identite_verifiee", true);
+    ecranIdentites();
+  });
+  $("vue").querySelectorAll("[data-verif-non]").forEach(b => b.onclick = async () => {
+    await ecrirePreneur(parseInt(b.getAttribute("data-verif-non"), 10), "identite_verifiee", false);
+    ecranIdentites();
+  });
+
+  $("btn-lecture").onclick = () => ecranLecture();
+  $("btn-retour").onclick = () => ecranCloture(VISITE);
+}
+
+// --- Lecture par le locataire -------------------------------------------
+
+async function ecranLecture() {
+  E.ecran = "lecture";
+  E.luEtApprouve = false;
+  titre("Lecture du document", "Étape 2 sur 3");
+  vue(`<p class="note">Préparation du document…</p>`);
+
+  let doc;
+  try { doc = await genererPV(VISITE); }
+  catch (e) {
+    return erreurEcran("Document impossible à préparer : " + e.message,
+                       () => ecranIdentites());
+  }
+  E.apercu = doc;
+
+  const url = URL.createObjectURL(doc.output("blob"));
+  vue(`<div class="bloc"><h2>À faire lire au locataire</h2>
+      <p class="note">Fais défiler le document en entier avec le locataire.
+      Il ne pourra plus être modifié après signature.</p>
+      <iframe class="apercu" src="${url}"></iframe>
+      <p class="note"><a href="${url}" target="_blank">Ouvrir en plein écran</a></p>
+    </div>
+    <div class="bloc"><h2>Confirmation de lecture</h2>
+      <div class="interrupteur"><span>Le locataire déclare avoir lu et approuvé</span>
+        <span class="segments">
+          <button class="seg" id="lu-oui">oui</button>
+        </span></div>
+      <p class="note">Cette confirmation est distincte de la signature :
+      elle atteste du consentement éclairé.</p>
+    </div>
+    <button id="btn-signatures" disabled>Passer aux signatures</button>
+    <button class="secondaire" id="btn-retour">Retour</button>`);
+
+  $("lu-oui").onclick = () => {
+    E.luEtApprouve = !E.luEtApprouve;
+    $("lu-oui").className = "seg" + (E.luEtApprouve ? " actif" : "");
+    $("btn-signatures").disabled = !E.luEtApprouve;
+  };
+  $("btn-signatures").onclick = () => ecranSignatures();
+  $("btn-retour").onclick = () => { URL.revokeObjectURL(url); ecranIdentites(); };
+}
+
+// --- Signatures tactiles -------------------------------------------------
+
+function ecranSignatures() {
+  E.ecran = "signatures";
+  const V = VISITE;
+  E.signatures = E.signatures || { bailleur: null, preneurs: [] };
+  titre("Signatures", "Étape 3 sur 3");
+
+  const blocs = [{ id: "bailleur", role: "Le bailleur",
+                   nom: V.parties.bailleur_represente_par || V.parties.bailleur }];
+  (V.parties.preneurs || []).forEach((x, i) =>
+    blocs.push({ id: "preneur" + i, role: "Le preneur", nom: x.nom_complet }));
+
+  vue(`<div class="bloc"><h2>Signer du doigt</h2>
+      <p class="note">Chaque signataire signe dans son cadre.
+      Le bouton « effacer » permet de recommencer.</p></div>
+    ${blocs.map(b => `<div class="bloc">
+      <h2>${b.role} — ${echapper(b.nom)}</h2>
+      <canvas class="signature" id="sig-${b.id}"></canvas>
+      <button class="mini secondaire" data-effacer="${b.id}">Effacer</button>
+      <span class="val gris" id="etat-${b.id}"> </span>
+    </div>`).join("")}
+    <div class="avert"><strong>Après signature, le document est figé</strong>
+      Il sera déposé dans OneDrive et ne pourra plus être modifié.
+      Une correction nécessiterait un avenant signé des deux parties.</div>
+    <button id="btn-signer" disabled>Signer et déposer le document</button>
+    <button class="secondaire" id="btn-retour">Retour</button>`);
+
+  const pretes = blocs.map(b => brancherSignature(b.id)).filter(Boolean).length;
+  if (pretes < blocs.length) {
+    avert(`<div class="erreur"><strong>Signature indisponible</strong>
+      Le dessin tactile n'est pas accessible sur cet appareil. Réessaie après
+      avoir rouvert l'application depuis l'écran d'accueil.</div>`);
+  }
+  majBoutonSigner(blocs);
+
+  $("vue").querySelectorAll("[data-effacer]").forEach(btn => btn.onclick = () => {
+    const id = btn.getAttribute("data-effacer");
+    const c = $("sig-" + id);
+    c.getContext("2d").clearRect(0, 0, c.width, c.height);
+    c.dataset.signe = "";
+    $("etat-" + id).textContent = " ";
+    majBoutonSigner(blocs);
+  });
+
+  $("btn-signer").onclick = () => signerEtDeposer(blocs);
+  $("btn-retour").onclick = () => ecranLecture();
+}
+
+/* La zone de dessin est créée à trois fois la taille affichée : sinon la
+   signature apparaît crénelée dans le PDF. */
+function brancherSignature(id) {
+  const c = $("sig-" + id);
+  if (!c) return false;
+  const rect = c.getBoundingClientRect();
+  const echelle = 3;
+  c.width = Math.max(300, Math.round(rect.width)) * echelle;
+  c.height = 110 * echelle;
+  const ctx = c.getContext("2d");
+  if (!ctx) {
+    /* Dessin indisponible : mieux vaut le dire que planter en silence. */
+    const zone = $("etat-" + id);
+    if (zone) { zone.textContent = "signature impossible sur cet appareil"; zone.className = "val ko"; }
+    return false;
+  }
+  ctx.scale(echelle, echelle);
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "#101010";
+
+  let dessine = false;
+  const point = (ev) => {
+    const r = c.getBoundingClientRect();
+    const t = (ev.touches && ev.touches[0]) || ev;
+    return { x: (t.clientX - r.left), y: (t.clientY - r.top) };
+  };
+  const debut = (ev) => { ev.preventDefault(); dessine = true;
+    const p = point(ev); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+  const trace = (ev) => { if (!dessine) return; ev.preventDefault();
+    const p = point(ev); ctx.lineTo(p.x, p.y); ctx.stroke();
+    c.dataset.signe = "1"; };
+  const fin = () => { dessine = false;
+    if (c.dataset.signe) $("etat-" + id).textContent = "signé";
+    majBoutonSigner(); };
+
+  c.addEventListener("touchstart", debut, { passive: false });
+  c.addEventListener("touchmove", trace, { passive: false });
+  c.addEventListener("touchend", fin);
+  c.addEventListener("mousedown", debut);
+  c.addEventListener("mousemove", trace);
+  c.addEventListener("mouseup", fin);
+  c.addEventListener("mouseleave", fin);
+  return true;
+}
+
+function majBoutonSigner(blocs) {
+  const b = $("btn-signer");
+  if (!b) return;
+  const tous = $("vue").querySelectorAll("canvas.signature");
+  let signes = 0;
+  tous.forEach(c => { if (c.dataset.signe) signes++; });
+  b.disabled = signes < tous.length;
+  b.textContent = signes < tous.length
+    ? `Signer et déposer (${signes} / ${tous.length} signatures)`
+    : "Signer et déposer le document";
+}
+
+async function signerEtDeposer(blocs) {
+  const b = $("btn-signer");
+  b.disabled = true; b.textContent = "Fabrication du document…";
+
+  const signatures = { bailleur: null, preneurs: [] };
+  blocs.forEach(x => {
+    const c = $("sig-" + x.id);
+    const image = c.toDataURL("image/png");
+    if (x.id === "bailleur") signatures.bailleur = image;
+    else signatures.preneurs.push(image);
+  });
+
+  try {
+    /* Les images de signature ne sont jamais enregistrées : elles vivent
+       dans le PDF, qui est l'acte. On les passe au générateur, puis on
+       les oublie. */
+    const V = Object.assign({}, VISITE, {
+      signatures,
+      date_signature: new Date().toISOString(),
+      statut: "signee",
+    });
+    const doc = await genererPV(V);
+    const donnees = doc.output("arraybuffer");
+    const empreinte = await empreinteSha256(donnees);
+
+    b.textContent = "Dépôt dans OneDrive…";
+    const nom = `${V.type}_${V.date_signature.slice(0, 10)}_${
+      nettoyerLibelle(V.bien.unite_source)}_${V.visit_id.split("_").pop()}.pdf`;
+    const item = await deposerPdf(V, nom, donnees);
+
+    VISITE = await modifierVisite(VISITE.visit_id, v => {
+      v.statut = "signee";
+      v.date_signature = V.date_signature;
+      v.preuve = v.preuve || {};
+      v.preuve.hash_pdf_pv_sha256 = empreinte;
+      v.preuve.pv_onedrive_item_id = item ? item.id : null;
+      v.preuve.pv_nom_fichier = nom;
+      v.preuve.horodatage_local = V.date_signature;
+      v.preuve.lu_et_approuve = true;
+      v.preuve.courriel_destinataires =
+        (v.parties.preneurs || []).map(x => x.email).filter(Boolean);
+    }) || VISITE;
+
+    await deposerMaintenant(VISITE);
+    await journaliser("visite_signee", { visit_id: VISITE.visit_id, depot: !!item });
+
+    vue(`<div class="succes">Document signé et déposé</div>
+      <div class="bloc"><h2>${echapper(nom)}</h2>
+        <div class="ligne"><span>Empreinte</span><span class="val" style="font-size:11px">${
+          empreinte ? echapper(empreinte.slice(0, 32)) + "…" : "—"}</span></div>
+        <div class="ligne"><span>Signé le</span><span class="val">${
+          new Date(V.date_signature).toLocaleString("fr-BE")}</span></div>
+        <div class="ligne"><span>Signatures</span><span class="val">${blocs.length}</span></div>
+      </div>
+      <div class="avert"><strong>À faire maintenant</strong>
+        Envoie le PDF au locataire depuis OneDrive, le jour même :
+        sa réception fait partie de la preuve.</div>
       <button id="btn-accueil">Retour à l'accueil</button>`);
     $("btn-accueil").onclick = () => ecranAccueil();
-  };
-  $("btn-retour").onclick = () => ecranVisiteReprise(visite);
+  } catch (e) {
+    vue(`<div class="erreur"><strong>Signature non aboutie</strong>${echapper(e.message)}<br><br>
+        Rien n'est perdu : la visite reste ouverte et tu peux recommencer.</div>
+      <button class="secondaire" id="btn-retour">Retour</button>`);
+    $("btn-retour").onclick = () => ecranSignatures();
+    await journaliser("signature_echouee", String(e && e.message));
+  }
+}
+
+async function deposerPdf(visite, nom, donnees) {
+  const d = visite.bien;
+  const chemin = d.dossier_cible_drive_id
+    ? `/drives/${d.dossier_cible_drive_id}/items/${d.dossier_cible_item_id}:/${
+        encodeURIComponent(nom)}:/content`
+    : `/me/drive/items/${d.dossier_cible_item_id}:/${encodeURIComponent(nom)}:/content`;
+  const res = await appelGraph(chemin, {
+    method: "PUT",
+    headers: { "Content-Type": "application/pdf" },
+    body: donnees,
+  });
+  if (!res.ok) throw new Error("Dépôt : " + await detailErreur(res));
+  return res.json();
 }
 
 // --- Écran d'une pièce ---------------------------------------------------
