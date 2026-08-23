@@ -94,6 +94,8 @@ async function ecranAccueil() {
       attente ? "ko" : "ok"}">${attente}</span></div>
     </div>`;
 
+  html += `<button class="aide" id="btn-aide">Mode d'emploi</button>`;
+
   if (E.connecte) {
     html += `<button class="secondaire" id="btn-ia">Description par IA${
       iaDisponible() ? "" : " — non configurée"}</button>`;
@@ -109,6 +111,7 @@ async function ecranAccueil() {
   vue(html);
   $("pied").textContent = "Version " + CONFIG.version_app;
 
+  if ($("btn-aide")) $("btn-aide").onclick = () => ecranAide();
   if ($("btn-connexion")) $("btn-connexion").onclick = () => seConnecter();
   if ($("btn-deconnexion")) $("btn-deconnexion").onclick = () => seDeconnecter();
   if ($("btn-comparer")) $("btn-comparer").onclick = () => ecranComparaison();
@@ -969,6 +972,40 @@ async function prevenirEcran(visitId) {
     else if (E.ecran === "releves") dessinerReleves();
     else if (E.ecran === "visite") ecranVisiteReprise(VISITE);
   }, 250);
+}
+
+// --- Mode d'emploi -------------------------------------------------------
+
+function ecranAide(ouvert) {
+  E.ecran = "aide";
+  E.aideOuvert = (ouvert === undefined) ? (E.aideOuvert || null) : ouvert;
+  titre("Mode d'emploi", "Application EDL — version " + CONFIG.version_app);
+
+  let html = `<div class="bloc"><p class="note">Appuie sur une section pour la
+    déplier. Les encadrés orange signalent ce qui ne se rattrape pas.</p></div>`;
+
+  AIDE.forEach((section, i) => {
+    const ouverte = E.aideOuvert === i;
+    html += `<div class="bloc">
+      <button class="aide-titre" data-aide="${i}">${echapper(section.titre)}
+        <span class="droite">${ouverte ? "−" : "+"}</span></button>
+      ${ouverte ? `
+        ${section.corps.map(t => `<p class="aide-texte">${echapper(t)}</p>`).join("")}
+        ${section.attention
+          ? `<div class="avert"><strong>À retenir</strong>${
+              echapper(section.attention)}</div>` : ""}
+      ` : ""}
+    </div>`;
+  });
+
+  html += `<button class="secondaire" id="btn-retour">Retour à l'accueil</button>`;
+  vue(html);
+
+  $("vue").querySelectorAll("[data-aide]").forEach(b => b.onclick = () => {
+    const i = parseInt(b.getAttribute("data-aide"), 10);
+    ecranAide(E.aideOuvert === i ? null : i);
+  });
+  $("btn-retour").onclick = () => ecranAccueil();
 }
 
 // --- Fin de visite : rapport Word et courriel ----------------------------

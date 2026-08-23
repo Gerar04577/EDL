@@ -25,12 +25,22 @@
   .val { font-weight:600; text-align:right; }
   .ok { color:#1f7a4d; } .ko { color:#b03030; }
   .note { color:#8a8a8a; font-size:13px; margin:9px 0 0; }
+  /* Couleurs par fonction : avancer en vert, revenir en bleu, choisir en
+     lavande, effacer en corail. Pastel pour rester lisible en plein soleil,
+     vif pour être distingué d'un coup d'œil, gants aux mains. */
   button { width:100%; padding:14px; margin-top:9px; font-size:16px; font-weight:600;
-    border-radius:10px; border:1px solid #1f4e5f; background:#1f4e5f; color:#fff; -webkit-appearance:none; }
-  button.secondaire { background:#fff; color:#1f4e5f; }
-  button.choix { background:#fff; color:#1a1a1a; border-color:#e3e0da; text-align:left; font-weight:500; padding:13px 15px; }
+    border-radius:10px; border:1px solid #2f7d63; background:#c9ecdb; color:#12503d;
+    -webkit-appearance:none; }
+  button:active { filter:brightness(.94); }
+  button.secondaire { background:#dbe9f7; color:#1a4a80; border-color:#7fa9d4; }
+  button.choix { background:#f0ecfa; color:#2e2352; border-color:#c3b6e6;
+    text-align:left; font-weight:500; padding:13px 15px; }
+  button.aide { background:#fdf0cf; color:#6b4d05; border-color:#ddb95a; }
+  button.aide-titre { width:100%; text-align:left; background:#fdf0cf; color:#6b4d05;
+    border-color:#ddb95a; margin:0; }
+  .aide-texte { margin:10px 0 0; line-height:1.55; }
   button.choix .droite { float:right; color:#8a8a8a; font-weight:400; }
-  button:disabled { opacity:.4; }
+  button:disabled { opacity:.45; filter:grayscale(.5); }
   .avert { background:#fdf3e3; border:1px solid #e8d5ac; border-radius:12px; padding:15px 17px; margin-bottom:12px; }
   .avert strong { display:block; margin-bottom:5px; }
   .erreur { background:#fdeeee; border:1px solid #e8bcbc; border-radius:12px; padding:15px 17px; margin-bottom:12px; }
@@ -59,7 +69,8 @@
   .segments { display:flex; gap:6px; margin-top:9px; flex-wrap:wrap; }
   .seg { width:auto; flex:1; margin:0; padding:9px 6px; font-size:13px; font-weight:500;
     background:#fff; color:#4a4a4a; border-color:#e3e0da; }
-  .seg.actif { background:#1f4e5f; color:#fff; border-color:#1f4e5f; }
+  .seg { background:#fff; }
+  .seg.actif { background:#2f7d63; color:#fff; border-color:#2f7d63; }
   .constat { padding:9px 0; border-bottom:1px solid #f0eeea; }
   .constat p { margin:0; }
   .attention { color:#8a5a12; }
@@ -72,15 +83,21 @@
   .succes { background:#e8f3ec; border:1px solid #b9dcc7; color:#1f7a4d; border-radius:10px;
     padding:11px 15px; margin-bottom:12px; font-weight:600; font-size:14px; text-align:center; }
   .mini { width:auto; margin:7px 6px 2px 0; padding:8px 14px; font-size:13px; }
+  .lien { color:#a83a3a; }
+  button[data-suppr-photo], button[data-suppr], button[data-suppr-reserve],
+  button[data-abandonner], button[data-suppr-ista] { color:#a83a3a; }
+  button[data-abandonner].mini { background:#fbdfdf; border-color:#e0a0a0; color:#8d2b2b; }
+  button[data-rectifier].mini { background:#fdf0cf; border-color:#ddb95a; color:#6b4d05; }
+  #btn-confirmer, #btn-signer { background:#c9ecdb; border-color:#2f7d63; color:#12503d; }
   .sceau { display:inline-block; font-size:11px; font-weight:600; color:#1f7a4d;
     background:#e8f3ec; padding:2px 7px; border-radius:20px; vertical-align:middle; }
   code { background:#f0eeea; padding:1px 5px; border-radius:4px; font-size:13px; }
-  button.choix.actif-choix { border-color:#1f4e5f; border-width:2px; background:#f2f7f9;
-    font-weight:600; }
+  button.choix.actif-choix { border-color:#6b4fbb; border-width:2px; background:#e3dbf8;
+    font-weight:700; }
   .approuve { font-size:20px; font-weight:700; letter-spacing:.08em; text-align:center;
     color:#1f4e5f; margin:12px 0; }
   .decrire { width:100%; margin-top:9px; padding:13px; font-size:15px; font-weight:600;
-    background:#e8f0fb; color:#1a4a80; border:1px solid #bcd3ef; border-radius:10px; }
+    background:#d8e6fb; color:#12447d; border:1px solid #8fb6e6; border-radius:10px; }
   .decrire:disabled { opacity:.6; }
   .voile { position:fixed; inset:0; background:rgba(20,20,20,.45); z-index:50;
     display:flex; align-items:center; justify-content:center;
@@ -114,6 +131,7 @@
 <script src="comparaison-edl.js"></script>
 <script src="ia.js"></script>
 <script src="finvisite.js"></script>
+<script src="aide.js"></script>
 <script src="comparaison.js"></script>
 <script src="photos.js"></script>
 <script src="app.js"></script>
