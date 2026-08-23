@@ -133,6 +133,19 @@ function compositionParDefaut(designation) {
   return Object.assign({}, base, { nb_chambres: 1, hall: true });
 }
 
+/* Le bailleur attendu pour un immeuble. Trois propriétaires distincts :
+   se tromper rendrait le procès-verbal contestable. */
+function bailleurParDefaut(immeubleId) {
+  const cle = (CONFIG.bailleur_par_immeuble || {})[immeubleId] || "jmg";
+  return trouverBailleur(cle);
+}
+
+function trouverBailleur(cle) {
+  const liste = CONFIG.bailleurs || [];
+  return liste.find(b => b.cle === cle) || liste[0] ||
+    { cle: "jmg", libelle: CONFIG.bailleur, represente_par: null };
+}
+
 /* Réglages techniques par défaut, selon l'immeuble. */
 function reglagesParDefaut(immeubleId) {
   return {
@@ -206,8 +219,10 @@ async function creerVisite(param) {
     },
 
     parties: {
-      bailleur: CONFIG.bailleur,
-      bailleur_represente_par: param.operateur || null,
+      bailleur_cle: (param.bailleur && param.bailleur.cle) || null,
+      bailleur: (param.bailleur && param.bailleur.libelle) || CONFIG.bailleur,
+      bailleur_represente_par: (param.bailleur && param.bailleur.represente_par)
+        || param.operateur || null,
       preneurs: (param.preneurs || []).map(nom => ({
         nom_complet: nom,
         numero_carte_identite: null,

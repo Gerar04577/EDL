@@ -99,6 +99,9 @@ async function ecranAccueil() {
     html += `<button class="secondaire" id="btn-deconnexion">Se déconnecter</button>`;
   }
 
+  const rappel = rappelGmail();
+  if (rappel) avert(rappel); 
+
   vue(html);
   $("pied").textContent = "Version " + CONFIG.version_app;
 
@@ -132,6 +135,31 @@ async function ecranAccueil() {
     }
     await ecranAccueil();
   };
+}
+
+/* La connexion Gmail de Make expire : sans réautorisation, l'envoi du
+   procès-verbal au locataire s'arrête sans prévenir. On alerte chaque
+   jour à partir de huit jours avant. */
+function rappelGmail() {
+  const m = CONFIG.make || {};
+  if (!m.gmail_reautoriser_le) return null;
+  const echeance = new Date(m.gmail_reautoriser_le + "T12:00:00");
+  if (isNaN(echeance.getTime())) return null;
+  const jours = Math.ceil((echeance - new Date()) / 86400000);
+  const seuil = m.gmail_alerte_jours || 8;
+  if (jours > seuil) return null;
+
+  if (jours < 0) {
+    return `<div class="erreur"><strong>Connexion Gmail expirée</strong>
+      Depuis le ${echeance.toLocaleDateString("fr-BE")}. L'envoi du procès-verbal
+      au locataire ne fonctionne plus. Réautorise la connexion dans Make,
+      puis mets à jour la date dans config.js.</div>`;
+  }
+  return `<div class="avert"><strong>Connexion Gmail à réautoriser${
+    jours === 0 ? " AUJOURD'HUI" : " dans " + jours + " jour" + (jours > 1 ? "s" : "")}</strong>
+    Échéance le ${echeance.toLocaleDateString("fr-BE")}. Passé cette date,
+    l'envoi du procès-verbal au locataire s'arrêtera. Va dans Make,
+    connexions, et réautorise Gmail.</div>`;
 }
 
 function ecranAbandon(visite) {
@@ -414,6 +442,8 @@ function ecranOptions() {
   E.ecran = "options";
   if (E.brouillon.chiffrage === undefined) E.brouillon.chiffrage = false;
   if (E.brouillon.pret_meubles === undefined) E.brouillon.pret_meubles = false;
+  if (!E.brouillon.bailleur)
+    E.brouillon.bailleur = bailleurParDefaut(E.brouillon.immeuble_id);
   dessinerOptions();
 }
 
@@ -427,12 +457,34 @@ function dessinerOptions() {
      <button class="choix" style="width:auto;margin:0;padding:7px 16px" data-opt="${cle}">${
        valeur ? "oui" : "non"}</button></div>`;
 
-  vue(`<div class="bloc"><h2>Options</h2>
+  const attendu = bailleurParDefaut(b.immeuble_id);
+  const ecart = b.bailleur.cle !== attendu.cle;
+
+  vue(`<div class="avert"><strong>ATTENTION À L'IDENTITÉ DU PROPRIÉTAIRE !</strong>
+      Trois propriétaires différents selon l'immeuble. Le nom retenu ici sera
+      celui du procès-verbal signé.</div>
+
+    <div class="bloc"><h2>Bailleur</h2>
+      ${(CONFIG.bailleurs || []).map(x => `<button class="choix${
+        b.bailleur.cle === x.cle ? " actif-choix" : ""}" data-bailleur="${x.cle}">
+        ${echapper(x.libelle)}${x.represente_par
+          ? `<span class="droite">représentée par ${echapper(x.represente_par)}</span>` : ""}
+        </button>`).join("")}
+      ${ecart
+        ? `<p class="note ko">Ce n'est pas le propriétaire habituel de
+           ${echapper(b.immeuble_nom)} — normalement ${echapper(attendu.libelle)}.
+           Vérifie avant de continuer.</p>`
+        : `<p class="note">Propriétaire habituel de ${echapper(b.immeuble_nom)}.</p>`}
+    </div>
+
+    <div class="bloc"><h2>Options</h2>
       ${b.type === "EDLS" ? inter("chiffrage", "Chiffrage des dégâts", b.chiffrage)
         : `<p class="note">Le chiffrage ne concerne que les états des lieux de sortie.</p>`}
       ${inter("pret_meubles", "Prêt de meubles Samadhi", b.pret_meubles)}
     </div>
     <div class="bloc"><h2>Destination</h2>
+      <div class="ligne"><span>Bailleur</span><span class="val">${
+        echapper(b.bailleur.libelle)}</span></div>
       <div class="ligne"><span>Immeuble</span><span class="val">${echapper(b.immeuble_nom)}</span></div>
       <div class="ligne"><span>Unité</span><span class="val">${echapper(b.dossier_unite)}</span></div>
       <div class="ligne"><span>Locataire</span><span class="val">${echapper(b.dossier_locataire)}</span></div>
@@ -448,6 +500,11 @@ function dessinerOptions() {
     </div>
     <button id="btn-creer">Commencer la visite</button>
     <button class="secondaire" id="btn-retour">Retour</button>`);
+
+  $("vue").querySelectorAll("[data-bailleur]").forEach(x => x.onclick = () => {
+    b.bailleur = trouverBailleur(x.getAttribute("data-bailleur"));
+    dessinerOptions();
+  });
 
   $("vue").querySelectorAll("[data-opt]").forEach(x => x.onclick = () => {
     const k = x.getAttribute("data-opt"); b[k] = !b[k]; dessinerOptions();

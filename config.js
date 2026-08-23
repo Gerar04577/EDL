@@ -4,15 +4,34 @@
 
 var CONFIG = {
 
-  version_app: "1.0.1",
+  version_app: "1.1.0",
 
   /* Protocole de signature imprimé en page 1 du procès-verbal.
      Laisser vide tant que l'avocat n'a pas rendu son texte :
      l'application utilise alors une version provisoire, signalée comme telle. */
   protocole: [],
 
-  // Identité du bailleur, reprise dans chaque état des lieux
+  /* Identité du bailleur. Elle DIFFÈRE selon l'immeuble : trois
+     propriétaires distincts, et une confusion rendrait le procès-verbal
+     contestable. La valeur ci-dessous ne sert que de défaut. */
   bailleur: "GERARD Jean-Marc",
+
+  bailleurs: [
+    { cle: "jmg",     libelle: "GERARD Jean-Marc",  represente_par: null },
+    { cle: "samadhi", libelle: "SAMADHI S.A.",      represente_par: "GERARD Julien" },
+    { cle: "julien",  libelle: "GERARD Julien",     represente_par: null },
+  ],
+
+  // Bailleur attendu pour chaque immeuble
+  bailleur_par_immeuble: {
+    nimy: "jmg",
+    "petite-guirlande": "jmg",
+    vannes: "jmg",
+    fermette: "jmg",
+    biche: "jmg",
+    havre: "samadhi",
+    egmont: "julien",
+  },
   version_schema: "1.0",
 
   // --- Microsoft Entra ---------------------------------------------------
@@ -84,5 +103,9 @@ var CONFIG = {
   // --- Fin de visite -----------------------------------------------------
   make: {
     webhook_fin_visite: "",
+    /* Une connexion Gmail dans Make expire et doit être réautorisée.
+       L'application prévient chaque jour à partir de huit jours avant. */
+    gmail_reautoriser_le: "2027-02-19",
+    gmail_alerte_jours: 8,
   },
 };
