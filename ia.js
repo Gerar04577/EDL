@@ -79,7 +79,20 @@ async function appelerRelaisIA(champs) {
 /* Consigne de rédaction. Volontairement stricte : on veut une description
    factuelle de ce qui est visible, pas un jugement sur l'usure ou la
    responsabilité — ces appréciations n'appartiennent qu'au bailleur. */
+/* Une seule ligne, sans retour chariot : insérée telle quelle dans le
+   corps JSON du scénario Make, un saut de ligne brut rendrait le JSON
+   invalide — « Bad control character in string literal ». Idem pour les
+   guillemets, retirés par précaution. */
 function consigneDescription(piece, type) {
+  return morceauxConsigne(piece, type)
+    .join(" ")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/["\\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function morceauxConsigne(piece, type) {
   return [
     "Tu décris une photographie prise lors d'un état des lieux " +
       (type === "EDLS" ? "de sortie" : "d'entrée") + " d'un logement en Belgique.",
@@ -92,7 +105,7 @@ function consigneDescription(piece, type) {
       "du locataire ou le coût d'une réparation.",
     "Si la photographie ne montre aucun défaut, dis-le simplement.",
     "Réponds par le texte seul, sans introduction ni titre.",
-  ].join("\n");
+  ];
 }
 
 /* Demande la description d'une photo déjà déposée dans OneDrive.
