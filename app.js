@@ -2360,7 +2360,9 @@ function dessinerPiece(message) {
           <div class="ligne"><span>${echapper(p.nom_fichier)}</span>
           <span class="val ${p.statut_transfert === "confirme" ? "ok" : "ko"}">${
             p.statut_transfert === "confirme" ? "enregistrée" : "en attente"}</span></div>
-          ${p.description ? `<p class="note">${echapper(p.description)}</p>` : ""}
+          ${p.description ? `<p class="note">${echapper(p.description)}</p>
+            <p class="note"><button class="lien" style="color:#1a4a80"
+              data-reprendre="${echapper(p.photo_id)}">ajouter ce texte au constat</button></p>` : ""}
           ${p.statut_transfert === "confirme"
             ? `<button class="decrire" data-decrire="${echapper(p.photo_id)}">${
                 p.description ? "Redécrire cette photo" : "Décrire cette photo"}</button>`
@@ -2385,6 +2387,8 @@ function dessinerPiece(message) {
     $("btn-ajouter-constat").disabled = vide;
   }
   champ.oninput = () => { E.brouillonTexte = champ.value; majBouton(); };
+  /* Le champ est haut de trois lignes : plusieurs descriptions s'y empilent. */
+  if (E.brouillonTexte && E.brouillonTexte.includes("\n")) champ.rows = 6;
   majBouton();
 
   /* Bascule : un second appui sur un choix actif le désélectionne. */
@@ -2477,14 +2481,30 @@ function dessinerPiece(message) {
     } catch (e) {
       return dessinerPiece("Description impossible : " + e.message);
     }
-    /* Le texte proposé va dans le champ de saisie, pas dans le constat :
-       c'est toi qui le corriges et l'enregistres. */
-    E.brouillonTexte = texte;
+    /* Le texte proposé S'AJOUTE au champ de saisie sans écraser ce qui s'y
+       trouve : décrire une deuxième photo effaçait la description de la
+       première, et une seule finissait dans le constat. */
+    const dejaLa = ($("saisie") ? $("saisie").value : E.brouillonTexte || "").trim();
+    E.brouillonTexte = dejaLa ? (dejaLa + "\n" + texte) : texte;
+
     VISITE = await modifierVisite(VISITE.visit_id, v => {
       const p = v.photos.find(x => x.photo_id === id);
       if (p) { p.description = texte; p.description_source = "ia_proposee"; }
     }) || VISITE;
-    dessinerPiece("Proposition de l'IA — relis-la et corrige avant d'ajouter");
+    dessinerPiece(dejaLa
+      ? "Description ajoutée à la suite — relis l'ensemble avant d'enregistrer"
+      : "Proposition de l'IA — relis-la et corrige avant d'enregistrer");
+  });
+
+  /* Reprendre une description déjà obtenue, sans rappeler l'IA ni payer. */
+  $("vue").querySelectorAll("[data-reprendre]").forEach(b => b.onclick = () => {
+    const p = VISITE.photos.find(x => x.photo_id === b.getAttribute("data-reprendre"));
+    if (!p || !p.description) return;
+    const dejaLa = ($("saisie") ? $("saisie").value : E.brouillonTexte || "").trim();
+    if (dejaLa.includes(p.description))
+      return dessinerPiece("Ce texte est déjà dans le constat.");
+    E.brouillonTexte = dejaLa ? (dejaLa + "\n" + p.description) : p.description;
+    dessinerPiece("Texte ajouté au constat");
   });
 
   $("vue").querySelectorAll("[data-suppr-photo]").forEach(b => b.onclick = async () => {

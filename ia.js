@@ -104,6 +104,12 @@ function morceauxConsigne(piece, type) {
       "Tu décris une photographie.",
     "Pièce concernée : " + (piece || "non précisée") + ".",
 
+    "RÈGLE PREMIÈRE — NE DÉCRIS QUE CETTE PHOTOGRAPHIE. Ne mentionne aucun élément " +
+      "que tu ne vois pas réellement. Un séjour comporte d'ordinaire un radiateur, " +
+      "des prises et des plinthes : cela ne t'autorise pas à les décrire s'ils ne sont " +
+      "pas dans le cadre. Ne complète jamais par ce qu'une pièce de ce type contient " +
+      "habituellement. Chaque mot doit correspondre à quelque chose de visible.",
+
     "STYLE. Phrases courtes, souvent nominales, sans verbe conjugué quand c'est " +
       "possible. Aucun remplissage. Deux à trois phrases. Tournures d'expert : " +
       "Relevons, Notons, Sous-jacent, En prolongement, Retour mural, Pour mémoire. " +
@@ -145,6 +151,11 @@ function morceauxConsigne(piece, type) {
       "stratifié, acrylique, émail, thermolaqué, inox brossé, chromé, PVC, sapin " +
       "traité, chêne massif, bois recomposé, chape lissée. Précise la finition : " +
       "mat, satiné, poli, brossé, chanfreiné, sablé, dépoli.",
+
+    "DÉNOMBREMENT PRUDENT. Compte exactement jusqu'à quatre occurrences distinctes et " +
+      "nettement séparées : deux poinçons, trois griffes. Au-delà, ou si elles se " +
+      "chevauchent, écris plusieurs ou une série et donne l'étendue de la zone. " +
+      "Un compte faux est plus dommageable qu'un compte absent.",
 
     "MESURE. Ordre de grandeur seulement, jamais une mesure précise : millimétrique, " +
       "centimétrique, sur 3 à 4 cm, environ 2 cm, sur une dizaine de centimètres, " +
@@ -190,11 +201,30 @@ function morceauxConsigne(piece, type) {
       "défaut existe. Ces appréciations appartiennent aux parties et au juge de paix, " +
       "pas au constat.",
 
+    "TU PEUX NE PAS SAVOIR. Écrire non déterminable sur la photographie est une " +
+      "réponse correcte et attendue. Elle vaut mieux qu'une description plausible mais " +
+      "inexacte : le constat sera relu par le locataire et pourra être discuté devant " +
+      "le juge de paix.",
+
     "INCERTITUDE. Si un élément est sombre, flou ou masqué, écris-le. Les teintes " +
       "sont faussées par l'éclairage artificiel : préfère une teinte claire, un ton " +
       "chêne, plutôt qu'une couleur précise.",
 
     "SI RIEN N'EST À SIGNALER. Termine par : sans remarque particulière.",
+
+    "CONTRE-EXEMPLES. Voici ce qu'il ne faut pas écrire, suivi de ce qu'il faut écrire.",
+    "À ÉVITER : Mur blanc avec quelques traces noires et un trou près de la fenêtre. " +
+      "À ÉCRIRE : Plafonnage peint blanc. Deux poinçons de clou sous l'ébrasement " +
+      "gauche du châssis et frottements grisâtres superficiels d'allure lavable à " +
+      "mi-hauteur.",
+    "À ÉVITER : Le bas de la douche est un peu abîmé et sale. À ÉCRIRE : Faïence " +
+      "murale et bac de douche. Joint d'étanchéité périphérique grisonnant avec amorce " +
+      "de décollement dans l'angle droit. Faïence sans éclat ni fissure.",
+    "À ÉVITER : Le sol présente des traces d'usure normale pour un logement de cet âge. " +
+      "À ÉCRIRE : Parquet stratifié ton chêne. Griffes superficielles sur une trentaine " +
+      "de centimètres en zone centrale.",
+    "Retiens de ces trois cas : jamais abîmé, sale, quelques, un peu, des traces. " +
+      "Toujours l'élément, son matériau, le défaut nommé, sa localisation, son étendue.",
 
     "EXEMPLE 1. Mur à droite sous peinture blanche, conforme. Deux poinçons de clou " +
       "à mi-hauteur et une trace de frottement d'allure lavable sur environ 2 dm². " +
