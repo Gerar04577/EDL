@@ -2301,7 +2301,8 @@ async function deposerPdf(visite, nom, donnees) {
 async function ecranPiece(pieceId) {
   E.ecran = "piece";
   E.piece = pieceId;
-  E.brouillonTexte = ""; E.etat = null; E.proprete = null; E.indexEdition = null;
+  E.brouillons = {}; E.etat = undefined; E.proprete = undefined;
+  E.commentaireGeneral = undefined; E.indexEdition = null;
   VISITE = (await lireVisite(VISITE.visit_id)) || VISITE;
   const piece = VISITE.pieces.find(p => p.piece_id === pieceId);
   titre(piece.libelle, VISITE.bien.unite_source);
@@ -2311,12 +2312,18 @@ async function ecranPiece(pieceId) {
 function dessinerPiece(message) {
   const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
   const photos = VISITE.photos.filter(p => p.rattachement === E.piece);
+  const deposees = photos.filter(p => p.statut_transfert === "confirme").length;
 
-  /* Le texte en cours et les sélections survivent au redessin : sans cela,
-     prendre une photo au milieu d'une dictée effaçait la saisie. */
-  if (E.brouillonTexte === undefined) E.brouillonTexte = "";
+  /* Un brouillon PAR PHOTO : un champ unique pour toute la pièce faisait
+     s'écraser les descriptions successives. */
+  if (!E.brouillons) E.brouillons = {};
   if (E.etat === undefined) E.etat = null;
   if (E.proprete === undefined) E.proprete = null;
+  if (E.commentaireGeneral === undefined) {
+    E.commentaireGeneral = (piece.etat_general && piece.etat_general.commentaire) || "";
+    E.etat = (piece.etat_general && piece.etat_general.etat) || null;
+    E.proprete = (piece.etat_general && piece.etat_general.proprete) || null;
+  }
 
   const seg = (cle, valeurs, actif) => `<div class="segments">${valeurs.map(v =>
     `<button class="seg${actif === v ? " actif" : ""}" data-${cle}="${v}">${
@@ -2325,58 +2332,63 @@ function dessinerPiece(message) {
   vue(`<div class="barre" id="barre-attente">…</div>
     ${message ? `<div class="succes">${echapper(message)}</div>` : ""}
 
-    <div class="bloc"><h2>Repérage</h2>
-      <p class="note">Depuis l'entrée de la pièce : mur de face, de gauche,
-      de droite, arrière.</p></div>
-
-    <div class="bloc"><h2>${E.indexEdition === null || E.indexEdition === undefined
-        ? "Nouvelle constatation" : "Modifier la constatation"}</h2>
-      <textarea id="saisie" rows="3"
-        placeholder="Décris ce que tu vois. Micro du clavier disponible.">${
-        echapper(E.brouillonTexte)}</textarea>
+    <div class="bloc"><h2>État général de la pièce</h2>
+      <p class="note">Une appréciation d'ensemble, distincte des constatations
+      rattachées aux photographies.</p>
       ${seg("etat", ["neuf","bon_etat","usage","degrade"], E.etat)}
       ${seg("proprete", ["propre","a_nettoyer","sale"], E.proprete)}
-      <p class="note">Appuie une seconde fois sur un choix pour le désélectionner.</p>
-      <button id="btn-ajouter-constat">${E.indexEdition === null || E.indexEdition === undefined
-        ? "Ajouter la constatation" : "Enregistrer la modification"}</button>
-      ${E.indexEdition !== null && E.indexEdition !== undefined
-        ? `<button class="secondaire" id="btn-annuler-edition">Annuler la modification</button>` : ""}
+      <textarea id="commentaire-general" rows="2"
+        placeholder="Commentaire sur l'ensemble de la pièce (facultatif)">${
+        echapper(E.commentaireGeneral)}</textarea>
+      <button id="btn-etat-general">Enregistrer l'état général</button>
     </div>
 
     <div class="bloc"><h2>${piece.constatations.length} constatation${
-        piece.constatations.length > 1 ? "s" : ""}</h2>
+        piece.constatations.length > 1 ? "s" : ""} dans cette pièce</h2>
       ${piece.constatations.length
         ? piece.constatations.map((c, i) => `<div class="constat">
             <p>${echapper(c.texte)}</p>
-            <p class="note">${c.etat ? echapper(c.etat.replace(/_/g, " ")) : "état non précisé"} ·
-             ${c.proprete ? echapper(c.proprete.replace(/_/g, " ")) : "propreté non précisée"}
+            <p class="note">${c.photo_nom
+              ? "photographie " + echapper(c.photo_nom)
+              : "sans photographie"}
             <button class="lien" data-modif="${i}" style="color:#1f4e5f">modifier</button>
             <button class="lien" data-suppr="${i}">supprimer</button></p></div>`).join("")
         : `<p class="note">Aucune constatation pour l'instant.</p>`}
     </div>
 
-    <div class="bloc"><h2>${photos.length} photo${photos.length > 1 ? "s" : ""}</h2>
-      ${photos.length ? photos.map(p => `<div class="constat">
+    <div class="bloc"><h2>${photos.length} photo${photos.length > 1 ? "s" : ""}${
+        photos.length ? " — " + deposees + " enregistrée" + (deposees > 1 ? "s" : "") : ""}</h2>
+      ${photos.length ? photos.map(p => {
+        const brouillon = E.brouillons[p.photo_id] === undefined
+          ? (p.description || "") : E.brouillons[p.photo_id];
+        const dejaConstat = piece.constatations.some(c => c.photo_id === p.photo_id);
+        return `<div class="constat">
           <div class="ligne"><span>${echapper(p.nom_fichier)}</span>
           <span class="val ${p.statut_transfert === "confirme" ? "ok" : "ko"}">${
             p.statut_transfert === "confirme" ? "enregistrée" : "en attente"}</span></div>
-          ${p.description ? `<p class="note">${echapper(p.description)}</p>
-            <p class="note"><button class="lien" style="color:#1a4a80"
-              data-reprendre="${echapper(p.photo_id)}">ajouter ce texte au constat</button></p>` : ""}
-          ${p.statut_transfert === "confirme"
-            ? (VISITE.type === "EDLE"
+
+          ${p.statut_transfert === "confirme" ? `
+            <textarea rows="3" data-brouillon="${echapper(p.photo_id)}"
+              placeholder="Décris cette photo. Micro du clavier disponible.">${
+              echapper(brouillon)}</textarea>
+            ${VISITE.type === "EDLE"
               ? `<div class="duo">
-                   <button class="decrire" data-decrire="${echapper(p.photo_id)}">${
-                     p.description ? "Redécrire" : "Décrire"}</button>
-                   <button class="decrire sobre" data-sobre="${echapper(p.photo_id)}"
-                     >Brièvement</button>
+                   <button class="decrire" data-decrire="${echapper(p.photo_id)}">Décrire</button>
+                   <button class="decrire sobre" data-sobre="${
+                     echapper(p.photo_id)}">Brièvement</button>
                  </div>`
-              : `<button class="decrire" data-decrire="${echapper(p.photo_id)}">${
-                  p.description ? "Redécrire cette photo" : "Décrire cette photo"}</button>`)
-            : `<p class="note gris">En attente d'envoi</p>`}
+              : `<button class="decrire" data-decrire="${
+                  echapper(p.photo_id)}">Décrire cette photo</button>`}
+            <button data-ajouter="${echapper(p.photo_id)}"${
+              brouillon.trim() ? "" : " disabled"}>Ajouter au constat</button>
+            ${dejaConstat
+              ? `<p class="note ok">Une constatation est rattachée à cette photo.</p>` : ""}
+          ` : `<p class="note gris">En attente d'envoi</p>`}
+
           <p class="note" style="margin-top:10px">
             <button class="lien" data-suppr-photo="${
-              echapper(p.photo_id)}">retirer de l'état des lieux</button></p></div>`).join("")
+              echapper(p.photo_id)}">retirer de l'état des lieux</button></p></div>`;
+        }).join("")
         : `<p class="note">Aucune photo.</p>`}
       <input type="file" accept="image/*" capture="environment" id="appareil" class="cache">
       <button id="btn-photo">Prendre une photo</button>
@@ -2384,89 +2396,102 @@ function dessinerPiece(message) {
 
     <button class="secondaire" id="btn-retour">Retour aux pièces</button>`);
 
-  const champ = $("saisie");
+  // --- état général de la pièce ---
+  const cg = $("commentaire-general");
+  if (cg) cg.oninput = () => { E.commentaireGeneral = cg.value; };
 
-  /* Un constat peut se limiter à « bon état / propre », sans commentaire :
-     c'est même le cas le plus fréquent. Le bouton s'active donc dès qu'il
-     y a du texte, OU un état, OU une propreté. */
-  function majBouton() {
-    const vide = champ.value.trim().length === 0 && !E.etat && !E.proprete;
-    $("btn-ajouter-constat").disabled = vide;
-  }
-  champ.oninput = () => { E.brouillonTexte = champ.value; majBouton(); };
-  /* Le champ est haut de trois lignes : plusieurs descriptions s'y empilent. */
-  if (E.brouillonTexte && E.brouillonTexte.includes("\n")) champ.rows = 6;
-  majBouton();
-
-  /* Bascule : un second appui sur un choix actif le désélectionne. */
-  const brancherSegments = (cle) => {
-    $("vue").querySelectorAll("[data-" + cle + "]").forEach(b => b.onclick = () => {
-      const v = b.getAttribute("data-" + cle);
-      E[cle] = (E[cle] === v) ? null : v;
-      $("vue").querySelectorAll("[data-" + cle + "]").forEach(x =>
-        x.className = "seg" + (x.getAttribute("data-" + cle) === E[cle] ? " actif" : ""));
-      majBouton();
-    });
-  };
-  brancherSegments("etat");
-  brancherSegments("proprete");
-
-  $("vue").querySelectorAll("[data-modif]").forEach(b => b.onclick = () => {
-    const i = parseInt(b.getAttribute("data-modif"), 10);
-    const c = piece.constatations[i];
-    E.brouillonTexte = c.texte;
-    E.etat = c.etat || null;
-    E.proprete = c.proprete || null;
-    E.indexEdition = i;
+  $("vue").querySelectorAll("[data-etat]").forEach(b => b.onclick = () => {
+    const v = b.getAttribute("data-etat");
+    E.etat = (E.etat === v) ? null : v;
+    if (cg) E.commentaireGeneral = cg.value;
     dessinerPiece();
-    $("saisie").focus();
+  });
+  $("vue").querySelectorAll("[data-proprete]").forEach(b => b.onclick = () => {
+    const v = b.getAttribute("data-proprete");
+    E.proprete = (E.proprete === v) ? null : v;
+    if (cg) E.commentaireGeneral = cg.value;
+    dessinerPiece();
+  });
+
+  $("btn-etat-general").onclick = async () => {
+    E.commentaireGeneral = cg ? cg.value : E.commentaireGeneral;
+    try {
+      VISITE = await modifierVisite(VISITE.visit_id, v => {
+        const pc = v.pieces.find(x => x.piece_id === E.piece);
+        pc.etat_general = {
+          etat: E.etat, proprete: E.proprete,
+          commentaire: (E.commentaireGeneral || "").trim() || null,
+          horodatage: new Date().toISOString(),
+        };
+      }) || VISITE;
+    } catch (e) {
+      return dessinerPiece("Enregistrement impossible : " + e.message);
+    }
+    programmerDepot();
+    dessinerPiece("État général de la pièce enregistré");
+  };
+
+  // --- brouillon par photo ---
+  $("vue").querySelectorAll("[data-brouillon]").forEach(t => {
+    t.oninput = () => {
+      E.brouillons[t.getAttribute("data-brouillon")] = t.value;
+      const b = $("vue").querySelector('[data-ajouter="' +
+        t.getAttribute("data-brouillon") + '"]');
+      if (b) b.disabled = !t.value.trim();
+    };
+  });
+
+  // --- ajouter au constat ---
+  $("vue").querySelectorAll("[data-ajouter]").forEach(b => b.onclick = async () => {
+    const id = b.getAttribute("data-ajouter");
+    const zone = $("vue").querySelector('[data-brouillon="' + id + '"]');
+    const texte = (zone ? zone.value : E.brouillons[id] || "").trim();
+    if (!texte) return dessinerPiece("Écris ou dicte d'abord une description.");
+    const photo = VISITE.photos.find(x => x.photo_id === id);
+    b.disabled = true;
+    try {
+      VISITE = await modifierVisite(VISITE.visit_id, v => {
+        const pc = v.pieces.find(x => x.piece_id === E.piece);
+        const entree = {
+          texte: texte,
+          photo_id: id,
+          photo_nom: photo ? photo.nom_fichier : null,
+          source: (photo && photo.description === texte) ? "ia_validee" : "saisie",
+          horodatage: new Date().toISOString(),
+        };
+        const i = pc.constatations.findIndex(c => c.photo_id === id);
+        if (i >= 0) pc.constatations[i] = entree; else pc.constatations.push(entree);
+      }) || VISITE;
+    } catch (e) {
+      b.disabled = false;
+      return dessinerPiece("Enregistrement impossible : " + e.message);
+    }
+    E.brouillons[id] = texte;
+    programmerDepot();
+    const pc = VISITE.pieces.find(x => x.piece_id === E.piece);
+    dessinerPiece("Constatation enregistrée — " + pc.constatations.length +
+      " dans cette pièce");
+  });
+
+  // --- modifier ou supprimer une constatation ---
+  $("vue").querySelectorAll("[data-modif]").forEach(b => b.onclick = () => {
+    const c = piece.constatations[parseInt(b.getAttribute("data-modif"), 10)];
+    if (c.photo_id) {
+      E.brouillons[c.photo_id] = c.texte;
+      dessinerPiece("Corrige le texte sous la photographie, puis « Ajouter au constat »");
+    } else {
+      dessinerPiece("Cette constatation n'est rattachée à aucune photographie.");
+    }
   });
 
   $("vue").querySelectorAll("[data-suppr]").forEach(b => b.onclick = async () => {
     const i = parseInt(b.getAttribute("data-suppr"), 10);
-    try {
-      VISITE = await modifierVisite(VISITE.visit_id, v => {
-        v.pieces.find(x => x.piece_id === E.piece).constatations.splice(i, 1);
-      }) || VISITE;
-    } catch (e) {
-      return dessinerPiece("Suppression impossible : " + e.message);
-    }
-    E.indexEdition = null;
+    VISITE = await modifierVisite(VISITE.visit_id, v => {
+      v.pieces.find(x => x.piece_id === E.piece).constatations.splice(i, 1);
+    }) || VISITE;
     programmerDepot();
     dessinerPiece("Constatation supprimée");
   });
-
-  $("btn-ajouter-constat").onclick = async () => {
-    const texte = champ.value.trim();
-    if (!texte && !E.etat && !E.proprete) return;
-    const enEdition = E.indexEdition !== null && E.indexEdition !== undefined;
-    const i = E.indexEdition;
-    const bouton = $("btn-ajouter-constat");
-    bouton.disabled = true;
-    try {
-      VISITE = await modifierVisite(VISITE.visit_id, v => {
-        const pc = v.pieces.find(x => x.piece_id === E.piece);
-        const entree = { texte, etat: E.etat, proprete: E.proprete };
-      /* Si le texte reprend une proposition de l'IA, on le note : le
-         document doit pouvoir dire d'où vient chaque constatation. */
-      const propose = v.photos.some(x => x.rattachement === E.piece &&
-        x.description && normaliserLibelle(x.description) === normaliserLibelle(texte));
-      if (propose) entree.source = "ia_validee";
-        if (enEdition) pc.constatations[i] = entree; else pc.constatations.push(entree);
-      }) || VISITE;
-    } catch (e) {
-      bouton.disabled = false;
-      return dessinerPiece("Enregistrement impossible : " + e.message);
-    }
-    E.brouillonTexte = ""; E.etat = null; E.proprete = null; E.indexEdition = null;
-    programmerDepot();
-    dessinerPiece(enEdition ? "Constatation modifiée" : "Constatation enregistrée");
-  };
-
-  if ($("btn-annuler-edition")) $("btn-annuler-edition").onclick = () => {
-    E.brouillonTexte = ""; E.etat = null; E.proprete = null; E.indexEdition = null;
-    dessinerPiece();
-  };
 
   const brancherDecrire = (attribut, niveau) =>
     $("vue").querySelectorAll("[" + attribut + "]").forEach(b => b.onclick = async () => {
@@ -2496,8 +2521,10 @@ function dessinerPiece(message) {
     /* Le texte proposé S'AJOUTE au champ de saisie sans écraser ce qui s'y
        trouve : décrire une deuxième photo effaçait la description de la
        première, et une seule finissait dans le constat. */
-    const dejaLa = ($("saisie") ? $("saisie").value : E.brouillonTexte || "").trim();
-    E.brouillonTexte = dejaLa ? (dejaLa + "\n" + texte) : texte;
+    /* Le texte va dans le champ de CETTE photo, jamais dans un champ commun. */
+    const zone = $("vue").querySelector('[data-brouillon="' + id + '"]');
+    const dejaLa = (zone ? zone.value : E.brouillons[id] || "").trim();
+    E.brouillons[id] = dejaLa ? (dejaLa + "\n" + texte) : texte;
 
     VISITE = await modifierVisite(VISITE.visit_id, v => {
       const p = v.photos.find(x => x.photo_id === id);
@@ -2508,23 +2535,12 @@ function dessinerPiece(message) {
       }
     }) || VISITE;
     dessinerPiece(dejaLa
-      ? "Description ajoutée à la suite — relis l'ensemble avant d'enregistrer"
-      : "Proposition de l'IA — relis-la et corrige avant d'enregistrer");
+      ? "Texte ajouté sous la photographie — relis, puis « Ajouter au constat »"
+      : "Proposition de l'IA — relis-la, puis « Ajouter au constat »");
   });
 
   brancherDecrire("data-decrire", null);
   brancherDecrire("data-sobre", "sobre");
-
-  /* Reprendre une description déjà obtenue, sans rappeler l'IA ni payer. */
-  $("vue").querySelectorAll("[data-reprendre]").forEach(b => b.onclick = () => {
-    const p = VISITE.photos.find(x => x.photo_id === b.getAttribute("data-reprendre"));
-    if (!p || !p.description) return;
-    const dejaLa = ($("saisie") ? $("saisie").value : E.brouillonTexte || "").trim();
-    if (dejaLa.includes(p.description))
-      return dessinerPiece("Ce texte est déjà dans le constat.");
-    E.brouillonTexte = dejaLa ? (dejaLa + "\n" + p.description) : p.description;
-    dessinerPiece("Texte ajouté au constat");
-  });
 
   $("vue").querySelectorAll("[data-suppr-photo]").forEach(b => b.onclick = async () => {
     const id = b.getAttribute("data-suppr-photo");
@@ -2543,7 +2559,10 @@ function dessinerPiece(message) {
   $("appareil").onchange = async (ev) => {
     const fichier = ev.target.files && ev.target.files[0];
     if (!fichier) return;
-    E.brouillonTexte = champ.value;          // la dictée en cours est préservée
+    /* Les brouillons par photo sont déjà mémorisés à chaque frappe. */
+    $("vue").querySelectorAll("[data-brouillon]").forEach(t => {
+      E.brouillons[t.getAttribute("data-brouillon")] = t.value;
+    });
     $("btn-photo").disabled = true;
     $("btn-photo").textContent = "Enregistrement…";
     try {
@@ -2556,7 +2575,8 @@ function dessinerPiece(message) {
   };
 
   $("btn-retour").onclick = async () => {
-    E.brouillonTexte = ""; E.etat = null; E.proprete = null; E.indexEdition = null;
+    E.brouillons = {}; E.etat = undefined; E.proprete = undefined;
+    E.commentaireGeneral = undefined; E.indexEdition = null;
     await deposerMaintenant(VISITE);
     ecranVisiteReprise(VISITE);
   };
