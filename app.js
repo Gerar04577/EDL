@@ -1663,6 +1663,7 @@ function dessinerComparaisonEDL(message) {
     html += `<div class="bloc"><h2>${echapper(piece)}</h2>`;
     parPiece[piece].forEach(({ l, i }) => {
       html += `<div class="comp ${l.categorie ? "" : "comp-alerte"}">
+        ${l.general ? `<p class="note"><strong>État général de la pièce</strong></p>` : ""}
         <p class="note"><strong>À l'entrée :</strong> ${
           echapper(l.texte_entree || "rien de signalé")}</p>
         <p class="note"><strong>À la sortie :</strong> ${

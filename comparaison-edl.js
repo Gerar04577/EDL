@@ -77,6 +77,31 @@ function construireLignesComparaison(visite, edle) {
 
   visite.pieces.forEach(piece => {
     const entree = parLibelle[normaliserLibelle(piece.libelle)];
+
+    /* L'état général de la pièce se compare aussi : il a quitté les
+       constatations pour devenir une appréciation d'ensemble. */
+    const ge = (entree && entree.etat_general) || {};
+    const gs = piece.etat_general || {};
+    const texteGeneral = (g) => {
+      const t = [({ neuf: "état neuf", bon_etat: "bon état", usage: "usagé",
+                    degrade: "dégradé" })[g.etat],
+                 ({ propre: "propre", a_nettoyer: "à nettoyer",
+                    sale: "sale" })[g.proprete]].filter(Boolean).join(", ");
+      return [t, g.commentaire].filter(Boolean).join(" — ") || null;
+    };
+    const tge = texteGeneral(ge), tgs = texteGeneral(gs);
+    if (tge || tgs) {
+      lignes.push({
+        piece_id: piece.piece_id, piece: piece.libelle, rang: -1,
+        general: true,
+        texte_entree: tge, etat_entree: ge.etat || null,
+        proprete_entree: ge.proprete || null,
+        texte_sortie: tgs, etat_sortie: gs.etat || null,
+        proprete_sortie: gs.proprete || null,
+        categorie: null, montant: null,
+        piece_absente_entree: !entree,
+      });
+    }
     const constatsEntree = entree ? (entree.constatations || []) : [];
     const constatsSortie = piece.constatations || [];
     const maximum = Math.max(constatsEntree.length, constatsSortie.length);

@@ -180,13 +180,30 @@ async function genererPV(visite) {
   V.pieces.forEach(piece => {
     const photos = V.photos.filter(x => x.rattachement === piece.piece_id);
     p.sousTitre(piece.libelle);
-    if (piece.constatations.length === 0 && photos.length === 0) {
+
+    /* L'état général de la pièce est une appréciation d'ensemble, distincte
+       des constatations rattachées aux photographies. Il figure en tête. */
+    const eg = piece.etat_general || {};
+    const general = [libelleEtat(eg.etat), libelleProprete(eg.proprete)]
+      .filter(Boolean).join(", ");
+    if (general || eg.commentaire) {
+      if (general) p.paragraphe("État général : " + general, { retrait: 2, gras: true });
+      if (eg.commentaire) p.paragraphe(eg.commentaire, { retrait: 2 });
+      p.saut(2);
+    }
+
+    if (piece.constatations.length === 0 && photos.length === 0 &&
+        !general && !eg.commentaire) {
       p.paragraphe("Rien à signaler.", { retrait: 2 });
     } else {
       piece.constatations.forEach(c => {
+        /* Les constatations d'avant la refonte portaient un état et une
+           propreté ; les nouvelles se rattachent à une photographie. */
         const q = [libelleEtat(c.etat), libelleProprete(c.proprete)].filter(Boolean).join(", ");
         if (c.texte) p.paragraphe("• " + c.texte, { retrait: 2 });
         if (q) p.paragraphe(c.texte ? "  (" + q + ")" : "• " + q, { retrait: 2, taille: 9 });
+        if (c.photo_nom) p.paragraphe("  photographie : " + c.photo_nom,
+          { retrait: 2, taille: 7 });
         p.saut(1.5);
       });
       if (photos.length) {
