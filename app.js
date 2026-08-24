@@ -2364,8 +2364,15 @@ function dessinerPiece(message) {
             <p class="note"><button class="lien" style="color:#1a4a80"
               data-reprendre="${echapper(p.photo_id)}">ajouter ce texte au constat</button></p>` : ""}
           ${p.statut_transfert === "confirme"
-            ? `<button class="decrire" data-decrire="${echapper(p.photo_id)}">${
-                p.description ? "Redécrire cette photo" : "Décrire cette photo"}</button>`
+            ? (visite.type === "EDLE"
+              ? `<div class="duo">
+                   <button class="decrire" data-decrire="${echapper(p.photo_id)}">${
+                     p.description ? "Redécrire" : "Décrire"}</button>
+                   <button class="decrire sobre" data-sobre="${echapper(p.photo_id)}"
+                     >Brièvement</button>
+                 </div>`
+              : `<button class="decrire" data-decrire="${echapper(p.photo_id)}">${
+                  p.description ? "Redécrire cette photo" : "Décrire cette photo"}</button>`)
             : `<p class="note gris">En attente d'envoi</p>`}
           <p class="note" style="margin-top:10px">
             <button class="lien" data-suppr-photo="${
@@ -2461,8 +2468,9 @@ function dessinerPiece(message) {
     dessinerPiece();
   };
 
-  $("vue").querySelectorAll("[data-decrire]").forEach(b => b.onclick = async () => {
-    const id = b.getAttribute("data-decrire");
+  const brancherDecrire = (attribut, niveau) =>
+    $("vue").querySelectorAll("[" + attribut + "]").forEach(b => b.onclick = async () => {
+    const id = b.getAttribute(attribut);
     const photo = VISITE.photos.find(x => x.photo_id === id);
     if (!iaDisponible()) {
       return dessinerPiece("Aucun relais IA enregistré — va dans " +
@@ -2470,14 +2478,18 @@ function dessinerPiece(message) {
     }
     /* Chaque description est facturée : deux crédits Make et un appel
        Gemini. Un appui involontaire ne doit jamais suffire. */
-    if (!(await confirmer("Décrire cette photo ?",
+    if (!(await confirmer(niveau === "sobre"
+        ? "Décrire brièvement ?" : "Décrire cette photo ?",
         "Cet appel est facturé — deux crédits Make et un appel Gemini. " +
-        (photo.description ? "Le texte proposé remplacera le précédent." : ""),
+        (niveau === "sobre"
+          ? "Seuls les défauts visibles au premier regard seront signalés. "
+          : "") +
+        (photo.description ? "Le texte proposé s'ajoutera au constat." : ""),
         "Oui, décrire"))) return;
     b.disabled = true; b.textContent = "Lecture en cours…";
     let texte;
     try {
-      texte = await decrirePhoto(VISITE, photo);
+      texte = await decrirePhoto(VISITE, photo, niveau);
     } catch (e) {
       return dessinerPiece("Description impossible : " + e.message);
     }
@@ -2489,12 +2501,19 @@ function dessinerPiece(message) {
 
     VISITE = await modifierVisite(VISITE.visit_id, v => {
       const p = v.photos.find(x => x.photo_id === id);
-      if (p) { p.description = texte; p.description_source = "ia_proposee"; }
+      if (p) {
+        p.description = texte;
+        p.description_source = "ia_proposee";
+        p.description_niveau = niveau || "detaille";
+      }
     }) || VISITE;
     dessinerPiece(dejaLa
       ? "Description ajoutée à la suite — relis l'ensemble avant d'enregistrer"
       : "Proposition de l'IA — relis-la et corrige avant d'enregistrer");
   });
+
+  brancherDecrire("data-decrire", null);
+  brancherDecrire("data-sobre", "sobre");
 
   /* Reprendre une description déjà obtenue, sans rappeler l'IA ni payer. */
   $("vue").querySelectorAll("[data-reprendre]").forEach(b => b.onclick = () => {

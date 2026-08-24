@@ -83,8 +83,8 @@ async function appelerRelaisIA(champs) {
    corps JSON du scénario Make, un saut de ligne brut rendrait le JSON
    invalide — « Bad control character in string literal ». Idem pour les
    guillemets, retirés par précaution. */
-function consigneDescription(piece, type) {
-  return morceauxConsigne(piece, type)
+function consigneDescription(piece, type, niveau) {
+  return morceauxConsigne(piece, type, niveau)
     .join(" ")
     .replace(/[\r\n\t]+/g, " ")
     .replace(/["\\]/g, "")
@@ -96,8 +96,13 @@ function consigneDescription(piece, type) {
    (Bureau Nicolaï, Wavre, et Metric sprl, Bruxelles), ainsi que sur le
    modèle-type wallon du 28 juin 2018. Le vocabulaire, l'échelle
    d'amortissement et les tournures viennent de ces documents. */
-function morceauxConsigne(piece, type) {
+function morceauxConsigne(piece, type, niveau) {
   const sortie = (type === "EDLS");
+  /* À la sortie, toujours le niveau détaillé : c'est là que se joue la
+     comparaison. À l'entrée, le niveau sobre est possible — un état des
+     lieux d'entrée exhaustif documente des défauts qui deviendront
+     « déjà présents » et ne pourront plus être réclamés. */
+  if (!sortie && niveau === "sobre") return morceauxSobre(piece);
   return [
     "Tu es géomètre-expert immobilier assermenté et tu rédiges un procès-verbal " +
       "d'état des lieux " + (sortie ? "de sortie" : "d'entrée") + " en Région wallonne. " +
@@ -248,10 +253,69 @@ function morceauxConsigne(piece, type) {
   ];
 }
 
+/* Consigne sobre, entrée seulement. Même ossature — anti-invention,
+   vocabulaire, interdits — mais un seuil bien plus haut : on ne retient
+   que ce qu'un locataire remarquerait en entrant dans la pièce. */
+function morceauxSobre(piece) {
+  return [
+    "Tu es expert immobilier et tu rédiges un constat d'état des lieux d'entrée " +
+      "en Région wallonne. Tu décris une photographie.",
+    "Pièce concernée : " + (piece || "non précisée") + ".",
+
+    "RÈGLE PREMIÈRE — NE DÉCRIS QUE CETTE PHOTOGRAPHIE. Ne mentionne aucun élément " +
+      "que tu ne vois pas réellement. Ne complète jamais par ce qu'une pièce de ce " +
+      "type contient habituellement.",
+
+    "SEUIL — LE POINT ESSENTIEL. Ne retiens QUE ce qu'une personne remarquerait en " +
+      "entrant dans la pièce sans chercher. Un défaut qu'il faut approcher pour voir " +
+      "ne se signale PAS.",
+
+    "À NE PAS SIGNALER, en aucun cas : fendille, microfissure, faïençage, poinçon ou " +
+      "trou de clou, point de rebouche, jaspure, voile grisâtre, ombrage, trace de " +
+      "frottement, griffe ou rayure superficielle, éraflure, joint légèrement " +
+      "grisonnant, léger défraîchissement, arête légèrement épaufrée, petite " +
+      "irrégularité de mise en peinture. Ces éléments existent : on ne les consigne " +
+      "simplement pas à ce niveau de constat.",
+
+    "À SIGNALER : impact ou enfoncement marqué, fissure ouverte au-delà d'un " +
+      "millimètre, lézarde, écaillement ou pelade sur plus d'un décimètre carré, " +
+      "décollement, trou non rebouché, tache franche, moisissure visible, auréole " +
+      "d'humidité étendue, élément cassé, fêlé, descellé ou hors service à l'oeil nu.",
+
+    "MESURE. Tout défaut retenu porte son ampleur : environ 5 cm, sur 2 dm², sur une " +
+      "trentaine de centimètres. Sans ampleur, le défaut ne pourra pas servir de " +
+      "point de comparaison à la sortie.",
+
+    "CE QUI EST INTACT. Quand un élément important ne présente aucun défaut retenu, " +
+      "dis-le explicitement : faïence sans éclat ni fissure, vitrage intact, parquet " +
+      "sans dégradation. Cette affirmation compte autant que le reste.",
+
+    "RÉDACTION. Une à deux phrases, courtes, souvent nominales. Nomme l'élément et " +
+      "son matériau, puis le défaut retenu s'il y en a un. Jamais je ni on. Pas de " +
+      "titre, pas de liste.",
+
+    "SI RIEN NE DÉPASSE LE SEUIL. Nomme l'élément et son matériau, puis écris : " +
+      "sans remarque particulière. C'est le cas le plus fréquent et c'est normal.",
+
+    "INTERDITS. N'écris JAMAIS que l'état relève de l'usure normale ou de la vétusté. " +
+      "N'impute JAMAIS un défaut à quiconque. N'évalue JAMAIS un coût. N'affirme " +
+      "JAMAIS qu'un appareil fonctionne, qu'un élément manque, ou l'origine d'une " +
+      "humidité.",
+
+    "EXEMPLE 1. Mur sous peinture blanche, sans remarque particulière.",
+    "EXEMPLE 2. Parquet stratifié ton chêne. Impact de 3 cm environ en zone centrale.",
+    "EXEMPLE 3. Faïence murale blanche sans éclat ni fissure. Bac de douche intact.",
+    "EXEMPLE 4. Châssis en PVC blanc, double vitrage intact. Sans remarque.",
+    "CONTRE-EXEMPLE. NE PAS écrire : deux poinçons de clou à mi-hauteur et léger " +
+      "voile grisâtre. Ces éléments sont sous le seuil. ÉCRIRE : Mur sous peinture " +
+      "blanche, sans remarque particulière.",
+  ];
+}
+
 /* Demande la description d'une photo déjà déposée dans OneDrive.
    On transmet un lien de téléchargement, jamais l'image : elle est déjà
    là-bas, et un second transfert depuis le téléphone serait inutile. */
-async function decrirePhoto(visite, photo) {
+async function decrirePhoto(visite, photo, niveau) {
   if (!photo.onedrive_item_id)
     throw new Error("Photo pas encore enregistrée dans OneDrive.");
 
@@ -266,7 +330,8 @@ async function decrirePhoto(visite, photo) {
     modele: CONFIG.ia.modele,
     piece: piece || "",
     type: visite.type,
-    consigne: consigneDescription(piece, visite.type),
+    consigne: consigneDescription(piece, visite.type, niveau),
+    niveau: niveau || "detaille",
     visit_id: visite.visit_id,
     photo_id: photo.photo_id,
   });
@@ -331,6 +396,7 @@ async function envoyerEchantillonIA(url) {
     piece: "Séjour",
     type: "EDLE",
     consigne: consigneDescription("Séjour", "EDLE"),
+    niveau: "detaille",
     visit_id: "v_echantillon",
     photo_id: "ph_echantillon",
   });
