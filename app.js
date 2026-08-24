@@ -2364,7 +2364,7 @@ function dessinerPiece(message) {
             <p class="note"><button class="lien" style="color:#1a4a80"
               data-reprendre="${echapper(p.photo_id)}">ajouter ce texte au constat</button></p>` : ""}
           ${p.statut_transfert === "confirme"
-            ? (visite.type === "EDLE"
+            ? (VISITE.type === "EDLE"
               ? `<div class="duo">
                    <button class="decrire" data-decrire="${echapper(p.photo_id)}">${
                      p.description ? "Redécrire" : "Décrire"}</button>
