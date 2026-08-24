@@ -155,7 +155,10 @@ function rappelGmail() {
   if (!m.gmail_reautoriser_le) return null;
   const echeance = new Date(m.gmail_reautoriser_le + "T12:00:00");
   if (isNaN(echeance.getTime())) return null;
-  const jours = Math.ceil((echeance - new Date()) / 86400000);
+  /* Compté en jours de calendrier, pas en heures : sinon le décompte
+     changeait selon l'heure à laquelle on ouvrait l'application. */
+  const minuit = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const jours = Math.round((minuit(echeance) - minuit(new Date())) / 86400000);
   const seuil = m.gmail_alerte_jours || 8;
   if (jours > seuil) return null;
 
@@ -1151,36 +1154,118 @@ async function prevenirEcran(visitId) {
 
 // --- Mode d'emploi -------------------------------------------------------
 
+/* Comparaison insensible aux accents et à la casse : Julien tapera
+   « ebrasement » sur un clavier d'iPhone, en visite, sans accent. */
+function sansAccent(s) {
+  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
 function ecranAide(ouvert) {
   E.ecran = "aide";
   E.aideOuvert = (ouvert === undefined) ? (E.aideOuvert || null) : ouvert;
   titre("Mode d'emploi", "Application EDL — version " + CONFIG.version_app);
+  dessinerAide();
+  const champ = $("recherche-aide");
+  if (champ && E.aideRecherche) { champ.value = E.aideRecherche; }
+}
 
-  let html = `<div class="bloc"><p class="note">Appuie sur une section pour la
-    déplier. Les encadrés orange signalent ce qui ne se rattrape pas.</p></div>`;
+function dessinerAide() {
+  const q = sansAccent(E.aideRecherche || "");
+  const cherche = q.length >= 2;
 
-  AIDE.forEach((section, i) => {
-    const ouverte = E.aideOuvert === i;
+  let html = `<div class="bloc">
+      <input class="saisie-mail" id="recherche-aide" style="width:100%"
+        placeholder="Chercher un mot — ébrasement, réserves, compteur…"
+        value="${echapper(E.aideRecherche || "")}">
+      <p class="note">${cherche
+        ? "Efface pour revoir tout le mode d'emploi."
+        : "Tape au moins deux lettres. Les accents ne comptent pas."}</p>
+    </div>`;
+
+  // --- glossaire, en tête quand on cherche ---
+  const termes = cherche
+    ? GLOSSAIRE.filter(x => sansAccent(x.t).includes(q) || sansAccent(x.d).includes(q))
+    : [];
+  if (cherche && termes.length) {
+    html += `<div class="bloc"><h2>${termes.length} terme${
+      termes.length > 1 ? "s" : ""}</h2>`;
+    termes.forEach(x => {
+      html += `<div class="constat">
+        <p><strong>${echapper(x.t)}</strong> <span class="gris">— ${echapper(x.g)}</span></p>
+        <p class="note">${echapper(x.d)}</p></div>`;
+    });
+    html += `</div>`;
+  }
+
+  // --- sections ---
+  const sections = AIDE.map((s, i) => ({ s, i })).filter(({ s }) => {
+    if (!cherche) return true;
+    const tout = sansAccent(s.titre + " " + s.corps.join(" ") + " " + (s.attention || ""));
+    return tout.includes(q);
+  });
+
+  if (cherche) {
+    html += sections.length
+      ? `<div class="bloc"><h2>${sections.length} section${
+          sections.length > 1 ? "s" : ""} du mode d'emploi</h2></div>`
+      : (termes.length ? "" : `<div class="bloc"><p class="note">Aucun résultat pour
+          « ${echapper(E.aideRecherche)} ».</p></div>`);
+  } else {
+    html += `<div class="bloc"><p class="note">Appuie sur une section pour la déplier.
+      Les encadrés orange signalent ce qui ne se rattrape pas.</p></div>`;
+  }
+
+  sections.forEach(({ s, i }) => {
+    const ouverte = cherche || E.aideOuvert === i;
     html += `<div class="bloc">
-      <button class="aide-titre" data-aide="${i}">${echapper(section.titre)}
+      <button class="aide-titre" data-aide="${i}">${echapper(s.titre)}
         <span class="droite">${ouverte ? "−" : "+"}</span></button>
       ${ouverte ? `
-        ${section.corps.map(t => `<p class="aide-texte">${echapper(t)}</p>`).join("")}
-        ${section.attention
-          ? `<div class="avert"><strong>À retenir</strong>${
-              echapper(section.attention)}</div>` : ""}
-      ` : ""}
+        ${s.corps.map(t => `<p class="aide-texte">${echapper(t)}</p>`).join("")}
+        ${s.attention
+          ? `<div class="avert"><strong>À retenir</strong>${echapper(s.attention)}</div>`
+          : ""}` : ""}
     </div>`;
   });
+
+  // --- glossaire complet, en bas, hors recherche ---
+  if (!cherche) {
+    const familles = [];
+    GLOSSAIRE.forEach(x => { if (!familles.includes(x.g)) familles.push(x.g); });
+    html += `<div class="bloc">
+      <button class="aide-titre" data-aide="glossaire">Glossaire — ${
+        GLOSSAIRE.length} termes employés par l'IA
+        <span class="droite">${E.aideOuvert === "glossaire" ? "−" : "+"}</span></button>
+      ${E.aideOuvert === "glossaire" ? familles.map(f => `
+        <p class="aide-texte"><strong>${echapper(f)}</strong></p>
+        ${GLOSSAIRE.filter(x => x.g === f).map(x =>
+          `<p class="note"><strong>${echapper(x.t)}</strong> — ${echapper(x.d)}</p>`).join("")}
+      `).join("") : ""}
+    </div>`;
+  }
 
   html += `<button class="secondaire" id="btn-retour">Retour à l'accueil</button>`;
   vue(html);
 
+  const champ = $("recherche-aide");
+  if (champ) {
+    champ.oninput = () => {
+      const pos = champ.selectionStart;
+      E.aideRecherche = champ.value;
+      dessinerAide();
+      const neuf = $("recherche-aide");
+      if (neuf) { neuf.focus(); try { neuf.setSelectionRange(pos, pos); } catch (_) {} }
+    };
+  }
+
   $("vue").querySelectorAll("[data-aide]").forEach(b => b.onclick = () => {
-    const i = parseInt(b.getAttribute("data-aide"), 10);
-    ecranAide(E.aideOuvert === i ? null : i);
+    const v = b.getAttribute("data-aide");
+    const i = (v === "glossaire") ? "glossaire" : parseInt(v, 10);
+    E.aideOuvert = (E.aideOuvert === i) ? null : i;
+    dessinerAide();
   });
-  $("btn-retour").onclick = () => ecranAccueil();
+  $("btn-retour").onclick = () => { E.aideRecherche = ""; ecranAccueil(); };
 }
 
 // --- Fin de visite : rapport Word et courriel ----------------------------
