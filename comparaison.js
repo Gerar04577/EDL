@@ -285,6 +285,26 @@ async function evaluerUnite(imm, unite, dossiers, noms, refImmeuble, utilises) {
 
     ligne.dossier_courant = retenu.nom;
     ligne.motif_choix = locs.length === 1 ? "seul dossier" : motif;
+
+    /* ÉCART DE NOMS. Le dossier retenu ne partage aucun mot significatif
+       avec le locataire de la liste : ou bien le dossier est celui d'un
+       ancien preneur, ou bien la liste n'est pas à jour.
+
+       C'est un SIGNALEMENT, jamais une correction. Une version antérieure
+       remplaçait les preneurs par le nom du dossier, et un dossier nommé
+       « DUPONT Jean - bail 2025 » finissait tel quel dans un document
+       signé. Les noms viennent de Gestion Loyers, et de nulle part
+       ailleurs ; l'écart se règle ici, au bureau, avant la visite.
+
+       Le test est volontairement large — aucun mot en commun — pour ne pas
+       crier au loup sur une abréviation : « ZUFFANTI BERTE » pour
+       « ZUFFANTI Léna & BERTE Matis » n'est pas un écart. */
+    if ((unite.preneurs || []).length && retenu.score === 0) {
+      ligne.ecart_nom = {
+        dossier: retenu.nom,
+        attendu: (unite.preneurs || []).join(" & "),
+      };
+    }
     ligne.autres_avec_docs = detail
       .filter(d => d !== retenu && (d.edle || d.edls))
       .map(d => d.nom);
@@ -390,8 +410,13 @@ async function comparerAvecOneDrive(surProgres) {
   /* Récapitulatif des dossiers mal orthographiés, pour les corriger
      d'un seul coup dans OneDrive au lieu de les chercher un par un. */
   const fautes = [];
+  const ecarts = [];
   resultats.forEach(b => b.lignes.forEach(l => {
     bilan.total++;
+    if (l.ecart_nom) {
+      ecarts.push({ immeuble: b.immeuble, unite: l.designation,
+                    dossier: l.ecart_nom.dossier, attendu: l.ecart_nom.attendu });
+    }
     if (bilan[l.statut] !== undefined) bilan[l.statut]++;
     if (l.approuvee) bilan.approuvees++;
     if (l.faute_de_frappe) {
@@ -404,5 +429,5 @@ async function comparerAvecOneDrive(surProgres) {
   }));
 
   await journaliser("comparaison_onedrive", bilan);
-  return { resultats, bilan, fautes, genere_le: liste.genere_le };
+  return { resultats, bilan, fautes, ecarts, genere_le: liste.genere_le };
 }

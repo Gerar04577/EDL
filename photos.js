@@ -336,6 +336,13 @@ async function traiterFile() {
            d'être retentée à chaque envoi, et signalée à l'écran. */
         if (maj && (maj.tentatives || 0) >= ECHECS_AVANT_ABANDON) {
           await marquerEchec(element.photo_id, message);
+          /* La visite doit le savoir : le procès-verbal mentionnera cette
+             photographie comme non transmise. Sans cela, le document citait
+             une image que le locataire ne trouverait jamais dans le dossier
+             partagé, sans que rien ne l'explique. */
+          if ((element.genre || "photo") === "photo") {
+            await majPhotoEchouee(element.visit_id, element.photo_id, message);
+          }
           await journaliser("photo_abandonnee", { photo_id: element.photo_id, message });
         }
         rang++;
@@ -515,6 +522,20 @@ async function mettreDocumentEnFile(visite, nom, donnees, role, mime) {
   await mettreEnFile(element);
   await journaliser("document_en_file", { role: role, nom: nom });
   return element.photo_id;
+}
+
+/* Photographie définitivement refusée : on l'inscrit dans la visite, sans
+   la retirer. Ce qui a été pris et montré au locataire reste au constat. */
+async function majPhotoEchouee(visitId, photoId, message) {
+  const visite = await modifierVisite(visitId, v => {
+    const p = v.photos.find(x => x.photo_id === photoId);
+    if (p) { p.statut_transfert = "echec"; p.motif_echec = message || null; }
+  });
+  if (!visite) return;
+  if (typeof VISITE !== "undefined" && VISITE && VISITE.visit_id === visitId) {
+    VISITE.photos = visite.photos;
+    if (typeof prevenirEcran === "function") prevenirEcran(visitId);
+  }
 }
 
 async function majDocumentDansVisite(element, itemId) {

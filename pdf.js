@@ -367,25 +367,42 @@ async function genererPV(visite) {
   /* Mention expresse, imprimée UNIQUEMENT si des photographies restent à
      déposer. Elle est placée avant les signatures : le preneur la lit avant
      de signer, et non après. Texte validé avec le protocole. */
-  const enAttente = V.photos.filter(x => x.statut_transfert !== "confirme");
-  if (enAttente.length) {
+  const echouees = V.photos.filter(x => x.statut_transfert === "echec");
+  const enAttente = V.photos.filter(x =>
+    x.statut_transfert !== "confirme" && x.statut_transfert !== "echec");
+  if (enAttente.length || echouees.length) {
     /* Réservée d'un bloc : coupée par un saut de page, la mention perdrait
        sa force — le preneur signerait au bas d'une page en n'en ayant lu
        que la moitié. */
-    if (p.y + 46 > PDF_HAUTEUR - PDF_MARGE) { doc.addPage(); p.y = PDF_MARGE; }
-    p.titre("Photographies non encore déposées");
-    p.paragraphe("À l'instant de la présente signature, " + enAttente.length +
-      " photographie(s) sur " + V.photos.length + " n'avaient pas encore été " +
-      "transmises au dossier informatique, faute de réseau disponible sur les lieux.");
+    if (p.y + 56 > PDF_HAUTEUR - PDF_MARGE) { doc.addPage(); p.y = PDF_MARGE; }
+    p.titre("Photographies non déposées à ce jour");
+    p.paragraphe("À l'instant de la présente signature, " +
+      (enAttente.length + echouees.length) + " photographie(s) sur " +
+      V.photos.length + " n'avaient pas été transmises au dossier informatique.");
     p.saut(2);
     p.paragraphe("Chacune a été prise et présentée aux parties au cours de la visite. " +
       "Sa date, son heure et son empreinte SHA-256 figurent à l'annexe du présent " +
       "procès-verbal et sont donc couvertes par les signatures ci-dessous.");
     p.saut(2);
-    p.paragraphe("Elles seront déposées dans le dossier de la visite dès le " +
-      "rétablissement du réseau, à l'adresse indiquée au présent document. Toute " +
-      "divergence entre une photographie produite ultérieurement et l'empreinte " +
-      "inscrite à l'annexe se constate par simple recalcul.");
+    if (enAttente.length) {
+      p.paragraphe(enAttente.length + " photographie(s) sont en attente de " +
+        "transmission, faute de réseau disponible sur les lieux. Elles seront " +
+        "déposées dans le dossier de la visite dès le rétablissement du réseau, " +
+        "à l'adresse indiquée au présent document.");
+      p.saut(2);
+    }
+    if (echouees.length) {
+      /* Le locataire ne les trouvera pas dans le dossier consultable : le
+         dire au document plutôt que de le laisser découvrir. */
+      p.paragraphe(echouees.length + " photographie(s), identifiée(s) à l'annexe " +
+        "comme non transmises, ont été refusées par le service de stockage et ne " +
+        "figureront pas dans le dossier consultable. Elles demeurent conservées par " +
+        "le bailleur et peuvent être produites sur simple demande : leur empreinte " +
+        "inscrite ci-après permet d'en vérifier l'intégrité.");
+      p.saut(2);
+    }
+    p.paragraphe("Toute divergence entre une photographie produite ultérieurement et " +
+      "l'empreinte inscrite à l'annexe se constate par simple recalcul.");
     p.saut(5);
   }
 
@@ -524,6 +541,13 @@ function ligneAnnexe(p, photo) {
     ? "SHA-256 " + photo.empreinte_sha256
     : "empreinte non calculée pour cette photographie",
     { retrait: 6, taille: 7 });
+  /* Une photographie refusée par le service de stockage ne figurera pas
+     dans le dossier consultable : le document doit le dire, sinon il
+     renvoie à une image introuvable. */
+  if (photo.statut_transfert === "echec") {
+    p.paragraphe("Non transmise au dossier informatique — voir la mention qui précède les signatures",
+      { retrait: 6, taille: 7 });
+  }
   p.saut(1.5);
 }
 

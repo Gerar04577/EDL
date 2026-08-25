@@ -463,19 +463,14 @@ async function verifierCible(locataire) {
   E.brouillon.dossier_photos_item_id = prep.id;
   E.brouillon.lien_photos = prep.lien;
 
-  /* Les preneurs venaient de la liste de Gestion Loyers, fixée à l'étape
-     précédente. Si le dossier choisi n'est pas celui du locataire attendu,
-     le procès-verbal portait le nom d'une AUTRE personne que celle qui
-     signe. Le dossier retenu fait foi. */
-  const attendus = (E.brouillon.preneurs || []).join(" & ");
-  if (!memeFamille(locataire.nom, attendus)) {
-    E.brouillon.preneurs = decouperPreneurs(locataire.nom);
-    E.brouillon.preneurs_corriges = true;
-    E.brouillon.preneurs_liste = attendus || null;
-  } else {
-    E.brouillon.preneurs_corriges = false;
-    E.brouillon.preneurs_liste = null;
-  }
+  /* Les preneurs viennent de Gestion Loyers, et de nulle part ailleurs.
+     Une version antérieure les remplaçait par le nom du dossier OneDrive
+     quand les deux ne concordaient pas : un dossier nommé « DUPONT Jean -
+     bail 2025 » finissait tel quel comme nom de preneur dans un document
+     signé. Un nom de dossier est une étiquette de rangement, pas une
+     identité civile.
+     Les écarts entre les deux sources se traitent AU BUREAU, dans
+     « Comparer avec OneDrive », jamais debout devant une porte. */
   ecranComposition();
 }
 
@@ -509,28 +504,6 @@ function confirmer(titreTexte, detail, libelleOui) {
    termine par « V2 » : deux rectifications le même jour dans la même unité
    auraient produit le même nom de fichier, et la seconde aurait écrasé la
    première. On prend donc le code de l'identifiant PERMANENT. */
-/* NE PAS nommer normaliserNom : graph.js en définit une autre, qui
-   conserve les espaces et sert à reconnaître les types de dossiers.
-   Deux fonctions de même nom, et la dernière chargée écrase l'autre. */
-function motsDuNom(s) {
-  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase().split(/[^A-Z0-9]+/).filter(x => x.length > 1);
-}
-
-/* Un dossier OneDrive porte souvent une forme abrégée du nom des
-   locataires : « ZUFFANTI BERTE » pour « ZUFFANTI Léna & BERTE Matis ».
-   Ce n'est PAS une autre personne, et il ne faut surtout pas remplacer
-   les noms complets par l'abréviation.
-
-   On ne considère qu'il s'agit de quelqu'un d'autre que si le dossier
-   introduit un nom absent de la liste. */
-function memeFamille(nomDossier, nomListe) {
-  const dossier = motsDuNom(nomDossier);
-  const liste = motsDuNom(nomListe);
-  if (!dossier.length || !liste.length) return false;
-  return dossier.every(m => liste.includes(m));
-}
-
 function codeCourt(V) {
   const base = (V.edl_id || V.visit_id).split("_").pop();
   const version = V.version_doc && V.version_doc !== "V1" ? "_" + V.version_doc : "";
@@ -659,12 +632,6 @@ function dessinerOptions() {
       <div class="ligne"><span>Dossier</span><span class="val">${b.type}</span></div>
     </div>
     <div class="bloc"><h2>Preneurs à faire signer</h2>
-      ${b.preneurs_corriges
-        ? `<div class="avert"><strong>Preneurs repris du dossier choisi</strong>
-           La liste de Gestion Loyers annonçait ${
-             echapper(b.preneurs_liste || "aucun locataire")}. Le dossier OneDrive
-           retenu porte un autre nom : ce sont les noms ci-dessous qui figureront
-           au procès-verbal. Vérifie-les.</div>` : ""}
       ${b.preneurs.length
         ? b.preneurs.map(p => `<div class="ligne"><span>${echapper(p)}</span><span class="val"></span></div>`).join("")
         : `<p class="note">Aucun preneur dans la liste — unité inoccupée. À saisir à la signature.</p>`}
@@ -1927,6 +1894,20 @@ async function ecranCloture(visite) {
       ${piecesVides.map(p => echapper(p.libelle)).join(", ")}</div>`;
   }
 
+  /* Photographies définitivement refusées : elles figureront au document
+     comme non transmises. Julien peut encore les reprendre s'il en a le
+     temps — rien ne bloque. */
+  const echouees = V.photos.filter(p => p.statut_transfert === "echec");
+  if (echouees.length) {
+    html += `<div class="avert"><strong>${echouees.length} photographie(s) refusée(s)
+      par Microsoft</strong>
+      ${echouees.map(p => echapper(p.nom_fichier)).join("<br>")}<br><br>
+      Elles ne seront pas dans le dossier consultable par le locataire. Le
+      procès-verbal le dira expressément, avec leur empreinte. Si tu as le temps,
+      reprends-les depuis l'écran de la pièce : retire la photographie et
+      refais-la.</div>`;
+  }
+
   const conseils = controlerReleves(V);
   const anomalies = controlerProgression(V);
   if (anomalies.length) {
@@ -2746,7 +2727,13 @@ function dessinerPiece(message) {
         return `<div class="constat">
           <div class="ligne"><span>${echapper(p.nom_fichier)}</span>
           <span class="val ${p.statut_transfert === "confirme" ? "ok" : "ko"}">${
-            p.statut_transfert === "confirme" ? "enregistrée" : "en attente"}</span></div>
+            p.statut_transfert === "confirme" ? "enregistrée"
+            : p.statut_transfert === "echec" ? "refusée" : "en attente"}</span></div>
+          ${p.statut_transfert === "echec"
+            ? `<p class="note ko">Refusée par Microsoft : ${
+                echapper(p.motif_echec || "motif inconnu")}. Elle restera au
+               procès-verbal, signalée comme non transmise. Retire-la et
+               refais-la si tu le peux.</p>` : ""}
 
           ${p.statut_transfert === "confirme" ? `
             <div class="interrupteur">
@@ -3063,8 +3050,13 @@ function recalculerBilan() {
               sans_locataire: 0, vide_normal: 0, erreur: 0,
               approuve_absent: 0, hors_perimetre: 0, approuvees: 0 };
   const fautes = [];
+  const ecarts = [];
   COMP.resultats.forEach(bloc => bloc.lignes.forEach(l => {
     b.total++;
+    if (l.ecart_nom) {
+      ecarts.push({ immeuble: bloc.immeuble, unite: l.designation,
+                    dossier: l.ecart_nom.dossier, attendu: l.ecart_nom.attendu });
+    }
     if (b[l.statut] !== undefined) b[l.statut]++;
     if (l.approuvee) b.approuvees++;
     if (l.faute_de_frappe) {
@@ -3077,6 +3069,7 @@ function recalculerBilan() {
   }));
   COMP.bilan = b;
   COMP.fautes = fautes;
+  COMP.ecarts = ecarts;
 }
 
 function dessinerComparaison() {
@@ -3090,6 +3083,8 @@ function dessinerComparaison() {
     <div class="ligne"><span>Dossiers complets</span><span class="val ok">${b.complet}</span></div>
     <div class="ligne"><span>Unités inoccupées</span><span class="val gris">${b.vide_normal}</span></div>
     <div class="ligne"><span>À traiter</span><span class="val ${aTraiter ? "ko" : "ok"}">${aTraiter}</span></div>
+    <div class="ligne"><span>Noms à vérifier</span><span class="val ${
+      (r.ecarts || []).length ? "attention" : "ok"}">${(r.ecarts || []).length}</span></div>
     <div class="ligne"><span>Hors périmètre</span><span class="val gris">${b.hors_perimetre}</span></div>
     ${r.genere_le ? `<p class="note">Liste exportée le ${new Date(r.genere_le).toLocaleString("fr-BE")}</p>` : ""}
     </div>`;
@@ -3102,6 +3097,24 @@ function dessinerComparaison() {
         <div class="ligne"><span>${echapper(f.unite)}</span>
           <span class="val attention">${echapper(f.correction)}</span></div>
         <p class="note">${echapper(f.immeuble)} › ${echapper(f.chemin)}</p>
+      </div>`).join("")}
+    </div>`;
+  }
+
+  /* Les écarts de noms se règlent ICI, au bureau. Pendant la visite,
+     l'application ne demande rien et ne corrige rien : les preneurs
+     viennent de Gestion Loyers. */
+  if (r.ecarts && r.ecarts.length) {
+    html += `<div class="bloc"><h2>Noms à vérifier — ${r.ecarts.length}</h2>
+      <p class="note">Le dossier retenu ne porte aucun mot du nom du locataire
+      annoncé par Gestion Loyers. Soit le dossier est celui d'un ancien preneur,
+      soit la liste n'est pas à jour. À trancher avant la visite : c'est le nom
+      de Gestion Loyers qui figurera au procès-verbal.</p>
+      ${r.ecarts.map(e => `<div class="comp comp-alerte">
+        <div class="ligne"><span>${echapper(e.unite)}</span>
+          <span class="val gris">${echapper(e.immeuble)}</span></div>
+        <p class="note">Gestion Loyers : <strong>${echapper(e.attendu)}</strong></p>
+        <p class="note">Dossier OneDrive : <strong>${echapper(e.dossier)}</strong></p>
       </div>`).join("")}
     </div>`;
   }
@@ -3136,6 +3149,11 @@ function dessinerComparaison() {
         if (l.statut === "complet") html += ` › EDLE ✓ EDLS ✓`;
         if (l.structure === "plate") html += ` <span class="gris">(sans dossier locataire)</span>`;
         html += `</p>`;
+      }
+      if (l.ecart_nom) {
+        html += `<p class="note attention">Nom à vérifier — Gestion Loyers annonce
+          ${echapper(l.ecart_nom.attendu)}, le dossier s'appelle
+          ${echapper(l.ecart_nom.dossier)}</p>`;
       }
       if (l.message) html += `<p class="note">${echapper(l.message)}</p>`;
       if (l.statut === "incomplet" && l.sous_dossiers)
