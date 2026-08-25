@@ -273,7 +273,8 @@ async function envoyerElement(element) {
 
   const res = await appelGraph(chemin, {
     method: "PUT",
-    headers: { "Content-Type": "image/jpeg" },
+    /* Photographie ou document : le type suit l'élément. */
+    headers: { "Content-Type": element.type_mime || "image/jpeg" },
     body: element.blob,
   });
   if (!res.ok) throw new Error(`Envoi : ${await detailErreur(res)}`);
@@ -309,7 +310,7 @@ async function traiterFile() {
   _fileEnCours = true;
   const visitesTouchees = new Set();
   try {
-    let attente = await photosEnAttente();
+    let attente = await elementsEnAttente();
     let rang = 0;
     while (rang < attente.length && navigator.onLine) {
       const element = attente[rang];
@@ -346,15 +347,21 @@ async function traiterFile() {
          compté comme un échec d'envoi : la photographie est déposée, et la
          retenter la déposerait deux fois. */
       try {
-        await majPhotoDansVisite(element.visit_id, element.photo_id, itemId);
+        if ((element.genre || "photo") === "photo") {
+          await majPhotoDansVisite(element.visit_id, element.photo_id, itemId);
+          await journaliser("photo_envoyee", { photo_id: element.photo_id });
+        } else {
+          await majDocumentDansVisite(element, itemId);
+          await journaliser("document_envoye",
+            { role: element.role, nom: element.nom_fichier });
+        }
         visitesTouchees.add(element.visit_id);
-        await journaliser("photo_envoyee", { photo_id: element.photo_id });
       } catch (e) {
         await journaliser("photo_apres_depot_echoue",
           { photo_id: element.photo_id, message: String((e && e.message) || e) });
       }
       majCompteurAttente();
-      attente = await photosEnAttente();
+      attente = await elementsEnAttente();
       rang = 0;
     }
   } finally {
@@ -482,32 +489,87 @@ async function supprimerBrouillon(visite) {
   }
 }
 
+/* Documents produits à la signature. Ils suivent EXACTEMENT la même règle
+   que les photographies : conservés sur l'appareil, déposés quand le
+   réseau le permet, et effacés de l'appareil seulement après confirmation
+   d'écriture par Microsoft. */
+async function mettreDocumentEnFile(visite, nom, donnees, role, mime) {
+  const element = {
+    photo_id: nouvelIdentifiant("doc"),
+    genre: "document",
+    role: role,
+    visit_id: visite.visit_id,
+    nom_fichier: nom,
+    blob: donnees,
+    type_mime: mime || "application/pdf",
+    taille_octets: donnees.byteLength || donnees.size || null,
+    statut_transfert: "en_attente",
+    tentatives: 0,
+    horodatage: new Date().toISOString(),
+    drive_id: visite.bien.dossier_cible_drive_id,
+    /* Le procès-verbal et le rapport restent au NIVEAU DE LA VISITE, jamais
+       dans le sous-dossier Photos : le lien remis au locataire ne doit
+       montrer que des images. */
+    parent_id: visite.bien.dossier_cible_item_id,
+  };
+  await mettreEnFile(element);
+  await journaliser("document_en_file", { role: role, nom: nom });
+  return element.photo_id;
+}
+
+async function majDocumentDansVisite(element, itemId) {
+  await modifierVisite(element.visit_id, v => {
+    v.preuve = v.preuve || {};
+    if (element.role === "pv") {
+      v.preuve.pv_onedrive_item_id = itemId;
+      v.preuve.pv_depot_differe = false;
+    } else if (element.role === "comparaison") {
+      v.preuve.comparaison_onedrive_item_id = itemId;
+    }
+  });
+}
+
 /* Bloc « Envoyer les photographies », posé sur l'accueil et sur l'écran de
    clôture. Même comportement aux deux endroits : il envoie TOUT, toutes
    visites confondues, dans l'ordre où les photographies ont été prises.
    Deux boutons de même nom qui n'agiraient pas pareil seraient une source
    d'erreur, et la file est de toute façon unique. */
 async function blocEnvoi() {
-  const attente = await photosEnAttente();
+  const attente = await elementsEnAttente();
   const echecs = await photosEnEchec();
   if (!attente.length && !echecs.length) return "";
 
+  const photos = attente.filter(x => (x.genre || "photo") === "photo").length;
+  const docs = attente.length - photos;
   const mo = Math.round(attente.reduce((n, p) => n + (p.taille_octets || 0), 0) / 104857.6) / 10;
 
-  /* Une ligne par visite : sans elle, Julien ne sait pas laquelle attend. */
+  /* Une ligne par visite : sans elle, Julien ne sait pas laquelle attend.
+     Le procès-verbal est signalé à part — c'est la pièce qui compte. */
   const parVisite = {};
-  attente.forEach(p => { parVisite[p.visit_id] = (parVisite[p.visit_id] || 0) + 1; });
+  attente.forEach(p => {
+    const c = parVisite[p.visit_id] = parVisite[p.visit_id] || { photos: 0, docs: [] };
+    if ((p.genre || "photo") === "photo") c.photos++;
+    else c.docs.push(p.role === "pv" ? "procès-verbal" : "rapport de comparaison");
+  });
   const noms = await Promise.all(Object.keys(parVisite).map(async id => {
     const v = await lireVisite(id);
     const libelle = v ? (v.bien.immeuble + " " + v.bien.unite_source) : "visite effacée";
-    return `<div class="ligne"><span>${libelle}</span>
-      <span class="val">${parVisite[id]} photo(s)</span></div>`;
+    const c = parVisite[id];
+    const detail = [c.photos ? c.photos + " photo(s)" : null]
+      .concat(c.docs).filter(Boolean).join(" · ");
+    return `<div class="ligne"><span>${escapeSimple(libelle)}</span>
+      <span class="val">${detail}</span></div>`;
   }));
 
-  return `<div class="bloc"><h2>Photographies à envoyer</h2>
+  const quoi = photos
+    ? photos + " photo" + (photos > 1 ? "s" : "") + (docs ? " et " + docs + " document(s)" : "")
+    : docs + " document" + (docs > 1 ? "s" : "");
+
+  return `<div class="bloc"><h2>À envoyer</h2>
+    ${docs ? `<p class="note ko">Un procès-verbal signé attend d'être déposé.
+      Envoie-le dès que le réseau revient.</p>` : ""}
     ${attente.length
-      ? `<button id="btn-envoyer">Envoyer les ${attente.length} photo${
-          attente.length > 1 ? "s" : ""} en attente — ${mo} Mo</button>
+      ? `<button id="btn-envoyer">Envoyer ${quoi} — ${mo} Mo</button>
          ${noms.join("")}`
       : ""}
     ${echecs.length
@@ -532,11 +594,11 @@ function brancherEnvoi(apres) {
   if (!b) return;
   b.onclick = async () => {
     b.disabled = true;
-    const total = (await photosEnAttente()).length;
+    const total = (await elementsEnAttente()).length;
     let restant = total;
     b.textContent = "Envoi… 0 sur " + total;
     const suivi = setInterval(async () => {
-      restant = (await photosEnAttente()).length;
+      restant = (await elementsEnAttente()).length;
       b.textContent = "Envoi… " + (total - restant) + " sur " + total;
     }, 1200);
     try { await traiterFile(); }

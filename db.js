@@ -150,12 +150,32 @@ async function mettreEnFile(element) {
 
 /* Triée par horodatage : les photos partent dans l'ordre où elles ont été
    prises. Sans ce tri, l'ordre suivrait l'identifiant, qui est aléatoire. */
-async function photosEnAttente(visitId) {
+/* La file contient deux sortes d'éléments : les photographies, et les
+   documents produits à la signature — procès-verbal, rapport de
+   comparaison. Le procès-verbal doit lui aussi pouvoir attendre le
+   réseau : sans cela, la signature restait impossible hors ligne, alors
+   même qu'on avait décidé qu'elle devait aboutir.
+
+   Les éléments enregistrés avant la 2.5.2 n'ont pas de champ « genre » :
+   ce sont des photographies. */
+function _estPhoto(element) {
+  return (element.genre || "photo") === "photo";
+}
+
+async function elementsEnAttente(visitId) {
   const s = await _transaction("photos_en_attente", "readonly");
   const toutes = await _promesse(s.getAll());
   return toutes
     .filter(p => p.statut_transfert === "en_attente" && (!visitId || p.visit_id === visitId))
     .sort((a, b) => String(a.horodatage).localeCompare(String(b.horodatage)));
+}
+
+async function photosEnAttente(visitId) {
+  return (await elementsEnAttente(visitId)).filter(_estPhoto);
+}
+
+async function documentsEnAttente(visitId) {
+  return (await elementsEnAttente(visitId)).filter(x => !_estPhoto(x));
 }
 
 /* Compté PAR VISITE : un compteur global faisait qu'une visite ouverte

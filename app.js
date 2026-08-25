@@ -2316,7 +2316,21 @@ async function signerEtDeposer(blocs) {
     b.textContent = "Dépôt dans OneDrive…";
     const nom = `${V.type}_${V.date_signature.slice(0, 10)}_${
       nettoyerLibelle(V.bien.unite_source)}_${codeCourt(V)}.pdf`;
-    const item = await deposerPdf(V, nom, donnees);
+
+    /* Le procès-verbal suit la même règle que les photographies : s'il ne
+       peut pas être déposé maintenant, il attend dans la file et part au
+       bouton « Envoyer ». La signature, elle, ABOUTIT — c'est ce qui a été
+       décidé, et sans cela une visite sans réseau ne pouvait pas se
+       clôturer alors que le document était fabriqué et l'empreinte
+       calculée. */
+    let item = null, pvDiffere = false;
+    try {
+      item = await deposerPdf(V, nom, donnees);
+    } catch (e) {
+      pvDiffere = true;
+      await journaliser("pv_depot_differe", String((e && e.message) || e));
+      await mettreDocumentEnFile(VISITE, nom, donnees, "pv", "application/pdf");
+    }
 
     /* Le rapport de comparaison est un document distinct, non signé :
        contester le classement ne doit pas fragiliser le constat. */
@@ -2328,13 +2342,19 @@ async function signerEtDeposer(blocs) {
         const donneesComp = docComp.output("arraybuffer");
         const nomComp = `COMPARAISON_${V.date_signature.slice(0, 10)}_${
           nettoyerLibelle(V.bien.unite_source)}_${codeCourt(V)}.pdf`;
-        const itemComp = await deposerPdf(V, nomComp, donneesComp);
+        let itemComp = null;
+        try {
+          itemComp = await deposerPdf(V, nomComp, donneesComp);
+        } catch (e) {
+          await journaliser("comparaison_depot_differe", String((e && e.message) || e));
+          await mettreDocumentEnFile(VISITE, nomComp, donneesComp, "comparaison", "application/pdf");
+        }
         comparaisonDeposee = {
           nom: nomComp, id: itemComp ? itemComp.id : null,
           empreinte: await empreinteSha256(donneesComp),
         };
       } catch (e) {
-        await journaliser("comparaison_depot_echoue", String(e && e.message));
+        await journaliser("comparaison_echouee", String(e && e.message));
       }
     }
 
@@ -2345,6 +2365,7 @@ async function signerEtDeposer(blocs) {
       v.preuve.hash_pdf_pv_sha256 = empreinte;
       v.preuve.pv_onedrive_item_id = item ? item.id : null;
       v.preuve.pv_nom_fichier = nom;
+      v.preuve.pv_depot_differe = pvDiffere;
       if (comparaisonDeposee) {
         v.preuve.hash_pdf_comparaison_sha256 = comparaisonDeposee.empreinte;
         v.preuve.comparaison_onedrive_item_id = comparaisonDeposee.id;
@@ -2359,9 +2380,16 @@ async function signerEtDeposer(blocs) {
     }) || VISITE;
 
     await deposerMaintenant(VISITE);
-    await journaliser("visite_signee", { visit_id: VISITE.visit_id, depot: !!item });
+    await journaliser("visite_signee",
+      { visit_id: VISITE.visit_id, depot: !!item, differe: pvDiffere });
 
-    vue(`<div class="succes">Document signé et déposé</div>
+    vue(`<div class="succes">${pvDiffere
+        ? "Document signé — dépôt en attente de réseau"
+        : "Document signé et déposé"}</div>
+      ${pvDiffere ? `<div class="avert"><strong>Le procès-verbal n'est pas encore
+        dans OneDrive</strong> Il est signé, son empreinte est calculée, et il est
+        conservé sur le téléphone. Appuie sur « Envoyer » dès que le réseau revient :
+        il partira avec les photographies. Rien n'est perdu.</div>` : ""}
       <div class="bloc"><h2>${echapper(nom)}</h2>
         <div class="ligne"><span>Empreinte</span><span class="val" style="font-size:11px">${
           empreinte ? echapper(empreinte.slice(0, 32)) + "…" : "—"}</span></div>
@@ -2371,12 +2399,17 @@ async function signerEtDeposer(blocs) {
       </div>
       ${comparaisonDeposee ? `<div class="bloc"><h2>Rapport de comparaison</h2>
         <p class="note">${echapper(comparaisonDeposee.nom)}</p></div>` : ""}
-      ${finVisiteDisponible()
-        ? `<button id="btn-envoi">Rapport Word et courriel au locataire</button>`
-        : `<div class="avert"><strong>À faire maintenant</strong>
-             Envoie le PDF au locataire depuis OneDrive, le jour même :
-             sa réception fait partie de la preuve.</div>`}
+      ${pvDiffere
+        ? await blocEnvoi()
+        : (finVisiteDisponible()
+          ? `<button id="btn-envoi">Rapport Word et courriel au locataire</button>`
+          : `<div class="avert"><strong>À faire maintenant</strong>
+               Envoie le PDF au locataire depuis OneDrive, le jour même :
+               sa réception fait partie de la preuve.</div>`)}
       <button class="secondaire" id="btn-accueil">Retour à l'accueil</button>`);
+    /* Tant que le procès-verbal n'est pas déposé, le courriel au locataire
+       n'a pas d'objet : le scénario Make ne trouverait rien à joindre. */
+    brancherEnvoi(() => ecranAccueil());
     if ($("btn-envoi")) $("btn-envoi").onclick = () => ecranFinVisite(VISITE);
     $("btn-accueil").onclick = () => ecranAccueil();
   } catch (e) {
