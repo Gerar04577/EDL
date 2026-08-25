@@ -146,19 +146,28 @@ var AIDE = [
     titre: "8. Après la signature",
     corps: [
       "Le document est fabriqué sur le téléphone, son empreinte calculée, et il est " +
-      "déposé dans le dossier du locataire.",
+      "déposé dans le dossier du locataire. Sans réseau, il attend dans la file et " +
+      "part au bouton « Envoyer ».",
       "Appuie ensuite sur « Rapport Word et courriel au locataire ». Laisse « Rapport " +
       "Word » sur non, et « Courriel » sur oui.",
       "L'envoi le jour même établit que le locataire a reçu copie : cela fait partie " +
       "de la preuve.",
       "Le courriel contient aussi un lien vers les photographies, en lecture seule. " +
-      "Ce lien ne donne accès qu'au dossier de la visite — EDLE ou EDLS — et à rien " +
-      "d'autre : ni le bail, ni les autres locataires, ni le reste de OneDrive.",
+      "Ce lien figure DÉJÀ dans le procès-verbal signé : il est créé au démarrage de " +
+      "la visite, en même temps que le sous-dossier Photos.",
+      "Il ne montre QUE les photographies. Ni le fichier de données — qui contient le " +
+      "numéro de carte d'identité et les montants —, ni le procès-verbal, ni le bail, " +
+      "ni les autres locataires. C'est pourquoi les photographies vont dans un " +
+      "sous-dossier Photos et le reste au niveau au-dessus : ne déplace jamais ces " +
+      "fichiers à la main dans OneDrive.",
       "Tu peux le désactiver au cas par cas, avec l'interrupteur « Lien vers les " +
       "photographies ».",
     ],
     attention: "Après signature, le document ne peut plus être modifié. Une correction " +
-      "exige de créer une nouvelle version — voir la section suivante.",
+      "exige de créer une nouvelle version — voir la section suivante. La dernière page " +
+      "du procès-verbal est l'ANNEXE : chaque photographie y figure avec sa date, son " +
+      "heure et son empreinte. C'est elle qui permet de vérifier, des années plus tard, " +
+      "qu'une photographie produite est bien celle qui a été présentée au locataire.",
   },
   {
     titre: "9. Corriger une erreur après signature",
@@ -187,11 +196,18 @@ var AIDE = [
       "Les photographies restent sur le téléphone. Tu peux fermer l'application, " +
       "éteindre le téléphone : rien ne se perd, jamais. Elles ne sont effacées de " +
       "l'appareil qu'une fois que Microsoft a confirmé les avoir reçues.",
-      "Une fois le réseau retrouvé : accueil, bouton « Envoyer les N photos en attente ». " +
-      "Il envoie celles de TOUTES les visites, pas seulement de la dernière. Le même " +
-      "bouton se trouve sur l'écran de fin de visite.",
-      "Tu peux signer sans attendre qu'elles soient parties : le procès-verbal le " +
-      "mentionne expressément et porte leur date, leur heure et leur empreinte.",
+      "Une fois le réseau retrouvé : accueil, bouton « Envoyer ». Il envoie tout ce qui " +
+      "attend, pour TOUTES les visites, pas seulement la dernière. Le même bouton se " +
+      "trouve sur l'écran de fin de visite.",
+      "Tu peux signer sans attendre : la signature aboutit même sans réseau. Le " +
+      "procès-verbal est fabriqué sur le téléphone, son empreinte calculée, et il " +
+      "attend son tour dans la même file que les photographies. L'écran affiche alors " +
+      "« Document signé — dépôt en attente de réseau ».",
+      "Tant que le procès-verbal n'est pas déposé, le bouton « Rapport Word et courriel » " +
+      "n'apparaît pas : le scénario n'aurait rien à joindre. Envoie d'abord, le bouton " +
+      "revient ensuite.",
+      "Le procès-verbal mentionne expressément les photographies restées à déposer, " +
+      "avec leur date, leur heure et leur empreinte.",
       "Si une photographie est refusée plusieurs fois par Microsoft, elle est signalée " +
       "à part et n'empêche plus les autres de partir. Reprends-la depuis l'écran de " +
       "la pièce.",
