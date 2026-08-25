@@ -10,7 +10,21 @@ var E = {
 };
 
 function $(id) { return document.getElementById(id); }
-function vue(html) { $("vue").innerHTML = html; }
+/* Les aperçus occupent de la mémoire jusqu'à leur libération. On libère
+   ceux de l'écran précédent à CHAQUE changement d'écran, et non au seul
+   retour : iOS ferme une application qui consomme trop, en pleine visite. */
+var _apercusAffiches = [];
+var _apercusEnCours = [];
+
+function noterApercu(url) { if (url) _apercusEnCours.push(url); return url; }
+
+function libererApercus() {
+  _apercusAffiches.forEach(u => { try { URL.revokeObjectURL(u); } catch (_) {} });
+  _apercusAffiches = _apercusEnCours;
+  _apercusEnCours = [];
+}
+
+function vue(html) { libererApercus(); $("vue").innerHTML = html; }
 function titre(t, s) { $("titre").textContent = t; $("sous-titre").textContent = s || ""; }
 function avert(html) { $("avertissement").innerHTML = html; }
 function echapper(s) { return String(s == null ? "" : s).replace(/[<>&"]/g, c =>
@@ -451,6 +465,16 @@ function confirmer(titreTexte, detail, libelleOui) {
     fond.querySelector("#conf-non").onclick = () => fermer(false);
     fond.onclick = (ev) => { if (ev.target === fond) fermer(false); };
   });
+}
+
+/* Le code court identifie le document. Pour une version 2, visit_id se
+   termine par « V2 » : deux rectifications le même jour dans la même unité
+   auraient produit le même nom de fichier, et la seconde aurait écrasé la
+   première. On prend donc le code de l'identifiant PERMANENT. */
+function codeCourt(V) {
+  const base = (V.edl_id || V.visit_id).split("_").pop();
+  const version = V.version_doc && V.version_doc !== "V1" ? "_" + V.version_doc : "";
+  return base + version;
 }
 
 function erreurEcran(message, retour) {
@@ -1280,7 +1304,10 @@ function ecranFinVisite(visite, message) {
      à l'envoi du procès-verbal signé. */
   if (E.finRapport === undefined) E.finRapport = false;
   if (E.finCourriel === undefined) E.finCourriel = destinataires.length > 0;
-  if (E.finLien === undefined) E.finLien = true;
+  /* Le lien porte sur le dossier ENTIER, qui contient aussi le fichier de
+     données de la visite : numéro de carte d'identité, adresses, réserves
+     et montants. Il est donc DÉSACTIVÉ par défaut. */
+  if (E.finLien === undefined) E.finLien = false;
 
   titre("Rapport et courriel", V.bien.unite_source);
 
@@ -1295,13 +1322,19 @@ function ecranFinVisite(visite, message) {
     <div class="bloc"><h2>Ce qui sera fait</h2>
       ${inter("courriel", "Courriel au locataire, procès-verbal signé joint",
               E.finCourriel, destinataires.length === 0)}
-      ${inter("lien", "Lien vers les photographies, en lecture seule", E.finLien)}
+      ${inter("lien", "Lien vers le dossier de la visite", E.finLien)}
       ${inter("rapport", "Rapport Word (nécessite un modèle dans Make)", E.finRapport)}
       <p class="note">L'envoi du procès-verbal le jour même établit que le
       locataire en a reçu copie : cela fait partie de la preuve.</p>
-      <p class="note">Le lien ne donne accès qu'au dossier de cette visite —
-      ${V.type === "EDLS" ? "EDLS" : "EDLE"} — et à rien d'autre. Ni le bail,
-      ni les autres locataires, ni le reste de OneDrive.</p>
+      ${E.finLien ? `<div class="erreur"><strong>Ce lien expose plus que les photographies</strong>
+        Le dossier ${V.type === "EDLS" ? "EDLS" : "EDLE"} contient aussi le fichier
+        de données de la visite : numéro de carte d'identité des signataires,
+        adresses électroniques, réserves${V.type === "EDLS"
+          ? ", et les montants réclamés" : ""}. Le lien étant anonyme, toute
+        personne à qui le locataire le transmet y aura accès.</div>` : ""}
+      <p class="note">Le lien porte sur le dossier ${V.type === "EDLS" ? "EDLS" : "EDLE"}
+      de cette visite, en lecture seule. Ni le bail, ni les autres locataires,
+      ni le reste de OneDrive.</p>
       <p class="note">Le document signé est déjà déposé dans OneDrive.
       Un échec d'envoi ne remet rien en cause.</p>
     </div>
@@ -1767,7 +1800,9 @@ async function ecranCloture(visite) {
   E.ecran = "cloture";
   VISITE = (await lireVisite(visite.visit_id)) || visite;
   const V = VISITE;
-  const attente = await nombreEnAttente();
+  /* Seules les photos de CETTE visite bloquent sa clôture : une autre
+     visite ouverte en parallèle ne doit pas l'empêcher de signer. */
+  const attente = await nombreEnAttente(V.visit_id);
   const constats = V.pieces.reduce((n, p) => n + p.constatations.length, 0);
   const piecesVides = V.pieces.filter(p =>
     p.constatations.length === 0 && !V.photos.some(ph => ph.rattachement === p.piece_id));
@@ -1923,7 +1958,7 @@ async function ecranLecture() {
   }
   E.apercu = doc;
 
-  const url = URL.createObjectURL(doc.output("blob"));
+  const url = noterApercu(URL.createObjectURL(doc.output("blob")));
   vue(`<div class="bloc"><h2>À faire lire au locataire</h2>
       <p class="note">Fais défiler le document en entier avec le locataire.
       Il ne pourra plus être modifié après signature.</p>
@@ -1947,7 +1982,7 @@ async function ecranLecture() {
     $("btn-reserves").disabled = !E.luEtApprouve;
   };
   $("btn-reserves").onclick = () => ecranReserves();
-  $("btn-retour").onclick = () => { URL.revokeObjectURL(url); ecranIdentites(); };
+  $("btn-retour").onclick = () => ecranIdentites();   // vue() libère l'aperçu
 }
 
 // --- Observations et réserves du preneur ---------------------------------
@@ -2209,7 +2244,7 @@ async function signerEtDeposer(blocs) {
 
     b.textContent = "Dépôt dans OneDrive…";
     const nom = `${V.type}_${V.date_signature.slice(0, 10)}_${
-      nettoyerLibelle(V.bien.unite_source)}_${V.visit_id.split("_").pop()}.pdf`;
+      nettoyerLibelle(V.bien.unite_source)}_${codeCourt(V)}.pdf`;
     const item = await deposerPdf(V, nom, donnees);
 
     /* Le rapport de comparaison est un document distinct, non signé :
@@ -2221,7 +2256,7 @@ async function signerEtDeposer(blocs) {
         const docComp = await genererRapportComparaison(V);
         const donneesComp = docComp.output("arraybuffer");
         const nomComp = `COMPARAISON_${V.date_signature.slice(0, 10)}_${
-          nettoyerLibelle(V.bien.unite_source)}_${V.visit_id.split("_").pop()}.pdf`;
+          nettoyerLibelle(V.bien.unite_source)}_${codeCourt(V)}.pdf`;
         const itemComp = await deposerPdf(V, nomComp, donneesComp);
         comparaisonDeposee = {
           nom: nomComp, id: itemComp ? itemComp.id : null,
@@ -2545,15 +2580,27 @@ function dessinerPiece(message) {
 
   $("vue").querySelectorAll("[data-suppr-photo]").forEach(b => b.onclick = async () => {
     const id = b.getAttribute("data-suppr-photo");
-    b.disabled = true;
-    try {
-      VISITE = await retirerPhoto(VISITE.visit_id, id) || VISITE;
-    } catch (e) {
-      return dessinerPiece("Retrait impossible : " + e.message);
-    }
-    await journaliser("photo_retiree", { photo_id: id });
+    const liee = piece.constatations.find(c => c.photo_id === id);
+    if (!(await confirmer("Retirer cette photographie ?",
+        liee
+          ? "Sa constatation sera retirée en même temps : « " +
+            liee.texte.slice(0, 80) + (liee.texte.length > 80 ? "…" : "") +
+            " ». Le fichier déjà déposé dans OneDrive n'est pas supprimé."
+          : "Le fichier déjà déposé dans OneDrive n'est pas supprimé.",
+        "Oui, retirer"))) return;
+    VISITE = await modifierVisite(VISITE.visit_id, v => {
+      v.photos = v.photos.filter(x => x.photo_id !== id);
+      /* Une constatation qui cite une photographie retirée serait
+         orpheline au procès-verbal : elle part avec elle. */
+      v.pieces.forEach(pc => {
+        pc.constatations = pc.constatations.filter(c => c.photo_id !== id);
+      });
+    }) || VISITE;
+    delete E.brouillons[id];
     programmerDepot();
-    dessinerPiece("Photo retirée — le fichier reste dans OneDrive");
+    dessinerPiece(liee
+      ? "Photographie et constatation retirées de l'état des lieux"
+      : "Photographie retirée de l'état des lieux");
   });
 
   $("btn-photo").onclick = () => $("appareil").click();

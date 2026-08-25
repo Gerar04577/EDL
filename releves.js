@@ -89,10 +89,6 @@ async function rappelerIndexEntree(visite) {
      lectures OneDrive et n'est pas toujours utile. */
   if ((visite.options || {}).rappel_index_entree !== true) return null;
   try {
-    const enfants = await enfantsDeRef({
-      id: visite.bien.dossier_cible_item_id,
-      driveId: visite.bien.dossier_cible_drive_id,
-    });
     // l'EDLE est dans le dossier frère : on remonte d'un cran
     const parent = await refParentEDLE(visite);
     if (!parent) return null;

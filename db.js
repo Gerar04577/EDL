@@ -158,8 +158,13 @@ async function photosEnAttente(visitId) {
     .sort((a, b) => String(a.horodatage).localeCompare(String(b.horodatage)));
 }
 
-async function nombreEnAttente() {
-  return (await photosEnAttente()).length;
+/* Compté PAR VISITE : un compteur global faisait qu'une visite ouverte
+   en bloquait une autre, et le bandeau annonçait des photos qui n'étaient
+   pas celles de la pièce affichée. */
+async function nombreEnAttente(visitId) {
+  const liste = await photosEnAttente();
+  if (!visitId) return liste.length;
+  return liste.filter(p => p.visit_id === visitId).length;
 }
 
 /* Confirmation d'écriture : c'est SEULEMENT ici que la copie locale

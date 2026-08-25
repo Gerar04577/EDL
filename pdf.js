@@ -389,7 +389,15 @@ async function genererPV(visite) {
     doc.setTextColor(0); doc.setFontSize(10);
     doc.text(String(b.nom || ""), x, y0 + 5);
     if (b.image) {
-      try { doc.addImage(b.image, "PNG", x, y0 + 7, largeurBloc, 20); } catch (_) {}
+      try { /* Le cadre de saisie est en 3:1 ; l'imposer en 4,5:1 étirait la signature.
+       On conserve les proportions et on centre dans le cadre. */
+    (() => {
+      const hauteurMax = 20, ratio = 3;
+      let larg = Math.min(largeurBloc, hauteurMax * ratio);
+      let haut = larg / ratio;
+      if (haut > hauteurMax) { haut = hauteurMax; larg = haut * ratio; }
+      doc.addImage(b.image, "PNG", x + (largeurBloc - larg) / 2, y0 + 7, larg, haut);
+    })(); } catch (_) {}
     }
     doc.setDrawColor(150); doc.setLineWidth(0.3);
     doc.line(x, y0 + 28, x + largeurBloc, y0 + 28);

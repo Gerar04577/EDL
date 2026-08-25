@@ -128,31 +128,6 @@ function scoreNom(nomDossier, preneurs) {
   return score;
 }
 
-async function choisirDossierLocataire(locs, unite, refUnite) {
-  if (locs.length === 1) return { choix: locs[0], motif: "seul dossier" };
-
-  // 1. recoupement de nom
-  const notes = locs.map(l => ({ l, s: scoreNom(l.name, unite.preneurs) }));
-  const meilleur = Math.max(...notes.map(n => n.s));
-  const gagnants = notes.filter(n => n.s === meilleur && n.s > 0);
-  if (gagnants.length === 1) return { choix: gagnants[0].l, motif: "nom du locataire" };
-
-  // 2. contenu réel : on inspecte du plus récent au plus ancien
-  const ordonnes = locs.slice().sort((a, b) =>
-    String(b.lastModifiedDateTime || "").localeCompare(String(a.lastModifiedDateTime || "")));
-  for (const l of ordonnes) {
-    try {
-      const enfants = (await enfantsDeRef(refDe(l, refUnite.driveId)))
-        .filter(e => e.folder || e.remoteItem);
-      const noms = enfants.map(e => String(e.name || "").trim().toUpperCase());
-      if (noms.includes("EDLE") || noms.includes("EDLS"))
-        return { choix: l, motif: "contient les états des lieux", enfants };
-    } catch (_) { /* on continue */ }
-  }
-
-  // 3. à défaut
-  return { choix: ordonnes[0], motif: "plus récemment modifié" };
-}
 
 /* Une unité non contrôlée — inoccupée ou hors périmètre — possède quand
    même un dossier. On le rattache, sans y descendre, pour qu'il ne soit

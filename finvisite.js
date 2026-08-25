@@ -246,8 +246,10 @@ async function envoyerFinVisite(visite, options) {
   const o = options || {};
   /* Le lien est créé au moment de l'envoi, pas à la signature : il ne
      figure donc pas dans le document signé, qui doit rester intemporel. */
+  /* Jamais de lien par défaut : le dossier contient le fichier de données
+     de la visite. Il faut une demande explicite. */
   let lien = null;
-  if (o.courriel !== false && o.lien !== false) {
+  if (o.courriel !== false && o.lien === true) {
     lien = await lienDossierVisite(visite);
   }
   const champs = resumePourMake(visite, lien);

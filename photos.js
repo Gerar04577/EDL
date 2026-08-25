@@ -58,7 +58,7 @@ function nomFichierPhoto(visite, rattachement, numero) {
   const date = visite.date_debut.slice(0, 10);
   const piece = visite.pieces.find(p => p.piece_id === rattachement);
   const etiquette = piece ? nettoyerLibelle(piece.libelle) : nettoyerLibelle(rattachement);
-  const code = visite.visit_id.split("_").pop();
+  const code = (visite.edl_id || visite.visit_id).split("_").pop();
   return `${visite.type}_${date}_${etiquette}_${String(numero).padStart(3, "0")}_${code}.jpg`;
 }
 
@@ -205,8 +205,11 @@ async function traiterFile() {
     /* Dépôt final : dès que la file est vide, le fichier de visite est
        remis à jour dans OneDrive. Sans cela, les dernières photos
        manqueraient à une reprise depuis un autre appareil. */
-    if (visitesTouchees.size > 0 && (await nombreEnAttente()) === 0) {
+    /* Le dépôt final du fichier de visite ne doit dépendre que de SES
+       photos, pas de celles d'une autre visite ouverte en parallèle. */
+    if (visitesTouchees.size > 0) {
       for (const id of visitesTouchees) {
+        if ((await nombreEnAttente(id)) > 0) continue;   // cette visite-ci attend encore
         const v = await lireVisite(id);
         if (v) {
           _dernierePhotoSauvee[v.visit_id] =
@@ -325,7 +328,8 @@ async function supprimerBrouillon(visite) {
 async function majCompteurAttente(nbPhotos) {
   const zone = document.getElementById("barre-attente");
   if (!zone) return;
-  const n = await nombreEnAttente();
+  const n = await nombreEnAttente(
+    typeof VISITE !== "undefined" && VISITE ? VISITE.visit_id : null);
   if (n > 0) {
     zone.textContent = n + (n > 1 ? " photos en attente d'envoi" : " photo en attente d'envoi");
     zone.className = "barre barre-attente";
