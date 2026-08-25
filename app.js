@@ -2384,6 +2384,12 @@ function dessinerPiece(message) {
         : `<p class="note">Aucune constatation pour l'instant.</p>`}
     </div>
 
+    ${_echecDossierPhotos ? `<div class="avert"><strong>Sous-dossier Photos non créé</strong>
+      ${echapper(_echecDossierPhotos)}<br><br>
+      Les photographies sont déposées dans le dossier de la visite, comme avant.
+      Rien n'est perdu, mais le lien vers les photographies ne pourra pas être
+      envoyé au locataire.</div>` : ""}
+
     <div class="bloc"><h2>${photos.length} photo${photos.length > 1 ? "s" : ""}${
         photos.length ? " — " + deposees + " enregistrée" + (deposees > 1 ? "s" : "") : ""}</h2>
       ${photos.length ? photos.map(p => {

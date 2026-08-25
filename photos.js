@@ -163,6 +163,7 @@ async function empreinteBlob(blob) {
 
    C'est le SEUL dossier que l'application crée, et uniquement là. */
 var _dossiersPhotos = {};
+var _echecDossierPhotos = null;   // raison du dernier échec, affichée à l'écran
 
 async function dossierPhotos(visite) {
   const d = visite.bien;
@@ -177,6 +178,11 @@ async function dossierPhotos(visite) {
   try {
     // déjà présent ?
     const lu = await appelGraph(base + "/children");
+    if (!lu.ok) {
+      _echecDossierPhotos = "Lecture du dossier refusée : " + (await detailErreur(lu));
+      await journaliser("dossier_photos_echoue", _echecDossierPhotos);
+      return parent;
+    }
     if (lu.ok) {
       const contenu = await lu.json();
       const trouve = (contenu.value || []).find(
@@ -203,9 +209,12 @@ async function dossierPhotos(visite) {
         return item.id;
       }
     }
-    await journaliser("dossier_photos_echoue", await detailErreur(cree));
+    _echecDossierPhotos = "Microsoft a refusé la création : " +
+      (await detailErreur(cree));
+    await journaliser("dossier_photos_echoue", _echecDossierPhotos);
   } catch (e) {
-    await journaliser("dossier_photos_echoue", String(e && e.message));
+    _echecDossierPhotos = String((e && e.message) || e);
+    await journaliser("dossier_photos_echoue", _echecDossierPhotos);
   }
   /* En cas d'échec, on dépose au niveau du dessus plutôt que de perdre
      la photographie. Le lien de partage restera alors déconseillé. */
