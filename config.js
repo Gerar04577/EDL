@@ -4,7 +4,7 @@
 
 var CONFIG = {
 
-  version_app: "2.3.4",
+  version_app: "2.4.1",
 
   /* Protocole de signature imprimé en page 1 du procès-verbal.
      Laisser vide tant que l'avocat n'a pas rendu son texte :

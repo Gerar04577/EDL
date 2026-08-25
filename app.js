@@ -444,7 +444,7 @@ async function verifierCible(locataire) {
      le procès-verbal portait le nom d'une AUTRE personne que celle qui
      signe. Le dossier retenu fait foi. */
   const attendus = (E.brouillon.preneurs || []).join(" & ");
-  if (!memeIdentite(locataire.nom, attendus)) {
+  if (!memeFamille(locataire.nom, attendus)) {
     E.brouillon.preneurs = decouperPreneurs(locataire.nom);
     E.brouillon.preneurs_corriges = true;
     E.brouillon.preneurs_liste = attendus || null;
@@ -485,14 +485,26 @@ function confirmer(titreTexte, detail, libelleOui) {
    termine par « V2 » : deux rectifications le même jour dans la même unité
    auraient produit le même nom de fichier, et la seconde aurait écrasé la
    première. On prend donc le code de l'identifiant PERMANENT. */
-/* Comparaison stricte de deux noms de personnes, tout séparateur retiré.
-   NE PAS nommer normaliserNom : graph.js en définit une autre, qui
+/* NE PAS nommer normaliserNom : graph.js en définit une autre, qui
    conserve les espaces et sert à reconnaître les types de dossiers.
    Deux fonctions de même nom, et la dernière chargée écrase l'autre. */
-function memeIdentite(a, b) {
-  const n = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase().replace(/[^A-Z0-9]/g, "");
-  return n(a) === n(b);
+function motsDuNom(s) {
+  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase().split(/[^A-Z0-9]+/).filter(x => x.length > 1);
+}
+
+/* Un dossier OneDrive porte souvent une forme abrégée du nom des
+   locataires : « ZUFFANTI BERTE » pour « ZUFFANTI Léna & BERTE Matis ».
+   Ce n'est PAS une autre personne, et il ne faut surtout pas remplacer
+   les noms complets par l'abréviation.
+
+   On ne considère qu'il s'agit de quelqu'un d'autre que si le dossier
+   introduit un nom absent de la liste. */
+function memeFamille(nomDossier, nomListe) {
+  const dossier = motsDuNom(nomDossier);
+  const liste = motsDuNom(nomListe);
+  if (!dossier.length || !liste.length) return false;
+  return dossier.every(m => liste.includes(m));
 }
 
 function codeCourt(V) {
@@ -1719,6 +1731,12 @@ function dessinerComparaisonEDL(message) {
     parPiece[piece].forEach(({ l, i }) => {
       html += `<div class="comp ${l.categorie ? "" : "comp-alerte"}">
         ${l.general ? `<p class="note"><strong>État général de la pièce</strong></p>` : ""}
+        ${!l.general && !l.rapproche && l.texte_entree && !l.texte_sortie
+          ? `<p class="note attention">Plus signalé à la sortie</p>` : ""}
+        ${!l.general && !l.rapproche && !l.texte_entree && l.texte_sortie
+          ? `<p class="note attention">Sans équivalent à l'entrée</p>` : ""}
+        ${!l.general && !l.rapproche && l.texte_entree && l.texte_sortie
+          ? `<p class="note attention">Aucun rapprochement automatique — vérifie</p>` : ""}
         <p class="note"><strong>À l'entrée :</strong> ${
           echapper(l.texte_entree || "rien de signalé")}</p>
         <p class="note"><strong>À la sortie :</strong> ${
@@ -2413,6 +2431,11 @@ function dessinerPiece(message) {
             <button class="lien" data-suppr="${i}">supprimer</button></p></div>`).join("")
         : `<p class="note">Aucune constatation pour l'instant.</p>`}
     </div>
+
+    ${_echecEnvoi && deposees < photos.length
+      ? `<div class="erreur"><strong>Envoi bloqué</strong>${echapper(_echecEnvoi)}<br><br>
+         Les photographies restent sur le téléphone : rien n'est perdu. Elles
+         repartiront dès que la cause sera levée.</div>` : ""}
 
     ${_echecDossierPhotos ? `<div class="avert"><strong>Sous-dossier Photos non créé</strong>
       ${echapper(_echecDossierPhotos)}<br><br>

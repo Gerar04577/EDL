@@ -104,13 +104,10 @@ function construireLignesComparaison(visite, edle) {
     }
     const constatsEntree = entree ? (entree.constatations || []) : [];
     const constatsSortie = piece.constatations || [];
-    const maximum = Math.max(constatsEntree.length, constatsSortie.length);
+    if (!constatsEntree.length && !constatsSortie.length) return;
 
-    if (maximum === 0) return;
-
-    for (let i = 0; i < maximum; i++) {
-      const e = constatsEntree[i] || null;
-      const s = constatsSortie[i] || null;
+    apparier(constatsEntree, constatsSortie).forEach((paire, i) => {
+      const e = paire.entree, s = paire.sortie;
       lignes.push({
         piece_id: piece.piece_id,
         piece: piece.libelle,
@@ -121,14 +118,83 @@ function construireLignesComparaison(visite, edle) {
         texte_sortie: s ? (s.texte || resumeQualites(s)) : null,
         etat_sortie: s ? s.etat : null,
         proprete_sortie: s ? s.proprete : null,
+        rapproche: paire.score > 0,
+        score: paire.score,
         categorie: null,          // à trancher par l'utilisateur
         montant: null,
         piece_absente_entree: !entree,
       });
-    }
+    });
   });
 
   return lignes;
+}
+
+/* Mots porteurs de sens d'un constat. Les mots courts et les mots vides
+   sont écartés : ils rapprocheraient n'importe quoi de n'importe quoi. */
+/* Trois lettres suffisent : MUR, SOL, BAC, JEU désignent des choses.
+   En revanche les qualificatifs — BON, LEGER, GRAND — rapprocheraient
+   n'importe quel constat de n'importe quel autre. */
+var MOTS_VIDES = ["LES","DES","UNE","UN","DU","DE","LA","LE","ET","EN","AU","AUX",
+  "SUR","SOUS","DANS","AVEC","SANS","PAR","POUR","EST","SONT","SE","SA","SON","SES",
+  "CETTE","CET","CE","QUI","QUE","PAS","PEU","PLUS","TRES","BIEN","MAL","ETAT",
+  "BON","BONNE","BONS","MAUVAIS","LEGER","LEGERE","GRAND","GRANDE","PETIT","PETITE",
+  "AUTRE","MEME","DEUX","TROIS","QUATRE","CINQ","PRESENTE","PRESENTENT","PRESENCE",
+  "VISIBLE","VISIBLES","ENVIRON","CIRCA","REMARQUE","PARTICULIERE","AUCUN","AUCUNE",
+  "TOUT","TOUTE","ETRE","AVOIR","FAIT","NOTE","RELEVE"];
+
+function motsConstat(texte) {
+  return String(texte || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase().split(/[^A-Z0-9]+/)
+    /* Les unités et les nombres ne désignent rien : 40 CM se retrouve
+       dans deux constats sans rapport. */
+    .filter(m => m.length >= 3 && !/^[0-9]+$/.test(m) &&
+                 m !== "CM" && m !== "MM" && !MOTS_VIDES.includes(m));
+}
+
+/* Nombre de mots porteurs communs à deux constats. */
+function ressemblance(a, b) {
+  const ma = motsConstat(a && (a.texte || resumeQualites(a)));
+  const mb = motsConstat(b && (b.texte || resumeQualites(b)));
+  if (!ma.length || !mb.length) return 0;
+  const ensemble = new Set(mb);
+  return ma.filter(m => ensemble.has(m)).length;
+}
+
+/* Rapproche les constats d'entrée et de sortie qui parlent de la même
+   chose. L'ancien appariement se faisait par ORDRE D'ARRIVÉE : depuis que
+   chaque constat suit une photographie, cet ordre n'a plus aucune raison
+   de coïncider, et l'on comparait le parquet au châssis.
+
+   On apparie du plus ressemblant au moins ressemblant. Ce qui ne trouve
+   personne reste seul, et l'écran le dit. */
+function apparier(entrees, sorties) {
+  const candidats = [];
+  entrees.forEach((e, i) => {
+    sorties.forEach((s, j) => {
+      const score = ressemblance(e, s);
+      if (score > 0) candidats.push({ i, j, score });
+    });
+  });
+  candidats.sort((a, b) => b.score - a.score);
+
+  const prisE = new Set(), prisS = new Set();
+  const paires = [];
+  candidats.forEach(c => {
+    if (prisE.has(c.i) || prisS.has(c.j)) return;
+    prisE.add(c.i); prisS.add(c.j);
+    paires.push({ entree: entrees[c.i], sortie: sorties[c.j], score: c.score, rangE: c.i });
+  });
+
+  entrees.forEach((e, i) => {
+    if (!prisE.has(i)) paires.push({ entree: e, sortie: null, score: 0, rangE: i });
+  });
+  sorties.forEach((s, j) => {
+    if (!prisS.has(j)) paires.push({ entree: null, sortie: s, score: 0, rangE: 999 + j });
+  });
+
+  paires.sort((a, b) => a.rangE - b.rangE);
+  return paires;
 }
 
 function normaliserLibelle(s) {

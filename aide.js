@@ -26,6 +26,9 @@ var AIDE = [
       "nombre de photos en attente est à zéro.",
       "Charge le téléphone. Une visite complète avec deux cents photos consomme " +
       "beaucoup de batterie.",
+      "OUVRE L'APPLICATION AVANT DE DESCENDRE. Une fois lancée, elle fonctionne " +
+      "sans réseau — cave, garage, sous-sol. Mais elle ne peut pas se lancer sans " +
+      "réseau : ouvre-la en haut, puis descends.",
     ],
   },
   {

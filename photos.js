@@ -164,6 +164,7 @@ async function empreinteBlob(blob) {
    C'est le SEUL dossier que l'application crée, et uniquement là. */
 var _dossiersPhotos = {};
 var _echecDossierPhotos = null;   // raison du dernier échec, affichée à l'écran
+var _echecEnvoi = null;           // raison du dernier échec d'envoi de photo
 
 async function dossierPhotos(visite) {
   const d = visite.bien;
@@ -261,7 +262,8 @@ async function envoyerElement(element) {
    Ne s'arrête jamais sur un échec : l'élément reste en attente. */
 async function traiterFile() {
   if (_fileEnCours) return;
-  if (!navigator.onLine || !estConnecte()) return;
+  if (!navigator.onLine) { _echecEnvoi = "Pas de réseau."; return; }
+  if (!estConnecte()) { _echecEnvoi = "Compte Microsoft non connecté."; return; }
   _fileEnCours = true;
   const visitesTouchees = new Set();
   try {
@@ -271,11 +273,13 @@ async function traiterFile() {
       try {
         const itemId = await envoyerElement(element);
         await confirmerTransfert(element.photo_id, itemId);
+        _echecEnvoi = null;
         await majPhotoDansVisite(element.visit_id, element.photo_id, itemId);
         visitesTouchees.add(element.visit_id);
         await journaliser("photo_envoyee", { photo_id: element.photo_id });
       } catch (e) {
-        await incrementerTentative(element.photo_id, String(e && e.message));
+        _echecEnvoi = String((e && e.message) || e);
+        await incrementerTentative(element.photo_id, _echecEnvoi);
         await journaliser("photo_echec", { photo_id: element.photo_id, message: String(e && e.message) });
         const delai = Math.min(30000, 2000 * Math.pow(2, Math.min(4, element.tentatives || 0)));
         programmerReprise(delai);
