@@ -198,15 +198,34 @@ async function dossierPhotos(visite) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: "Photos", folder: {},
-        "@microsoft.graph.conflictBehavior": "return",
+        /* Microsoft n'accepte que fail, replace ou rename à la création
+           d'un dossier. « fail » convient : la lecture qui précède a déjà
+           retrouvé le dossier s'il existait. */
+        "@microsoft.graph.conflictBehavior": "fail",
       }),
     });
     if (cree.ok) {
       const item = await cree.json();
       if (item && item.id) {
         _dossiersPhotos[parent] = item.id;
+        _echecDossierPhotos = null;
         await journaliser("dossier_photos_cree", { visit_id: visite.visit_id });
         return item.id;
+      }
+    }
+    /* Créé entre-temps par un autre appareil : on le relit plutôt que
+       d'échouer. */
+    if (cree.status === 409) {
+      const relu = await appelGraph(base + "/children");
+      if (relu.ok) {
+        const c2 = await relu.json();
+        const t2 = (c2.value || []).find(
+          x => x.folder && String(x.name).toLowerCase() === "photos");
+        if (t2) {
+          _dossiersPhotos[parent] = t2.id;
+          _echecDossierPhotos = null;
+          return t2.id;
+        }
       }
     }
     _echecDossierPhotos = "Microsoft a refusé la création : " +
