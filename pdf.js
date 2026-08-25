@@ -161,6 +161,16 @@ async function genererPV(visite) {
   p.filet();
   p.ligne("Date de la visite", dateFr(V.date_debut));
   p.ligne("Type", sortie ? "État des lieux de sortie" : "État des lieux d'entrée");
+
+  /* L'adresse de consultation est créée au démarrage de la visite : elle
+     peut donc figurer au document signé. Elle ne donne accès qu'aux
+     photographies — ni au fichier de données, ni au bail. */
+  if (V.bien.lien_photos) {
+    p.saut(3);
+    p.paragraphe("Les photographies faisant partie du présent état des lieux sont " +
+      "consultables en lecture seule à l'adresse suivante :", { taille: 9 });
+    p.paragraphe(V.bien.lien_photos, { taille: 8, retrait: 2 });
+  }
   p.saut(6);
 
   // --- 3. Notes liminaires ------------------------------------------------
@@ -207,13 +217,13 @@ async function genererPV(visite) {
         p.saut(1.5);
       });
       if (photos.length) {
-        p.paragraphe(photos.length + " photographie" + (photos.length > 1 ? "s" : "") +
-          " faisant partie du présent rapport :", { retrait: 2, taille: 8 });
-        photos.forEach((x, n) => {
-          p.paragraphe((n + 1) + ". " + x.nom_fichier +
-            (x.empreinte_sha256 ? "  —  SHA-256 " + x.empreinte_sha256 : ""),
-            { retrait: 4, taille: 7 });
-        });
+        /* Les numéros seulement : à deux cents photographies, les empreintes
+           en clair noyaient les constatations sous des pages illisibles et
+           le lecteur cessait de regarder ce qui compte. Elles figurent en
+           annexe, dans le même fichier, donc couvertes par la signature. */
+        p.paragraphe("Photographie" + (photos.length > 1 ? "s" : "") + " : " +
+          photos.map(numeroPhoto).join(", ") +
+          "  (voir annexe)", { retrait: 2, taille: 8 });
       }
     }
     p.saut(4);
@@ -346,6 +356,31 @@ async function genererPV(visite) {
   }
 
   // --- 8. Signatures ------------------------------------------------------
+  /* Mention expresse, imprimée UNIQUEMENT si des photographies restent à
+     déposer. Elle est placée avant les signatures : le preneur la lit avant
+     de signer, et non après. Texte validé avec le protocole. */
+  const enAttente = V.photos.filter(x => x.statut_transfert !== "confirme");
+  if (enAttente.length) {
+    /* Réservée d'un bloc : coupée par un saut de page, la mention perdrait
+       sa force — le preneur signerait au bas d'une page en n'en ayant lu
+       que la moitié. */
+    if (p.y + 46 > PDF_HAUTEUR - PDF_MARGE) { doc.addPage(); p.y = PDF_MARGE; }
+    p.titre("Photographies non encore déposées");
+    p.paragraphe("À l'instant de la présente signature, " + enAttente.length +
+      " photographie(s) sur " + V.photos.length + " n'avaient pas encore été " +
+      "transmises au dossier informatique, faute de réseau disponible sur les lieux.");
+    p.saut(2);
+    p.paragraphe("Chacune a été prise et présentée aux parties au cours de la visite. " +
+      "Sa date, son heure et son empreinte SHA-256 figurent à l'annexe du présent " +
+      "procès-verbal et sont donc couvertes par les signatures ci-dessous.");
+    p.saut(2);
+    p.paragraphe("Elles seront déposées dans le dossier de la visite dès le " +
+      "rétablissement du réseau, à l'adresse indiquée au présent document. Toute " +
+      "divergence entre une photographie produite ultérieurement et l'empreinte " +
+      "inscrite à l'annexe se constate par simple recalcul.");
+    p.saut(5);
+  }
+
   const signataires = 1 + (V.parties.preneurs || []).length;
   const hauteurBloc = 40 + Math.ceil(signataires / 2) * 34;
   if (p.y + hauteurBloc > PDF_HAUTEUR - PDF_MARGE) { doc.addPage(); p.y = PDF_MARGE; }
@@ -364,8 +399,6 @@ async function genererPV(visite) {
   p.saut(2);
   p.paragraphe("Le présent état des lieux fait partie intégrante du bail dont il ne peut " +
     "être dissocié. Chaque signataire reconnaît en recevoir un exemplaire.");
-  p.saut(6);
-
   const blocs = [];
   blocs.push({ role: "Le bailleur",
                qualite: V.parties.bailleur_represente_par ? "Mandataire" : "Bailleur",
@@ -413,13 +446,41 @@ async function genererPV(visite) {
   /* Les empreintes des photographies sont inscrites AU document : le
      SHA-256 du PDF les couvre donc, et l'on peut vérifier plus tard que
      les photographies produites sont bien celles présentées au signataire. */
-  const avecEmpreinte = V.photos.filter(x => x.empreinte_sha256);
-  if (avecEmpreinte.length) {
+  if (V.photos.length) {
     p.saut(3);
-    p.paragraphe("Les " + avecEmpreinte.length + " photographie(s) référencées " +
-      "ci-dessus portent chacune une empreinte SHA-256 inscrite au présent document. " +
-      "L'empreinte du présent fichier couvre donc l'ensemble : le rapport et " +
-      "l'identification des photographies qui en font partie.", { taille: 8 });
+    p.paragraphe("Les " + V.photos.length + " photographie(s) référencées " +
+      "ci-dessus sont reprises en annexe, chacune avec sa date, son heure et son " +
+      "empreinte SHA-256. L'empreinte du présent fichier couvre donc l'ensemble : " +
+      "le rapport et l'identification des photographies qui en font partie.", { taille: 8 });
+  }
+
+  // --- 10. Annexe : les photographies ------------------------------------
+  if (V.photos.length) {
+    doc.addPage(); p.y = PDF_MARGE;
+    p.titre("ANNEXE — PHOTOGRAPHIES");
+    p.paragraphe(
+      "Chaque photographie a été prise au cours de la visite et présentée aux parties. " +
+      "Sa date, son heure et son empreinte SHA-256 ont été établies sur l'appareil au " +
+      "moment de la prise de vue, avant tout transfert. Toute divergence entre une " +
+      "photographie produite ultérieurement et l'empreinte inscrite ci-dessous se " +
+      "constate par simple recalcul.", { taille: 9 });
+    p.saut(4);
+
+    V.pieces.forEach(piece => {
+      const lot = V.photos.filter(x => x.rattachement === piece.piece_id);
+      if (!lot.length) return;
+      p.sousTitre(piece.libelle);
+      lot.forEach(x => ligneAnnexe(p, x));
+      p.saut(2);
+    });
+
+    /* Compteurs et autres rattachements hors pièces. */
+    const idPieces = V.pieces.map(x => x.piece_id);
+    const hors = V.photos.filter(x => !idPieces.includes(x.rattachement));
+    if (hors.length) {
+      p.sousTitre("Compteurs et divers");
+      hors.forEach(x => ligneAnnexe(p, x));
+    }
   }
 
   // --- Pied de page sur chaque feuille ------------------------------------
@@ -435,6 +496,27 @@ async function genererPV(visite) {
   }
 
   return doc;
+}
+
+/* Numéro d'ordre d'une photographie, tel qu'il figure dans son nom de
+   fichier. C'est ce numéro qui relie le corps du document à l'annexe. */
+function numeroPhoto(photo) {
+  const m = String(photo.nom_fichier || "").match(/_(\d{3})_/);
+  return m ? m[1] : "—";
+}
+
+function ligneAnnexe(p, photo) {
+  const d = photo.horodatage ? new Date(photo.horodatage) : null;
+  const quand = d && !isNaN(d.getTime())
+    ? d.toLocaleDateString("fr-BE") + " à " + d.toLocaleTimeString("fr-BE")
+    : "date non enregistrée";
+  p.paragraphe(numeroPhoto(photo) + "  —  " + (photo.nom_fichier || "sans nom") +
+    "  —  " + quand, { retrait: 2, taille: 8 });
+  p.paragraphe(photo.empreinte_sha256
+    ? "SHA-256 " + photo.empreinte_sha256
+    : "empreinte non calculée pour cette photographie",
+    { retrait: 6, taille: 7 });
+  p.saut(1.5);
 }
 
 function fuseau() {

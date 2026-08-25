@@ -108,6 +108,8 @@ async function ecranAccueil() {
       attente ? "ko" : "ok"}">${attente}</span></div>
     </div>`;
 
+  html += await blocEnvoi();
+
   html += `<button class="aide" id="btn-aide">Mode d'emploi</button>`;
 
   if (E.connecte) {
@@ -126,6 +128,7 @@ async function ecranAccueil() {
   $("pied").textContent = "Version " + CONFIG.version_app;
 
   if ($("btn-aide")) $("btn-aide").onclick = () => ecranAide();
+  brancherEnvoi(() => ecranAccueil());
   if ($("btn-connexion")) $("btn-connexion").onclick = () => seConnecter();
   if ($("btn-deconnexion")) $("btn-deconnexion").onclick = () => seDeconnecter();
   if ($("btn-comparer")) $("btn-comparer").onclick = () => ecranComparaison();
@@ -436,8 +439,29 @@ async function verifierCible(locataire) {
       () => ecranUnite(E.brouillon.immeuble_id));
   }
 
+  /* Sous-dossier Photos et lien de partage, résolus MAINTENANT : c'est le
+     seul moment où le réseau est certain. Si l'un des deux échoue, la
+     visite ne démarre pas — état des lieux sur papier. Mieux vaut un
+     blocage à la porte qu'une visite entière mal rangée. */
+  vue(`<p class="note">Préparation du dossier des photographies…</p>`);
+  let prep;
+  try { prep = await preparerDepot(c.ref); }
+  catch (e) { prep = { ok: false, etape: "préparation", message: e.message }; }
+
+  if (!prep.ok) {
+    return erreurEcran({ html:
+      `Le <strong>${echapper(prep.etape)}</strong> n'a pas pu être mis en place dans
+       « ${echapper(locataire.nom)} ».<br><br>
+       Microsoft répond : ${echapper(prep.message || "aucune précision")}.<br><br>
+       <strong>Cette visite ne peut pas être faite avec l'application.</strong>
+       Utilise l'état des lieux papier.` },
+      () => ecranUnite(E.brouillon.immeuble_id));
+  }
+
   E.brouillon.dossier_locataire = locataire.nom;
   E.brouillon.ref_cible = c.ref;
+  E.brouillon.dossier_photos_item_id = prep.id;
+  E.brouillon.lien_photos = prep.lien;
 
   /* Les preneurs venaient de la liste de Gestion Loyers, fixée à l'étape
      précédente. Si le dossier choisi n'est pas celui du locataire attendu,
@@ -1878,18 +1902,25 @@ async function ecranCloture(visite) {
       Tu peux clôturer malgré tout.</div>`;
   }
 
+  /* La signature n'est plus bloquée par les photographies restées en file.
+     Ce qui fait preuve, c'est l'horodatage et l'empreinte de chaque
+     photographie, calculés sur l'appareil à la prise de vue et inscrits au
+     procès-verbal signé — pas la date de dépôt chez Microsoft. Le document
+     porte alors une mention expresse, lue et signée par les deux parties. */
   if (attente > 0) {
-    html += `<div class="erreur"><strong>Clôture impossible</strong>
-      ${attente} photo(s) ne sont pas encore enregistrées dans OneDrive.
-      Reviens quand le réseau sera disponible.</div>
-      <button disabled>Signer et clôturer</button>`;
-  } else {
-    html += `<button id="btn-identites">Passer à la signature</button>`;
+    html += `<div class="avert"><strong>${attente} photographie(s) pas encore déposée(s)</strong>
+      Elles sont en sécurité sur le téléphone et partiront dès le retour du réseau.<br><br>
+      Le procès-verbal portera une mention expresse : leur date, leur heure et leur
+      empreinte y figurent, et sont couvertes par les signatures. Le locataire
+      les consultera à l'adresse indiquée au document.</div>`;
+    html += await blocEnvoi();
   }
+  html += `<button id="btn-identites">Passer à la signature</button>`;
   html += `<button class="secondaire" id="btn-retour">Retour</button>`;
   vue(html);
 
   if ($("btn-identites")) $("btn-identites").onclick = () => ecranIdentites();
+  brancherEnvoi(() => ecranCloture(V));
   $("btn-retour").onclick = () => ecranVisiteReprise(V);
 }
 
@@ -2437,12 +2468,6 @@ function dessinerPiece(message) {
          Les photographies restent sur le téléphone : rien n'est perdu. Elles
          repartiront dès que la cause sera levée.</div>` : ""}
 
-    ${_echecDossierPhotos ? `<div class="avert"><strong>Sous-dossier Photos non créé</strong>
-      ${echapper(_echecDossierPhotos)}<br><br>
-      Les photographies sont déposées dans le dossier de la visite, comme avant.
-      Rien n'est perdu, mais le lien vers les photographies ne pourra pas être
-      envoyé au locataire.</div>` : ""}
-
     <div class="bloc"><h2>${photos.length} photo${photos.length > 1 ? "s" : ""}${
         photos.length ? " — " + deposees + " enregistrée" + (deposees > 1 ? "s" : "") : ""}</h2>
       ${photos.length ? photos.map(p => {
@@ -2639,14 +2664,24 @@ function dessinerPiece(message) {
             " ». Le fichier déjà déposé dans OneDrive n'est pas supprimé."
           : "Le fichier déjà déposé dans OneDrive n'est pas supprimé.",
         "Oui, retirer"))) return;
+    b.disabled = true;
+    try {
+      /* retirerPhoto sort la photographie de la visite ET de la file
+         d'attente. Sans elle, une photographie retirée continuait d'être
+         comptée « en attente d'envoi ». */
+      VISITE = await retirerPhoto(VISITE.visit_id, id) || VISITE;
+    } catch (e) {
+      b.disabled = false;
+      return dessinerPiece("Retrait impossible : " + e.message);
+    }
     VISITE = await modifierVisite(VISITE.visit_id, v => {
-      v.photos = v.photos.filter(x => x.photo_id !== id);
       /* Une constatation qui cite une photographie retirée serait
          orpheline au procès-verbal : elle part avec elle. */
       v.pieces.forEach(pc => {
         pc.constatations = pc.constatations.filter(c => c.photo_id !== id);
       });
     }) || VISITE;
+    await journaliser("photo_retiree", { photo_id: id });
     delete E.brouillons[id];
     programmerDepot();
     dessinerPiece(liee
@@ -2949,9 +2984,12 @@ async function demarrer() {
   await journaliser("demarrage", { version: CONFIG.version_app, installee: E.installee });
   await ecranAccueil();
 
-  // la file se vide en continu, dès qu'il y a du réseau
+  /* La file se vide toute seule dès qu'il y a du réseau : c'est un filet,
+     le bouton « Envoyer » de l'accueil sert à reprendre la main.
+     Deux minutes et non vingt secondes : une relance trop fréquente
+     écrasait le délai croissant après un échec et pilonnait Microsoft. */
   window.addEventListener("online", () => lancerFile());
-  setInterval(() => lancerFile(), 20000);
+  setInterval(() => traiterFile(), 120000);
   lancerFile();
 }
 

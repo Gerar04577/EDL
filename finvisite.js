@@ -146,37 +146,19 @@ function nomBailleurComplet(V) {
    OneDrive : aucun module Make supplémentaire. */
 async function lienDossierVisite(visite) {
   const d = visite.bien || {};
-  if (!d.dossier_cible_item_id) return null;
-
-  /* Le lien porte sur le sous-dossier Photos, JAMAIS sur le dossier de la
-     visite : celui-ci contient le fichier de données, avec le numéro de
-     carte d'identité des signataires et les montants réclamés. */
-  const cible = await dossierPhotos(visite);
-  if (!cible || cible === d.dossier_cible_item_id) {
-    await journaliser("lien_refuse", "sous-dossier Photos indisponible");
+  /* Le lien est créé au démarrage de la visite et figure au procès-verbal
+     signé : on le reprend tel quel. */
+  if (d.lien_photos) return d.lien_photos;
+  /* Visite antérieure à la 2.5.0 : pas de sous-dossier Photos enregistré.
+     On ne partage JAMAIS le dossier de la visite lui-même — il contient le
+     fichier de données, avec le numéro de carte d'identité des signataires
+     et les montants réclamés. */
+  if (!d.dossier_photos_item_id) {
+    await journaliser("lien_refuse", "visite sans sous-dossier Photos");
     return null;
   }
-  const chemin = d.dossier_cible_drive_id
-    ? `/drives/${d.dossier_cible_drive_id}/items/${cible}/createLink`
-    : `/me/drive/items/${cible}/createLink`;
-  try {
-    const res = await appelGraph(chemin, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "view", scope: "anonymous" }),
-    });
-    if (!res.ok) {
-      await journaliser("lien_partage_echoue", await detailErreur(res));
-      return null;
-    }
-    const o = await res.json();
-    const url = o && o.link && o.link.webUrl;
-    await journaliser("lien_partage_cree", { visit_id: visite.visit_id, ok: !!url });
-    return url || null;
-  } catch (e) {
-    await journaliser("lien_partage_echoue", String(e && e.message));
-    return null;
-  }
+  const r = await creerLienPhotos(d.dossier_cible_drive_id, d.dossier_photos_item_id);
+  return r.ok ? r.lien : null;
 }
 
 function horodatageComplet(iso) {

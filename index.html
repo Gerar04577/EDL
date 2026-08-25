@@ -138,5 +138,15 @@
 <script src="comparaison.js"></script>
 <script src="photos.js"></script>
 <script src="app.js"></script>
+<script>
+/* Copie locale de l'application : sans elle, rien ne s'ouvre hors réseau.
+   L'enregistrement est sans effet si le navigateur ne le gère pas, et il
+   n'empêche jamais l'application de démarrer. */
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
+</script>
 </body>
 </html>

@@ -16,13 +16,37 @@
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
+/* Délai maximum d'un appel. Sans lui, un wifi en bout de portée — une
+   borne accrochée mais sans internet derrière — laisse la requête
+   suspendue indéfiniment : l'écran reste figé sur « Préparation… » sans
+   jamais rien annoncer. Trente secondes suffisent largement, y compris
+   pour le dépôt d'une photographie compressée. */
+var GRAPH_DELAI_MS = 30000;
+
 async function appelGraph(chemin, options) {
   const jeton = await obtenirJeton();
   if (!jeton) throw new Error("Jeton indisponible");
   const o = options || {};
   const entetes = Object.assign({ Authorization: "Bearer " + jeton }, o.headers || {});
-  return fetch(chemin.startsWith("http") ? chemin : GRAPH_BASE + chemin,
-    Object.assign({}, o, { headers: entetes }));
+
+  const controleur = (typeof AbortController !== "undefined") ? new AbortController() : null;
+  const minuterie = controleur
+    ? setTimeout(() => controleur.abort(), o.delai_ms || GRAPH_DELAI_MS) : null;
+  const reglages = Object.assign({}, o, { headers: entetes });
+  delete reglages.delai_ms;
+  if (controleur) reglages.signal = controleur.signal;
+
+  try {
+    return await fetch(chemin.startsWith("http") ? chemin : GRAPH_BASE + chemin, reglages);
+  } catch (e) {
+    if (e && e.name === "AbortError") {
+      throw new Error("Microsoft n'a pas répondu en " +
+        Math.round((o.delai_ms || GRAPH_DELAI_MS) / 1000) + " secondes.");
+    }
+    throw e;
+  } finally {
+    if (minuterie) clearTimeout(minuterie);
+  }
 }
 
 async function detailErreur(res) {

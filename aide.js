@@ -22,8 +22,9 @@ var AIDE = [
     corps: [
       "Ouvre l'application depuis l'icône de l'écran d'accueil, jamais depuis Safari. " +
       "Installée, elle conserve ses données ; dans un onglet, iOS peut les effacer.",
-      "Vérifie sur l'accueil que le compte Microsoft est affiché en vert et que le " +
-      "nombre de photos en attente est à zéro.",
+      "Vérifie sur l'accueil que le compte Microsoft est affiché en vert. S'il reste " +
+      "des photographies à envoyer, un bouton l'indique avec leur nombre et leur " +
+      "poids : appuie dessus avant de partir, tant que tu es en wifi.",
       "Charge le téléphone. Une visite complète avec deux cents photos consomme " +
       "beaucoup de batterie.",
       "OUVRE L'APPLICATION AVANT DE DESCENDRE. Une fois lancée, elle fonctionne " +
@@ -44,8 +45,10 @@ var AIDE = [
       "locataire de la liste, mais c'est toi qui décides.",
     ],
     attention: "Si l'application dit qu'un dossier EDLE ou EDLS n'existe pas, elle " +
-      "refuse de démarrer. Elle ne crée jamais de dossier : crée-le dans OneDrive, " +
-      "puis reviens.",
+      "refuse de démarrer. Crée-le dans OneDrive, puis reviens. Elle refuse aussi " +
+      "de démarrer si elle ne parvient pas à préparer le sous-dossier Photos et son " +
+      "lien de consultation : dans ce cas, fais l'état des lieux sur PAPIER. Le " +
+      "message dit ce que Microsoft a répondu.",
   },
   {
     titre: "2. La composition du logement",
@@ -130,6 +133,11 @@ var AIDE = [
       "le dira.",
       "SIGNATURES — chacun signe du doigt dans son cadre. Le dépôt reste bloqué tant " +
       "que tout le monde n'a pas signé.",
+      "S'il reste des photographies à envoyer, tu peux signer quand même. Le document " +
+      "porte alors une mention expresse : elles ont été prises pendant la visite, leur " +
+      "date, leur heure et leur empreinte figurent en annexe, et le locataire les " +
+      "consultera à l'adresse inscrite au document. Un bouton permet de les envoyer " +
+      "sur-le-champ si le réseau est revenu.",
     ],
     attention: "La question des réserves doit être posée : c'est ce qui rend l'état des " +
       "lieux contradictoire. Sans elle, un état des lieux contesté est fragile.",
@@ -172,12 +180,25 @@ var AIDE = [
   {
     titre: "Si le réseau manque",
     corps: [
-      "Continue normalement. Les photos s'accumulent sur le téléphone et la barre du " +
-      "haut indique combien attendent.",
-      "Dès que le réseau revient, elles partent toutes seules. Tu peux fermer " +
-      "l'application, éteindre le téléphone : rien ne se perd.",
-      "La clôture reste bloquée tant qu'une photo n'est pas déposée — elle serait perdue.",
+      "Continue normalement. Photographier, écrire les constats, relever les compteurs, " +
+      "compter les clés : tout fonctionne sans réseau. La barre du haut indique combien " +
+      "de photographies attendent.",
+      "Ce qui ne marche pas sans réseau : le bouton « Décrire », qui a besoin de l'IA.",
+      "Les photographies restent sur le téléphone. Tu peux fermer l'application, " +
+      "éteindre le téléphone : rien ne se perd, jamais. Elles ne sont effacées de " +
+      "l'appareil qu'une fois que Microsoft a confirmé les avoir reçues.",
+      "Une fois le réseau retrouvé : accueil, bouton « Envoyer les N photos en attente ». " +
+      "Il envoie celles de TOUTES les visites, pas seulement de la dernière. Le même " +
+      "bouton se trouve sur l'écran de fin de visite.",
+      "Tu peux signer sans attendre qu'elles soient parties : le procès-verbal le " +
+      "mentionne expressément et porte leur date, leur heure et leur empreinte.",
+      "Si une photographie est refusée plusieurs fois par Microsoft, elle est signalée " +
+      "à part et n'empêche plus les autres de partir. Reprends-la depuis l'écran de " +
+      "la pièce.",
     ],
+    attention: "L'application ne peut pas se LANCER la première fois sans réseau, et " +
+      "une visite ne peut pas DÉMARRER sans réseau. Ouvre-la et démarre la visite en " +
+      "haut, à la porte, puis descends.",
   },
   {
     titre: "Si quelque chose ne va pas",

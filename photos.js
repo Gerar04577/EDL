@@ -137,7 +137,12 @@ async function ajouterPhoto(visite, rattachement, fichier) {
     tentatives: 0,
     horodatage: entree.horodatage,
     drive_id: visite.bien.dossier_cible_drive_id,
-    parent_id: await dossierPhotos(visite),
+    /* Adresse résolue UNE SEULE FOIS, au démarrage de la visite. Aucun appel
+       réseau ici : l'image doit être à l'abri avant tout échange avec
+       Microsoft. Les visites antérieures à la 2.5.0 n'ont pas de
+       sous-dossier : elles continuent de déposer au niveau du dessus. */
+    parent_id: visite.bien.dossier_photos_item_id ||
+               visite.bien.dossier_cible_item_id,
   };
   await mettreEnFile(element);
 
@@ -161,39 +166,30 @@ async function empreinteBlob(blob) {
    sous-dossier n'expose donc que des images — le fichier de données
    contient le numéro de carte d'identité des signataires.
 
-   C'est le SEUL dossier que l'application crée, et uniquement là. */
-var _dossiersPhotos = {};
-var _echecDossierPhotos = null;   // raison du dernier échec, affichée à l'écran
+   C'est le SEUL dossier que l'application crée, et uniquement au
+   démarrage d'une visite, lorsque le réseau est nécessairement là.
+   Jamais pendant la visite : voir ajouterPhoto. */
+
 var _echecEnvoi = null;           // raison du dernier échec d'envoi de photo
 
-async function dossierPhotos(visite) {
-  const d = visite.bien;
-  const parent = d.dossier_cible_item_id;
-  if (!parent) return parent;
-  if (_dossiersPhotos[parent]) return _dossiersPhotos[parent];
-
-  const base = d.dossier_cible_drive_id
-    ? `/drives/${d.dossier_cible_drive_id}/items/${parent}`
-    : `/me/drive/items/${parent}`;
+async function resoudreDossierPhotos(driveId, parentId) {
+  if (!parentId) return { ok: false, message: "Dossier de destination inconnu." };
+  const base = driveId ? `/drives/${driveId}/items/${parentId}`
+                       : `/me/drive/items/${parentId}`;
+  const chercher = async () => {
+    const res = await appelGraph(base + "/children");
+    if (!res.ok) return { erreur: "Lecture du dossier refusée : " + (await detailErreur(res)) };
+    const contenu = await res.json();
+    const trouve = (contenu.value || []).find(
+      x => x.folder && String(x.name).toLowerCase() === "photos");
+    return { id: trouve ? trouve.id : null };
+  };
 
   try {
-    // déjà présent ?
-    const lu = await appelGraph(base + "/children");
-    if (!lu.ok) {
-      _echecDossierPhotos = "Lecture du dossier refusée : " + (await detailErreur(lu));
-      await journaliser("dossier_photos_echoue", _echecDossierPhotos);
-      return parent;
-    }
-    if (lu.ok) {
-      const contenu = await lu.json();
-      const trouve = (contenu.value || []).find(
-        x => x.folder && String(x.name).toLowerCase() === "photos");
-      if (trouve) {
-        _dossiersPhotos[parent] = trouve.id;
-        return trouve.id;
-      }
-    }
-    // à créer
+    const lu = await chercher();
+    if (lu.erreur) return { ok: false, message: lu.erreur };
+    if (lu.id) return { ok: true, id: lu.id, cree: false };
+
     const cree = await appelGraph(base + "/children", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -208,37 +204,65 @@ async function dossierPhotos(visite) {
     if (cree.ok) {
       const item = await cree.json();
       if (item && item.id) {
-        _dossiersPhotos[parent] = item.id;
-        _echecDossierPhotos = null;
-        await journaliser("dossier_photos_cree", { visit_id: visite.visit_id });
-        return item.id;
+        await journaliser("dossier_photos_cree", { parent: parentId });
+        return { ok: true, id: item.id, cree: true };
       }
     }
     /* Créé entre-temps par un autre appareil : on le relit plutôt que
        d'échouer. */
     if (cree.status === 409) {
-      const relu = await appelGraph(base + "/children");
-      if (relu.ok) {
-        const c2 = await relu.json();
-        const t2 = (c2.value || []).find(
-          x => x.folder && String(x.name).toLowerCase() === "photos");
-        if (t2) {
-          _dossiersPhotos[parent] = t2.id;
-          _echecDossierPhotos = null;
-          return t2.id;
-        }
-      }
+      const relu = await chercher();
+      if (relu.id) return { ok: true, id: relu.id, cree: false };
     }
-    _echecDossierPhotos = "Microsoft a refusé la création : " +
-      (await detailErreur(cree));
-    await journaliser("dossier_photos_echoue", _echecDossierPhotos);
+    const message = "Microsoft a refusé la création : " + (await detailErreur(cree));
+    await journaliser("dossier_photos_echoue", message);
+    return { ok: false, message };
   } catch (e) {
-    _echecDossierPhotos = String((e && e.message) || e);
-    await journaliser("dossier_photos_echoue", _echecDossierPhotos);
+    const message = String((e && e.message) || e);
+    await journaliser("dossier_photos_echoue", message);
+    return { ok: false, message };
   }
-  /* En cas d'échec, on dépose au niveau du dessus plutôt que de perdre
-     la photographie. Le lien de partage restera alors déconseillé. */
-  return parent;
+}
+
+/* Lien de consultation du sous-dossier Photos. Créé au démarrage, lui
+   aussi : il figure au procès-verbal signé, et le locataire doit pouvoir
+   consulter les photographies même si elles sont déposées plus tard. */
+async function creerLienPhotos(driveId, itemId) {
+  if (!itemId) return { ok: false, message: "Sous-dossier Photos inconnu." };
+  const chemin = driveId ? `/drives/${driveId}/items/${itemId}/createLink`
+                         : `/me/drive/items/${itemId}/createLink`;
+  try {
+    const res = await appelGraph(chemin, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "view", scope: "anonymous" }),
+    });
+    if (!res.ok) {
+      const message = "Microsoft a refusé le lien de partage : " + (await detailErreur(res));
+      await journaliser("lien_partage_echoue", message);
+      return { ok: false, message };
+    }
+    const o = await res.json();
+    const url = o && o.link && o.link.webUrl;
+    if (!url) return { ok: false, message: "Microsoft n'a renvoyé aucune adresse de partage." };
+    await journaliser("lien_partage_cree", { item: itemId });
+    return { ok: true, lien: url };
+  } catch (e) {
+    const message = String((e && e.message) || e);
+    await journaliser("lien_partage_echoue", message);
+    return { ok: false, message };
+  }
+}
+
+/* Préparation complète du dépôt, appelée à la sélection du dossier
+   locataire. Si elle échoue, la visite ne démarre pas : mieux vaut un
+   état des lieux sur papier qu'une visite dont on ignore où elle dépose. */
+async function preparerDepot(refCible) {
+  const dossier = await resoudreDossierPhotos(refCible.driveId, refCible.id);
+  if (!dossier.ok) return { ok: false, etape: "sous-dossier Photos", message: dossier.message };
+  const lien = await creerLienPhotos(refCible.driveId, dossier.id);
+  if (!lien.ok) return { ok: false, etape: "lien de partage", message: lien.message };
+  return { ok: true, id: dossier.id, lien: lien.lien };
 }
 
 /* Téléversement d'un élément de la file. */
@@ -260,6 +284,24 @@ async function envoyerElement(element) {
 
 /* Traitement de la file, un élément à la fois, avec délai croissant.
    Ne s'arrête jamais sur un échec : l'élément reste en attente. */
+/* Une photographie refusée par Microsoft — nom impossible, fichier
+   corrompu — ne doit JAMAIS bloquer les autres. La file était triée par
+   horodatage toutes visites confondues : une photographie fautive du matin
+   empêchait indéfiniment le départ de celles de l'après-midi.
+
+   On distingue donc deux causes :
+     — le réseau manque : on s'arrête, la suivante échouerait pareil ;
+     — cette photographie-ci est refusée : on passe à la suivante. */
+var ECHECS_AVANT_ABANDON = 5;
+
+function _panneDeReseau(message) {
+  const m = String(message || "").toLowerCase();
+  return !navigator.onLine ||
+    m.includes("n'a pas répondu") || m.includes("failed to fetch") ||
+    m.includes("network") || m.includes("load failed") ||
+    m.includes("jeton indisponible");
+}
+
 async function traiterFile() {
   if (_fileEnCours) return;
   if (!navigator.onLine) { _echecEnvoi = "Pas de réseau."; return; }
@@ -268,25 +310,52 @@ async function traiterFile() {
   const visitesTouchees = new Set();
   try {
     let attente = await photosEnAttente();
-    while (attente.length > 0 && navigator.onLine) {
-      const element = attente[0];
+    let rang = 0;
+    while (rang < attente.length && navigator.onLine) {
+      const element = attente[rang];
+      let itemId = null;
       try {
-        const itemId = await envoyerElement(element);
+        itemId = await envoyerElement(element);
         await confirmerTransfert(element.photo_id, itemId);
         _echecEnvoi = null;
+      } catch (e) {
+        const message = String((e && e.message) || e);
+        _echecEnvoi = message;
+        const maj = await incrementerTentative(element.photo_id, message);
+        await journaliser("photo_echec", { photo_id: element.photo_id, message });
+
+        if (_panneDeReseau(message)) {
+          /* Réseau : on s'arrête et on retente plus tard, du début. */
+          const delai = Math.min(30000, 2000 * Math.pow(2, Math.min(4, element.tentatives || 0)));
+          programmerReprise(delai);
+          break;
+        }
+        /* Photographie refusée : on la laisse de côté et on continue.
+           Au-delà de cinq essais, elle est marquée en échec pour cesser
+           d'être retentée à chaque envoi, et signalée à l'écran. */
+        if (maj && (maj.tentatives || 0) >= ECHECS_AVANT_ABANDON) {
+          await marquerEchec(element.photo_id, message);
+          await journaliser("photo_abandonnee", { photo_id: element.photo_id, message });
+        }
+        rang++;
+        majCompteurAttente();
+        continue;
+      }
+      /* Le dépôt a réussi et Microsoft a confirmé. Ce qui suit — mise à
+         jour de la visite, rafraîchissement de l'écran — ne doit PAS être
+         compté comme un échec d'envoi : la photographie est déposée, et la
+         retenter la déposerait deux fois. */
+      try {
         await majPhotoDansVisite(element.visit_id, element.photo_id, itemId);
         visitesTouchees.add(element.visit_id);
         await journaliser("photo_envoyee", { photo_id: element.photo_id });
       } catch (e) {
-        _echecEnvoi = String((e && e.message) || e);
-        await incrementerTentative(element.photo_id, _echecEnvoi);
-        await journaliser("photo_echec", { photo_id: element.photo_id, message: String(e && e.message) });
-        const delai = Math.min(30000, 2000 * Math.pow(2, Math.min(4, element.tentatives || 0)));
-        programmerReprise(delai);
-        break;
+        await journaliser("photo_apres_depot_echoue",
+          { photo_id: element.photo_id, message: String((e && e.message) || e) });
       }
       majCompteurAttente();
       attente = await photosEnAttente();
+      rang = 0;
     }
   } finally {
     _fileEnCours = false;
@@ -411,6 +480,71 @@ async function supprimerBrouillon(visite) {
     await journaliser("brouillon_suppression_echouee", String(e && e.message));
     return false;
   }
+}
+
+/* Bloc « Envoyer les photographies », posé sur l'accueil et sur l'écran de
+   clôture. Même comportement aux deux endroits : il envoie TOUT, toutes
+   visites confondues, dans l'ordre où les photographies ont été prises.
+   Deux boutons de même nom qui n'agiraient pas pareil seraient une source
+   d'erreur, et la file est de toute façon unique. */
+async function blocEnvoi() {
+  const attente = await photosEnAttente();
+  const echecs = await photosEnEchec();
+  if (!attente.length && !echecs.length) return "";
+
+  const mo = Math.round(attente.reduce((n, p) => n + (p.taille_octets || 0), 0) / 104857.6) / 10;
+
+  /* Une ligne par visite : sans elle, Julien ne sait pas laquelle attend. */
+  const parVisite = {};
+  attente.forEach(p => { parVisite[p.visit_id] = (parVisite[p.visit_id] || 0) + 1; });
+  const noms = await Promise.all(Object.keys(parVisite).map(async id => {
+    const v = await lireVisite(id);
+    const libelle = v ? (v.bien.immeuble + " " + v.bien.unite_source) : "visite effacée";
+    return `<div class="ligne"><span>${libelle}</span>
+      <span class="val">${parVisite[id]} photo(s)</span></div>`;
+  }));
+
+  return `<div class="bloc"><h2>Photographies à envoyer</h2>
+    ${attente.length
+      ? `<button id="btn-envoyer">Envoyer les ${attente.length} photo${
+          attente.length > 1 ? "s" : ""} en attente — ${mo} Mo</button>
+         ${noms.join("")}`
+      : ""}
+    ${echecs.length
+      ? `<p class="note ko">${echecs.length} photographie(s) refusée(s) par Microsoft
+         après plusieurs essais : ${escapeSimple(echecs[0].derniere_erreur)}.
+         Elles restent sur le téléphone. Reprends-les depuis l'écran de la pièce.</p>`
+      : ""}
+    ${_echecEnvoi && attente.length
+      ? `<p class="note">Dernier échec : ${escapeSimple(_echecEnvoi)}</p>` : ""}
+  </div>`;
+}
+
+function escapeSimple(s) {
+  return String(s == null ? "" : s).replace(/[<>&"]/g, c =>
+    ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+}
+
+/* Branche le bouton. `apres` est rappelée quand l'envoi est terminé, pour
+   que l'écran se redessine avec le compte à jour. */
+function brancherEnvoi(apres) {
+  const b = document.getElementById("btn-envoyer");
+  if (!b) return;
+  b.onclick = async () => {
+    b.disabled = true;
+    const total = (await photosEnAttente()).length;
+    let restant = total;
+    b.textContent = "Envoi… 0 sur " + total;
+    const suivi = setInterval(async () => {
+      restant = (await photosEnAttente()).length;
+      b.textContent = "Envoi… " + (total - restant) + " sur " + total;
+    }, 1200);
+    try { await traiterFile(); }
+    finally {
+      clearInterval(suivi);
+      if (typeof apres === "function") await apres();
+    }
+  };
 }
 
 /* Compteur permanent, jamais masquable. */

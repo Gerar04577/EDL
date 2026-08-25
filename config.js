@@ -4,12 +4,23 @@
 
 var CONFIG = {
 
-  version_app: "2.4.1",
+  version_app: "2.5.1",
 
   /* Protocole de signature imprimé en page 1 du procès-verbal.
-     Laisser vide tant que l'avocat n'a pas rendu son texte :
-     l'application utilise alors une version provisoire, signalée comme telle. */
-  protocole: [],
+     TEXTE DÉFINITIF, validé par l'avocat le 25/08/2026. Toute modification
+     de ce texte doit lui être soumise : il est signé par les deux parties. */
+  protocole: [
+    "Les parties conviennent expressément que le présent état des lieux est dressé " +
+    "contradictoirement sur support numérique au moyen de l'application du bailleur.",
+    "Elles reconnaissent que la signature manuscrite apposée sur l'écran tactile manifeste " +
+    "leur consentement et constitue une signature au sens du Livre 8 du Code civil.",
+    "Elles reconnaissent la date et l'heure figurant au présent document, ainsi que le fait " +
+    "que les photographies référencées font partie intégrante de l'état des lieux.",
+    "Le preneur reconnaît avoir pris connaissance de l'intégralité du document avant de le signer, " +
+    "et accepte que sa transmission à l'adresse électronique qu'il a déclarée vaille communication.",
+    "L'identité des signataires a été vérifiée sur présentation de la carte d'identité, " +
+    "en présence des deux parties.",
+  ],
 
   /* Identité du bailleur. Elle DIFFÈRE selon l'immeuble : trois
      propriétaires distincts, et une confusion rendrait le procès-verbal

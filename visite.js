@@ -258,6 +258,10 @@ async function creerVisite(param) {
       dossier_locataire_onedrive: param.dossier_locataire,
       dossier_cible_item_id: param.ref_cible.id,
       dossier_cible_drive_id: param.ref_cible.driveId,
+      /* Résolus au démarrage, quand le réseau est nécessairement là.
+         Ensuite, plus rien n'est demandé à OneDrive pendant la visite. */
+      dossier_photos_item_id: param.dossier_photos_item_id || null,
+      lien_photos: param.lien_photos || null,
       correspondance_confirmee: param.confirmee === true,
     },
 

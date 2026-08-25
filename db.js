@@ -184,6 +184,38 @@ async function confirmerTransfert(photoId, onedriveItemId) {
   });
 }
 
+/* Photographie définitivement refusée par Microsoft. Elle sort de la file
+   des envois à faire — sans quoi elle serait retentée à chaque fois et
+   fausserait le compte — mais son image RESTE dans la base : rien n'est
+   jamais effacé sans confirmation d'écriture. */
+async function marquerEchec(photoId, message) {
+  return _enFile(async () => {
+    const lecture = await _transaction("photos_en_attente", "readonly");
+    const element = await _promesse(lecture.get(photoId));
+    if (!element) return null;
+    element.statut_transfert = "echec";
+    element.derniere_erreur = message || null;
+    element.echec_le = new Date().toISOString();
+    const ecriture = await _transaction("photos_en_attente", "readwrite");
+    return _promesse(ecriture.put(element));
+  });
+}
+
+/* Photographies abandonnées, pour les signaler à l'écran. */
+async function photosEnEchec(visitId) {
+  const s = await _transaction("photos_en_attente", "readonly");
+  const toutes = await _promesse(s.getAll());
+  return toutes.filter(p => p.statut_transfert === "echec" &&
+    (!visitId || p.visit_id === visitId));
+}
+
+/* Poids total restant à envoyer : c'est lui qui décide si l'on appuie sur
+   « Envoyer » en wifi ou si l'on attend d'être rentré. */
+async function poidsEnAttente(visitId) {
+  const liste = await photosEnAttente(visitId);
+  return liste.reduce((n, p) => n + (p.taille_octets || 0), 0);
+}
+
 async function incrementerTentative(photoId, message) {
   return _enFile(async () => {
     const lecture = await _transaction("photos_en_attente", "readonly");
@@ -192,7 +224,10 @@ async function incrementerTentative(photoId, message) {
     element.tentatives = (element.tentatives || 0) + 1;
     element.derniere_erreur = message || null;
     const ecriture = await _transaction("photos_en_attente", "readwrite");
-    return _promesse(ecriture.put(element));
+    await _promesse(ecriture.put(element));
+    /* On renvoie l'ÉLÉMENT, pas la clé : l'appelant a besoin du nombre de
+       tentatives pour décider d'abandonner. */
+    return element;
   });
 }
 
