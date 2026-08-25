@@ -96,6 +96,47 @@ var AIDE = [
       "Une confirmation te le rappelle. Ne l'utilise que là où décrire prend du temps.",
   },
   {
+    titre: "4 bis. Décrire plusieurs photographies ensemble",
+    corps: [
+      "Quand une pièce demande quatre ou cinq vues, les décrire une par une fait " +
+      "répéter la même fissure sous cinq angles. Coche-les et l'IA rédige UN seul " +
+      "constat pour l'ensemble.",
+      "COCHER — sous chaque photographie déjà enregistrée, un bouton « cocher ». Il " +
+      "n'apparaît pas sur une photographie encore en attente d'envoi : l'IA ne peut " +
+      "pas la lire. À partir de deux cochées, un bloc s'ouvre en haut de l'écran.",
+      "CE QU'IL FAUT REGARDER — avant de lancer, tu peux dicter ou écrire ce que la " +
+      "photographie ne montre pas : « le châssis a été remplacé l'an dernier », " +
+      "« regarde surtout le sol près de la porte », « ignore le mobilier ». C'est le " +
+      "geste le plus utile de tout l'écran : une phrase ici vaut trois corrections " +
+      "ensuite.",
+      "RELIRE — le texte arrive dans un cadre que tu peux corriger au clavier ou au " +
+      "micro. Le texte final est le tien.",
+      "REFORMULER — écris ce qu'il faut changer, puis choisis. « Reformuler » " +
+      "retravaille le texte sans rouvrir les images : rapide, presque gratuit. " +
+      "« Revoir les photos » rouvre les images : plus lent, facturé comme une " +
+      "description complète, et il demande confirmation. Autant de tours que " +
+      "nécessaire.",
+      "Si tu demandes quelque chose qui exige de regarder à nouveau — « tu as oublié " +
+      "le sol » — l'IA te répond qu'il faut revoir les photographies. Utilise l'autre " +
+      "bouton.",
+      "AJOUTER AU CONSTAT — la constatation porte la liste des photographies du " +
+      "groupe. Au procès-verbal elle s'affiche « photographies : 003, 004, 007 », et " +
+      "l'annexe donne pour chacune sa date, son heure et son empreinte.",
+      "Tu peux faire plusieurs groupes dans une même pièce : chacun donne une " +
+      "constatation distincte. Décocher pendant qu'un constat est ouvert le remet à " +
+      "zéro — il ne correspondrait plus aux photographies retenues.",
+    ],
+    attention: "L'IA n'écrit plus de formule creuse — sans remarque particulière, " +
+      "rien à signaler, conforme. Quand un élément n'a rien, elle le nomme et " +
+      "s'arrête, ou dit précisément ce qu'il ne présente pas : faïence sans éclat " +
+      "ni fissure. Si une de ces formules revient malgré tout, demande simplement " +
+      "« enlève la dernière phrase » et appuie sur Reformuler. " +
+      "Tes consignes s'AJOUTENT aux règles de rédaction, elles ne les " +
+      "remplacent pas. L'IA n'écrira jamais que l'état relève de l'usure normale, " +
+      "n'imputera jamais un défaut à quelqu'un, ne chiffrera jamais rien : ces " +
+      "appréciations t'appartiennent. Tu peux les écrire toi-même dans le cadre.",
+  },
+  {
     titre: "5. Compteurs, clés, état général",
     corps: [
       "Bouton « Compteurs, clés et état général » sur l'écran des pièces.",

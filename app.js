@@ -1570,6 +1570,18 @@ function ecranIA(message) {
       <button class="mini" id="btn-echantillon">Envoyer un échantillon à Make</button>
     </div>
 
+    <div class="bloc"><h2>1 bis. Structure du GROUPE et de la REFORMULATION</h2>
+      <p class="note">Ces deux appels n'envoient pas les mêmes champs que la
+      description d'une photographie seule. Make ne peut pas les deviner :
+      mets-le en attente avec <strong>« Redetermine data structure »</strong>,
+      puis appuie sur le bouton correspondant.</p>
+      <button class="mini" id="btn-ech-groupe">Envoyer un échantillon groupé</button>
+      <button class="mini" id="btn-ech-reformulation">Envoyer un échantillon de reformulation</button>
+      <p class="note">L'échantillon groupé porte cinq photographies. Si tu comptes
+      en cocher davantage, refais-le avec le nombre maximum que tu utiliseras :
+      Make n'affiche que les champs qu'il a vus passer.</p>
+    </div>
+
     <div class="bloc"><h2>2. Essai réel</h2>
       <p class="note">Le scénario doit être activé et contenir un module
       <strong>« Webhook response »</strong> renvoyant l'en-tête
@@ -1610,6 +1622,32 @@ function ecranIA(message) {
     }
     b.disabled = false; b.textContent = "Envoyer un échantillon à Make";
   };
+
+  const echantillon = async (idBouton, libelle, envoi) => {
+    const b = $(idBouton);
+    if (!b) return;
+    b.onclick = async () => {
+      const url = $("url-ia").value.trim();
+      if (!url) return afficherIA(`<div class="erreur">Colle d'abord l'adresse du webhook.</div>`);
+      b.disabled = true; b.textContent = "Envoi…";
+      try {
+        const r = await envoi(url);
+        afficherIA(`<div class="succes">Échantillon envoyé — réponse ${r.statut}</div>
+          <div class="bloc"><h2>${echapper(libelle)}</h2>
+          <p class="note">${r.champs} champs transmis.</p>
+          <p class="note">${echapper(r.corps || "(vide)")}</p>
+          <p class="note">Retourne dans Make : les champs doivent maintenant
+          apparaître dans le webhook.</p></div>`);
+      } catch (e) {
+        afficherIA(`<div class="erreur"><strong>Échec</strong>${echapper(e.message)}</div>`);
+      }
+      b.disabled = false; b.textContent = libelle;
+    };
+  };
+  echantillon("btn-ech-groupe", "Envoyer un échantillon groupé",
+              (u) => envoyerEchantillonGroupe(u, 5));
+  echantillon("btn-ech-reformulation", "Envoyer un échantillon de reformulation",
+              (u) => envoyerEchantillonReformulation(u));
 
   $("btn-essai").onclick = async () => {
     const url = $("url-ia").value.trim();
@@ -2443,10 +2481,204 @@ async function ecranPiece(pieceId) {
   E.piece = pieceId;
   E.brouillons = {}; E.etat = undefined; E.proprete = undefined;
   E.commentaireGeneral = undefined; E.indexEdition = null;
+  viderGroupe();
   VISITE = (await lireVisite(VISITE.visit_id)) || VISITE;
   const piece = VISITE.pieces.find(p => p.piece_id === pieceId);
   titre(piece.libelle, VISITE.bien.unite_source);
   dessinerPiece();
+}
+
+/* ---- Description d'un groupe de photographies ---------------------------
+
+   Cocher plusieurs vues, obtenir UN constat d'ensemble, puis le corriger
+   autant de fois qu'il le faut avant de le retenir.
+
+   L'état vit dans E, jamais dans le document : l'écran se redessine à
+   chaque photographie confirmée par la file, et tout ce qui serait lu
+   depuis le DOM se perdrait à ce moment-là. */
+
+function blocGroupe(piece, photos) {
+  const coches = (E.groupe || []).filter(id => photos.some(p => p.photo_id === id));
+  if (coches.length < 2 && !E.groupeTexte) return "";
+
+  const noms = coches.map(id => {
+    const p = photos.find(x => x.photo_id === id);
+    const m = String(p.nom_fichier || "").match(/_(\d{3})_/);
+    return m ? m[1] : "?";
+  });
+
+  if (!E.groupeTexte) {
+    /* Avant l'appel : ce que l'expert veut faire regarder. Une phrase dictée
+       ici vaut trois corrections ensuite — le modèle ne sait rien du bien. */
+    return `<div class="bloc"><h2>${coches.length} photographies cochées</h2>
+      <p class="note">Photographies ${noms.join(", ")}. L'IA les regardera ensemble
+      et rédigera UN constat, sans répéter ce qui apparaît sur plusieurs vues.</p>
+      <textarea id="groupe-avant" rows="2"
+        placeholder="Ce qu'il faut regarder (facultatif) — micro du clavier disponible">${
+        echapper(E.groupeAvant || "")}</textarea>
+      <p class="note">Exemples : « le châssis a été remplacé l'an dernier »,
+      « regarde surtout le sol près de la porte », « ignore le mobilier ».</p>
+      <button class="decrire" id="btn-groupe">Décrire ces ${coches.length} photos ensemble</button>
+      <button class="mini secondaire" id="btn-groupe-vider">Tout décocher</button>
+    </div>`;
+  }
+
+  /* Après l'appel : le texte, éditable, et les deux voies de correction. */
+  const tours = (E.groupeHistorique || []).length;
+  return `<div class="bloc"><h2>Constat des photographies ${noms.join(", ")}</h2>
+    <textarea id="groupe-texte" rows="7"
+      placeholder="Le constat du groupe.">${echapper(E.groupeTexte)}</textarea>
+    <p class="note">Relis et corrige directement : le texte final est le tien.</p>
+
+    <textarea id="groupe-instruction" rows="2"
+      placeholder="Que faut-il changer ?">${echapper(E.groupeInstruction || "")}</textarea>
+    <div class="duo">
+      <button class="decrire sobre" id="btn-reformuler">Reformuler</button>
+      <button class="decrire" id="btn-revoir">Revoir les photos</button>
+    </div>
+    ${tours === 0
+      ? `<p class="note">Reformuler retravaille le texte. Revoir les photos
+         rouvre les images.</p>` : ""}
+    ${tours
+      ? `<p class="note gris">${tours} correction(s) déjà demandée(s) :
+         ${echapper((E.groupeHistorique || []).join(" · "))}</p>` : ""}
+
+    <button id="btn-groupe-ajouter">Ajouter au constat</button>
+    <button class="mini secondaire" id="btn-groupe-abandon">Abandonner ce constat</button>
+  </div>`;
+}
+
+function numeroDansNom(nom) {
+  const m = String(nom || "").match(/_(\d{3})_/);
+  return m ? m[1] : "?";
+}
+
+function viderGroupe() {
+  E.groupe = []; E.groupeTexte = null; E.groupeAvant = "";
+  E.groupeInstruction = ""; E.groupeHistorique = [];
+}
+
+/* Mémorise ce qui est tapé avant tout redessin : sans cela, une photographie
+   confirmée par la file efface la saisie en cours. */
+function memoriserGroupe() {
+  const a = $("groupe-avant"); if (a) E.groupeAvant = a.value;
+  const t = $("groupe-texte"); if (t) E.groupeTexte = t.value;
+  const i = $("groupe-instruction"); if (i) E.groupeInstruction = i.value;
+}
+
+function brancherGroupe(piece, photos) {
+  $("vue").querySelectorAll("[data-grouper]").forEach(b => b.onclick = () => {
+    memoriserGroupe();
+    const id = b.getAttribute("data-grouper");
+    E.groupe = E.groupe || [];
+    const i = E.groupe.indexOf(id);
+    if (i >= 0) E.groupe.splice(i, 1); else E.groupe.push(id);
+    /* Décocher pendant qu'un constat est ouvert changerait le groupe auquel
+       il se rattache : on repart alors de zéro. */
+    if (E.groupeTexte) { E.groupeTexte = null; E.groupeHistorique = []; }
+    dessinerPiece();
+  });
+
+  const cochees = () => (E.groupe || [])
+    .map(id => photos.find(p => p.photo_id === id)).filter(Boolean);
+
+  const ga = $("groupe-avant");
+  if (ga) ga.oninput = () => { E.groupeAvant = ga.value; };
+  const gt = $("groupe-texte");
+  if (gt) gt.oninput = () => { E.groupeTexte = gt.value; };
+  const gi = $("groupe-instruction");
+  if (gi) gi.oninput = () => { E.groupeInstruction = gi.value; };
+
+  if ($("btn-groupe-vider")) $("btn-groupe-vider").onclick = () => {
+    viderGroupe(); dessinerPiece();
+  };
+  if ($("btn-groupe-abandon")) $("btn-groupe-abandon").onclick = () => {
+    E.groupeTexte = null; E.groupeInstruction = ""; E.groupeHistorique = [];
+    dessinerPiece();
+  };
+
+  if ($("btn-groupe")) $("btn-groupe").onclick = async () => {
+    memoriserGroupe();
+    const lot = cochees();
+    if (lot.length < 2) return dessinerPiece("Coche au moins deux photographies.");
+    if (!iaDisponible()) return dessinerPiece("Aucun relais IA enregistré — va dans " +
+      "Accueil → Description par IA pour coller l'adresse Make.");
+    if (!(await confirmer("Décrire ces " + lot.length + " photographies ensemble ?",
+        "Cet appel est facturé — un appel Gemini portant " + lot.length +
+        " images. L'IA rédigera un seul constat pour l'ensemble.",
+        "Oui, décrire"))) return;
+    const b = $("btn-groupe");
+    b.disabled = true; b.textContent = "Lecture des " + lot.length + " photos…";
+    try {
+      E.groupeTexte = await decrireGroupe(VISITE, lot, E.groupeAvant);
+      E.groupeHistorique = [];
+      E.groupeInstruction = "";
+    } catch (e) {
+      return dessinerPiece("Description impossible : " + e.message);
+    }
+    dessinerPiece("Constat proposé — relis-le, corrige, puis « Ajouter au constat »");
+  };
+
+  const reformuler = async (avecPhotos) => {
+    memoriserGroupe();
+    const lot = cochees();
+    const instruction = String(E.groupeInstruction || "").trim();
+    if (!instruction) return dessinerPiece("Écris d'abord ce qu'il faut changer.");
+    if (avecPhotos && !(await confirmer("Revoir les photographies ?",
+        "L'IA rouvre les " + lot.length + " images. Cet appel est facturé comme " +
+        "une description complète.", "Oui, revoir"))) return;
+    const b = $(avecPhotos ? "btn-revoir" : "btn-reformuler");
+    b.disabled = true; b.textContent = avecPhotos ? "Relecture…" : "Reformulation…";
+    let texte;
+    try {
+      texte = await reformulerTexte(VISITE, lot, E.groupeTexte, instruction,
+                                    E.groupeHistorique || [], avecPhotos);
+    } catch (e) {
+      return dessinerPiece("Reformulation impossible : " + e.message);
+    }
+    /* Le modèle a le droit de dire qu'il ne peut pas répondre sans revoir
+       les images : on le relaie au lieu de faire passer sa réponse pour un
+       constat. */
+    if (/il faut revoir les photographies/i.test(texte)) {
+      return dessinerPiece("L'IA ne peut pas répondre sans revoir les images. " +
+        "Utilise « Revoir les photos ».");
+    }
+    E.groupeTexte = texte;
+    E.groupeHistorique = (E.groupeHistorique || []).concat([instruction]);
+    E.groupeInstruction = "";
+    dessinerPiece("Texte corrigé — relis-le");
+  };
+  if ($("btn-reformuler")) $("btn-reformuler").onclick = () => reformuler(false);
+  if ($("btn-revoir")) $("btn-revoir").onclick = () => reformuler(true);
+
+  if ($("btn-groupe-ajouter")) $("btn-groupe-ajouter").onclick = async () => {
+    memoriserGroupe();
+    const lot = cochees();
+    const texte = String(E.groupeTexte || "").trim();
+    if (!texte) return dessinerPiece("Le constat est vide.");
+    try {
+      VISITE = await modifierVisite(VISITE.visit_id, v => {
+        const pc = v.pieces.find(x => x.piece_id === E.piece);
+        pc.constatations.push({
+          texte: texte,
+          /* La LISTE des photographies, et non une seule : c'est ce qui
+             relie le constat à l'annexe du procès-verbal. */
+          photo_ids: lot.map(p => p.photo_id),
+          photo_noms: lot.map(p => p.nom_fichier),
+          photo_id: null, photo_nom: null,
+          source: "ia_groupe_validee",
+          instruction_avant: String(E.groupeAvant || "").trim() || null,
+          instructions_correction: (E.groupeHistorique || []).slice(),
+          horodatage: new Date().toISOString(),
+        });
+      }) || VISITE;
+    } catch (e) {
+      return dessinerPiece("Enregistrement impossible : " + e.message);
+    }
+    viderGroupe();
+    programmerDepot();
+    dessinerPiece("Constat de groupe enregistré");
+  };
 }
 
 function dessinerPiece(message) {
@@ -2488,9 +2720,11 @@ function dessinerPiece(message) {
       ${piece.constatations.length
         ? piece.constatations.map((c, i) => `<div class="constat">
             <p>${echapper(c.texte)}</p>
-            <p class="note">${c.photo_nom
-              ? "photographie " + echapper(c.photo_nom)
-              : "sans photographie"}
+            <p class="note">${c.photo_noms && c.photo_noms.length
+              ? "photographies " + echapper(c.photo_noms.map(numeroDansNom).join(", "))
+              : (c.photo_nom
+                ? "photographie " + echapper(c.photo_nom)
+                : "sans photographie")}
             <button class="lien" data-modif="${i}" style="color:#1f4e5f">modifier</button>
             <button class="lien" data-suppr="${i}">supprimer</button></p></div>`).join("")
         : `<p class="note">Aucune constatation pour l'instant.</p>`}
@@ -2500,6 +2734,8 @@ function dessinerPiece(message) {
       ? `<div class="erreur"><strong>Envoi bloqué</strong>${echapper(_echecEnvoi)}<br><br>
          Les photographies restent sur le téléphone : rien n'est perdu. Elles
          repartiront dès que la cause sera levée.</div>` : ""}
+
+    ${blocGroupe(piece, photos)}
 
     <div class="bloc"><h2>${photos.length} photo${photos.length > 1 ? "s" : ""}${
         photos.length ? " — " + deposees + " enregistrée" + (deposees > 1 ? "s" : "") : ""}</h2>
@@ -2513,6 +2749,13 @@ function dessinerPiece(message) {
             p.statut_transfert === "confirme" ? "enregistrée" : "en attente"}</span></div>
 
           ${p.statut_transfert === "confirme" ? `
+            <div class="interrupteur">
+              <span class="note">Décrire avec d'autres photographies</span>
+              <button class="seg${(E.groupe || []).includes(p.photo_id) ? " actif" : ""}"
+                style="width:auto;margin:0;padding:7px 16px"
+                data-grouper="${echapper(p.photo_id)}">${
+                (E.groupe || []).includes(p.photo_id) ? "cochée" : "cocher"}</button>
+            </div>
             <textarea rows="3" data-brouillon="${echapper(p.photo_id)}"
               placeholder="Décris cette photo. Micro du clavier disponible.">${
               echapper(brouillon)}</textarea>
@@ -2619,8 +2862,24 @@ function dessinerPiece(message) {
   });
 
   // --- modifier ou supprimer une constatation ---
-  $("vue").querySelectorAll("[data-modif]").forEach(b => b.onclick = () => {
+  $("vue").querySelectorAll("[data-modif]").forEach(b => b.onclick = async () => {
     const c = piece.constatations[parseInt(b.getAttribute("data-modif"), 10)];
+    if (c.photo_ids && c.photo_ids.length) {
+      /* Un constat de groupe se corrige en le reprenant entier : le rattacher
+         à une seule photographie romprait le lien avec les autres. */
+      E.groupe = c.photo_ids.slice();
+      E.groupeTexte = c.texte;
+      E.groupeHistorique = (c.instructions_correction || []).slice();
+      E.groupeAvant = c.instruction_avant || "";
+      E.groupeInstruction = "";
+      VISITE = await modifierVisite(VISITE.visit_id, v => {
+        const pc = v.pieces.find(x => x.piece_id === E.piece);
+        const i = pc.constatations.indexOf(pc.constatations.find(
+          x => x.horodatage === c.horodatage && x.texte === c.texte));
+        if (i >= 0) pc.constatations.splice(i, 1);
+      }) || VISITE;
+      return dessinerPiece("Constat repris — corrige-le, puis « Ajouter au constat »");
+    }
     if (c.photo_id) {
       E.brouillons[c.photo_id] = c.texte;
       dessinerPiece("Corrige le texte sous la photographie, puis « Ajouter au constat »");
@@ -2748,6 +3007,7 @@ function dessinerPiece(message) {
     ecranVisiteReprise(VISITE);
   };
 
+  brancherGroupe(piece, photos);
   majCompteurAttente(VISITE.photos.length);
 }
 

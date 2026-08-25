@@ -52,7 +52,11 @@ function resumePourMake(visite, lien) {
     p.constatations.forEach(x => {
       const q = [x.etat, x.proprete].filter(Boolean)
         .map(y => String(y).replace(/_/g, " ")).join(", ");
-      lignes.push(p.libelle + " : " + (x.texte || "") + (q ? " (" + q + ")" : ""));
+      const n = (x.photo_noms && x.photo_noms.length)
+        ? " [photographies " + x.photo_noms.map(f => {
+            const m = String(f).match(/_(\d{3})_/); return m ? m[1] : "?"; }).join(", ") + "]"
+        : "";
+      lignes.push(p.libelle + " : " + (x.texte || "") + (q ? " (" + q + ")" : "") + n);
     });
     if (photos) lignes.push(p.libelle + " — " + photos + " photographie(s).");
   });

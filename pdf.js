@@ -212,8 +212,16 @@ async function genererPV(visite) {
         const q = [libelleEtat(c.etat), libelleProprete(c.proprete)].filter(Boolean).join(", ");
         if (c.texte) p.paragraphe("• " + c.texte, { retrait: 2 });
         if (q) p.paragraphe(c.texte ? "  (" + q + ")" : "• " + q, { retrait: 2, taille: 9 });
-        if (c.photo_nom) p.paragraphe("  photographie : " + c.photo_nom,
-          { retrait: 2, taille: 7 });
+        /* Un constat de groupe porte la LISTE des photographies : c'est ce
+           qui le relie à l'annexe, où figurent date, heure et empreinte. */
+        if (c.photo_noms && c.photo_noms.length) {
+          p.paragraphe("  photographies : " +
+            c.photo_noms.map(x => numeroPhoto({ nom_fichier: x })).join(", "),
+            { retrait: 2, taille: 7 });
+        } else if (c.photo_nom) {
+          p.paragraphe("  photographie : " + numeroPhoto({ nom_fichier: c.photo_nom }),
+            { retrait: 2, taille: 7 });
+        }
         p.saut(1.5);
       });
       if (photos.length) {
