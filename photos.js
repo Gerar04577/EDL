@@ -137,7 +137,7 @@ async function ajouterPhoto(visite, rattachement, fichier) {
     tentatives: 0,
     horodatage: entree.horodatage,
     drive_id: visite.bien.dossier_cible_drive_id,
-    parent_id: visite.bien.dossier_cible_item_id,
+    parent_id: await dossierPhotos(visite),
   };
   await mettreEnFile(element);
 
@@ -153,6 +153,63 @@ async function empreinteBlob(blob) {
   const h = await crypto.subtle.digest("SHA-256", tampon);
   return Array.from(new Uint8Array(h))
     .map(x => x.toString(16).padStart(2, "0")).join("");
+}
+
+/* Sous-dossier « Photos », à l'intérieur du dossier EDLE ou EDLS de la
+   visite. Les photographies y vont ; le procès-verbal et le fichier de
+   données restent au niveau au-dessus. Un lien de partage sur ce
+   sous-dossier n'expose donc que des images — le fichier de données
+   contient le numéro de carte d'identité des signataires.
+
+   C'est le SEUL dossier que l'application crée, et uniquement là. */
+var _dossiersPhotos = {};
+
+async function dossierPhotos(visite) {
+  const d = visite.bien;
+  const parent = d.dossier_cible_item_id;
+  if (!parent) return parent;
+  if (_dossiersPhotos[parent]) return _dossiersPhotos[parent];
+
+  const base = d.dossier_cible_drive_id
+    ? `/drives/${d.dossier_cible_drive_id}/items/${parent}`
+    : `/me/drive/items/${parent}`;
+
+  try {
+    // déjà présent ?
+    const lu = await appelGraph(base + "/children");
+    if (lu.ok) {
+      const contenu = await lu.json();
+      const trouve = (contenu.value || []).find(
+        x => x.folder && String(x.name).toLowerCase() === "photos");
+      if (trouve) {
+        _dossiersPhotos[parent] = trouve.id;
+        return trouve.id;
+      }
+    }
+    // à créer
+    const cree = await appelGraph(base + "/children", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Photos", folder: {},
+        "@microsoft.graph.conflictBehavior": "return",
+      }),
+    });
+    if (cree.ok) {
+      const item = await cree.json();
+      if (item && item.id) {
+        _dossiersPhotos[parent] = item.id;
+        await journaliser("dossier_photos_cree", { visit_id: visite.visit_id });
+        return item.id;
+      }
+    }
+    await journaliser("dossier_photos_echoue", await detailErreur(cree));
+  } catch (e) {
+    await journaliser("dossier_photos_echoue", String(e && e.message));
+  }
+  /* En cas d'échec, on dépose au niveau du dessus plutôt que de perdre
+     la photographie. Le lien de partage restera alors déconseillé. */
+  return parent;
 }
 
 /* Téléversement d'un élément de la file. */

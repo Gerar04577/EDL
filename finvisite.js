@@ -147,9 +147,18 @@ function nomBailleurComplet(V) {
 async function lienDossierVisite(visite) {
   const d = visite.bien || {};
   if (!d.dossier_cible_item_id) return null;
+
+  /* Le lien porte sur le sous-dossier Photos, JAMAIS sur le dossier de la
+     visite : celui-ci contient le fichier de données, avec le numéro de
+     carte d'identité des signataires et les montants réclamés. */
+  const cible = await dossierPhotos(visite);
+  if (!cible || cible === d.dossier_cible_item_id) {
+    await journaliser("lien_refuse", "sous-dossier Photos indisponible");
+    return null;
+  }
   const chemin = d.dossier_cible_drive_id
-    ? `/drives/${d.dossier_cible_drive_id}/items/${d.dossier_cible_item_id}/createLink`
-    : `/me/drive/items/${d.dossier_cible_item_id}/createLink`;
+    ? `/drives/${d.dossier_cible_drive_id}/items/${cible}/createLink`
+    : `/me/drive/items/${cible}/createLink`;
   try {
     const res = await appelGraph(chemin, {
       method: "POST",
@@ -249,7 +258,7 @@ async function envoyerFinVisite(visite, options) {
   /* Jamais de lien par défaut : le dossier contient le fichier de données
      de la visite. Il faut une demande explicite. */
   let lien = null;
-  if (o.courriel !== false && o.lien === true) {
+  if (o.courriel !== false && o.lien !== false) {
     lien = await lienDossierVisite(visite);
   }
   const champs = resumePourMake(visite, lien);

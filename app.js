@@ -1304,10 +1304,8 @@ function ecranFinVisite(visite, message) {
      à l'envoi du procès-verbal signé. */
   if (E.finRapport === undefined) E.finRapport = false;
   if (E.finCourriel === undefined) E.finCourriel = destinataires.length > 0;
-  /* Le lien porte sur le dossier ENTIER, qui contient aussi le fichier de
-     données de la visite : numéro de carte d'identité, adresses, réserves
-     et montants. Il est donc DÉSACTIVÉ par défaut. */
-  if (E.finLien === undefined) E.finLien = false;
+  /* Le lien ne porte plus que sur le sous-dossier Photos. */
+  if (E.finLien === undefined) E.finLien = destinataires.length > 0;
 
   titre("Rapport et courriel", V.bien.unite_source);
 
@@ -1322,19 +1320,13 @@ function ecranFinVisite(visite, message) {
     <div class="bloc"><h2>Ce qui sera fait</h2>
       ${inter("courriel", "Courriel au locataire, procès-verbal signé joint",
               E.finCourriel, destinataires.length === 0)}
-      ${inter("lien", "Lien vers le dossier de la visite", E.finLien)}
+      ${inter("lien", "Lien vers les photographies, en lecture seule", E.finLien)}
       ${inter("rapport", "Rapport Word (nécessite un modèle dans Make)", E.finRapport)}
       <p class="note">L'envoi du procès-verbal le jour même établit que le
       locataire en a reçu copie : cela fait partie de la preuve.</p>
-      ${E.finLien ? `<div class="erreur"><strong>Ce lien expose plus que les photographies</strong>
-        Le dossier ${V.type === "EDLS" ? "EDLS" : "EDLE"} contient aussi le fichier
-        de données de la visite : numéro de carte d'identité des signataires,
-        adresses électroniques, réserves${V.type === "EDLS"
-          ? ", et les montants réclamés" : ""}. Le lien étant anonyme, toute
-        personne à qui le locataire le transmet y aura accès.</div>` : ""}
-      <p class="note">Le lien porte sur le dossier ${V.type === "EDLS" ? "EDLS" : "EDLE"}
-      de cette visite, en lecture seule. Ni le bail, ni les autres locataires,
-      ni le reste de OneDrive.</p>
+            <p class="note">Le lien porte uniquement sur le sous-dossier
+      <code>Photos</code> de cette visite, en lecture seule. Ni le fichier de
+      données, ni le procès-verbal, ni le bail, ni les autres locataires.</p>
       <p class="note">Le document signé est déjà déposé dans OneDrive.
       Un échec d'envoi ne remet rien en cause.</p>
     </div>
