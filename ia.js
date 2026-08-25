@@ -416,7 +416,16 @@ function consigneReformulation(piece, type, instruction, historique, avecPhotos)
 }
 
 /* Décrit un groupe de photographies déjà déposées dans OneDrive. */
+/* Plafond. Gemini accepte 20 Mo par requête, tout compris. Dix
+   photographies compressées à 1600 px pèsent une fois encodées environ
+   11 Mo : on reste sous la limite, mais on ne va pas plus loin. Au-delà,
+   le constat d'ensemble se dilue de toute façon. */
+var GROUPE_MAX_PHOTOS = 10;
+
 async function decrireGroupe(visite, photos, instruction) {
+  if (photos.length > GROUPE_MAX_PHOTOS)
+    throw new Error("Maximum " + GROUPE_MAX_PHOTOS + " photographies par groupe. " +
+      "Décoche-en " + (photos.length - GROUPE_MAX_PHOTOS) + " ou fais deux groupes.");
   const manquantes = photos.filter(p => !p.onedrive_item_id);
   if (manquantes.length)
     throw new Error(manquantes.length + " photographie(s) pas encore enregistrée(s) " +
@@ -435,15 +444,27 @@ async function decrireGroupe(visite, photos, instruction) {
     visit_id: visite.visit_id,
     photo_ids: photos.map(p => p.photo_id).join(","),
   };
-  /* Un champ par photographie : Make manipule mal les listes, et un champ
-     numéroté se mappe sans effort dans l'itérateur. */
+  /* DEUX FORMES POUR LES MÊMES ADRESSES.
+
+     urls_photos — toutes les adresses dans UN champ, séparées par une barre
+     verticale. C'est celui qui compte : l'itérateur de Make a besoin d'un
+     tableau, et il l'obtient en découpant ce champ. Des champs numérotés
+     l'obligeraient à un module par numéro, alors que le nombre de
+     photographies varie.
+
+     url_photo_1, url_photo_2… — conservés pour rester lisibles à l'écran de
+     Make pendant la mise au point, et parce que le scénario d'origine
+     attend url_photo. */
+  const adresses = [];
   for (let i = 0; i < photos.length; i++) {
-    champs["url_photo_" + (i + 1)] = await lienTelechargement(visite, photos[i]);
+    const lien = await lienTelechargement(visite, photos[i]);
+    adresses.push(lien);
+    champs["url_photo_" + (i + 1)] = lien;
     champs["item_id_" + (i + 1)] = photos[i].onedrive_item_id;
   }
-  /* Compatibilité : le scénario d'origine attend url_photo et item_id. */
-  champs.url_photo = champs.url_photo_1;
-  champs.item_id = champs.item_id_1;
+  champs.urls_photos = adresses.join("|");
+  champs.url_photo = adresses[0];
+  champs.item_id = photos[0].onedrive_item_id;
 
   const texte = await appelerRelaisIA(champs);
   const propre = nettoyerReponseIA(texte);
@@ -473,12 +494,18 @@ async function reformulerTexte(visite, photos, texteActuel, instruction, histori
     photo_ids: photos.map(p => p.photo_id).join(","),
   };
   if (avecPhotos) {
+    const adresses = [];
     for (let i = 0; i < photos.length; i++) {
-      champs["url_photo_" + (i + 1)] = await lienTelechargement(visite, photos[i]);
+      const lien = await lienTelechargement(visite, photos[i]);
+      adresses.push(lien);
+      champs["url_photo_" + (i + 1)] = lien;
       champs["item_id_" + (i + 1)] = photos[i].onedrive_item_id;
     }
-    champs.url_photo = champs.url_photo_1;
-    champs.item_id = champs.item_id_1;
+    champs.urls_photos = adresses.join("|");
+    champs.url_photo = adresses[0];
+    champs.item_id = photos[0].onedrive_item_id;
+  } else {
+    champs.urls_photos = "";
   }
   const texte = await appelerRelaisIA(champs);
   const propre = nettoyerReponseIA(texte);
@@ -582,12 +609,16 @@ async function envoyerEchantillonGroupe(url, nombre) {
     visit_id: "v_echantillon",
     photo_ids: Array.from({ length: n }, (_, i) => "ph_echantillon_" + (i + 1)).join(","),
   };
+  const adresses = [];
   for (let i = 1; i <= n; i++) {
-    champs["url_photo_" + i] = "https://exemple-de-lien-de-telechargement/" + i;
+    const lien = "https://exemple-de-lien-de-telechargement/" + i;
+    adresses.push(lien);
+    champs["url_photo_" + i] = lien;
     champs["item_id_" + i] = "ECHANTILLON_" + i;
   }
-  champs.url_photo = champs.url_photo_1;
-  champs.item_id = champs.item_id_1;
+  champs.urls_photos = adresses.join("|");
+  champs.url_photo = adresses[0];
+  champs.item_id = "ECHANTILLON_1";
 
   const corps = new URLSearchParams();
   Object.keys(champs).forEach(k => corps.append(k, String(champs[k] == null ? "" : champs[k])));
@@ -612,6 +643,7 @@ async function envoyerEchantillonReformulation(url) {
     consigne: consigneReformulation("Séjour", "EDLE",
       "Fais plus court et ne parle pas du plafond.", ["Fais plus court"], false),
     nombre_photos: "0",
+    urls_photos: "",
     drive_id: "ECHANTILLON",
     visit_id: "v_echantillon",
     photo_ids: "ph_echantillon_1,ph_echantillon_2",

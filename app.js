@@ -2492,7 +2492,9 @@ function blocGroupe(piece, photos) {
     /* Avant l'appel : ce que l'expert veut faire regarder. Une phrase dictée
        ici vaut trois corrections ensuite — le modèle ne sait rien du bien. */
     return `<div class="bloc"><h2>${coches.length} photographies cochées</h2>
-      <p class="note">Photographies ${noms.join(", ")}. L'IA les regardera ensemble
+      <p class="note">Photographies ${noms.join(", ")}${
+        coches.length >= GROUPE_MAX_PHOTOS ? " — maximum atteint" : ""}.
+      L'IA les regardera ensemble
       et rédigera UN constat, sans répéter ce qui apparaît sur plusieurs vues.</p>
       <textarea id="groupe-avant" rows="2"
         placeholder="Ce qu'il faut regarder (facultatif) — micro du clavier disponible">${
@@ -2553,7 +2555,14 @@ function brancherGroupe(piece, photos) {
     const id = b.getAttribute("data-grouper");
     E.groupe = E.groupe || [];
     const i = E.groupe.indexOf(id);
-    if (i >= 0) E.groupe.splice(i, 1); else E.groupe.push(id);
+    if (i >= 0) E.groupe.splice(i, 1);
+    else if (E.groupe.length >= GROUPE_MAX_PHOTOS) {
+      /* Au-delà de dix, la requête approche la limite de 20 Mo de Gemini
+         et le constat d'ensemble se dilue. */
+      return dessinerPiece("Dix photographies au maximum par groupe. " +
+        "Décoches-en une, ou fais un second groupe.");
+    }
+    else E.groupe.push(id);
     /* Décocher pendant qu'un constat est ouvert changerait le groupe auquel
        il se rattache : on repart alors de zéro. */
     if (E.groupeTexte) { E.groupeTexte = null; E.groupeHistorique = []; }
