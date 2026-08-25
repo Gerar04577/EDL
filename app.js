@@ -444,7 +444,7 @@ async function verifierCible(locataire) {
      le procès-verbal portait le nom d'une AUTRE personne que celle qui
      signe. Le dossier retenu fait foi. */
   const attendus = (E.brouillon.preneurs || []).join(" & ");
-  if (normaliserNom(locataire.nom) !== normaliserNom(attendus)) {
+  if (!memeIdentite(locataire.nom, attendus)) {
     E.brouillon.preneurs = decouperPreneurs(locataire.nom);
     E.brouillon.preneurs_corriges = true;
     E.brouillon.preneurs_liste = attendus || null;
@@ -485,9 +485,14 @@ function confirmer(titreTexte, detail, libelleOui) {
    termine par « V2 » : deux rectifications le même jour dans la même unité
    auraient produit le même nom de fichier, et la seconde aurait écrasé la
    première. On prend donc le code de l'identifiant PERMANENT. */
-function normaliserNom(s) {
-  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+/* Comparaison stricte de deux noms de personnes, tout séparateur retiré.
+   NE PAS nommer normaliserNom : graph.js en définit une autre, qui
+   conserve les espaces et sert à reconnaître les types de dossiers.
+   Deux fonctions de même nom, et la dernière chargée écrase l'autre. */
+function memeIdentite(a, b) {
+  const n = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return n(a) === n(b);
 }
 
 function codeCourt(V) {
