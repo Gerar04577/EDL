@@ -438,6 +438,20 @@ async function verifierCible(locataire) {
 
   E.brouillon.dossier_locataire = locataire.nom;
   E.brouillon.ref_cible = c.ref;
+
+  /* Les preneurs venaient de la liste de Gestion Loyers, fixée à l'étape
+     précédente. Si le dossier choisi n'est pas celui du locataire attendu,
+     le procès-verbal portait le nom d'une AUTRE personne que celle qui
+     signe. Le dossier retenu fait foi. */
+  const attendus = (E.brouillon.preneurs || []).join(" & ");
+  if (normaliserNom(locataire.nom) !== normaliserNom(attendus)) {
+    E.brouillon.preneurs = decouperPreneurs(locataire.nom);
+    E.brouillon.preneurs_corriges = true;
+    E.brouillon.preneurs_liste = attendus || null;
+  } else {
+    E.brouillon.preneurs_corriges = false;
+    E.brouillon.preneurs_liste = null;
+  }
   ecranComposition();
 }
 
@@ -471,6 +485,11 @@ function confirmer(titreTexte, detail, libelleOui) {
    termine par « V2 » : deux rectifications le même jour dans la même unité
    auraient produit le même nom de fichier, et la seconde aurait écrasé la
    première. On prend donc le code de l'identifiant PERMANENT. */
+function normaliserNom(s) {
+  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
 function codeCourt(V) {
   const base = (V.edl_id || V.visit_id).split("_").pop();
   const version = V.version_doc && V.version_doc !== "V1" ? "_" + V.version_doc : "";
@@ -599,6 +618,12 @@ function dessinerOptions() {
       <div class="ligne"><span>Dossier</span><span class="val">${b.type}</span></div>
     </div>
     <div class="bloc"><h2>Preneurs à faire signer</h2>
+      ${b.preneurs_corriges
+        ? `<div class="avert"><strong>Preneurs repris du dossier choisi</strong>
+           La liste de Gestion Loyers annonçait ${
+             echapper(b.preneurs_liste || "aucun locataire")}. Le dossier OneDrive
+           retenu porte un autre nom : ce sont les noms ci-dessous qui figureront
+           au procès-verbal. Vérifie-les.</div>` : ""}
       ${b.preneurs.length
         ? b.preneurs.map(p => `<div class="ligne"><span>${echapper(p)}</span><span class="val"></span></div>`).join("")
         : `<p class="note">Aucun preneur dans la liste — unité inoccupée. À saisir à la signature.</p>`}
