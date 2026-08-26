@@ -1302,6 +1302,24 @@ function dessinerAide() {
     </div>`;
   }
 
+  /* Aide-mémoire des obligations du locataire. Réservé à l'opérateur :
+     un tableau non exhaustif brandi devant un preneur se retourne. */
+  if (!cherche && typeof OBLIGATIONS !== "undefined") {
+    html += `<div class="bloc">
+      <button class="aide-titre" data-aide="obligations">Obligations du locataire — ${
+        OBLIGATIONS.length} postes
+        <span class="droite">${E.aideOuvert === "obligations" ? "−" : "+"}</span></button>
+      ${E.aideOuvert === "obligations" ? `
+        <div class="avert"><strong>Pour toi, pas pour le locataire</strong>
+          Cette liste sert à savoir quoi regarder et quoi documenter. Elle n'est pas
+          exhaustive et ne remplace pas le bail : la brandir pendant une visite se
+          retourne facilement.</div>
+        ${OBLIGATIONS.map(x =>
+          `<p class="note"><strong>${echapper(x.t)}</strong> — ${echapper(x.d)}</p>`).join("")}
+      ` : ""}
+    </div>`;
+  }
+
   html += `<button class="secondaire" id="btn-retour">Retour à l'accueil</button>`;
   vue(html);
 

@@ -23,7 +23,7 @@ var IA_DELAI_MS = 90000;
 /* Version des consignes, transmise à chaque appel. Permet de savoir, six
    mois plus tard, quelle rédaction a produit un texte donné. À incrémenter
    dès qu'une consigne change. */
-var IA_PROMPT_VERSION = "2026-08-26-v5";
+var IA_PROMPT_VERSION = "2026-08-26-v7";
 var CLE_WEBHOOK_IA = "edl_webhook_ia";
 
 /* L'adresse est conservée SUR L'APPAREIL. Le fichier de configuration
@@ -103,11 +103,106 @@ function consigneDescription(piece, type, niveau) {
    (Bureau Nicolaï, Wavre, et Metric sprl, Bruxelles), ainsi que sur le
    modèle-type wallon du 28 juin 2018. Le vocabulaire, l'échelle
    d'amortissement et les tournures viennent de ces documents. */
+/* PIÈCES D'EAU. Le bloc sanitaire ne s'ajoute que là où il sert : sur un
+   séjour ou un couloir, il coûterait deux cents tokens pour rien.
+
+   Détection sur le LIBELLÉ de la pièce, tel que l'utilisateur l'a saisi.
+   Volontairement large : mieux vaut l'ajouter à tort dans une buanderie
+   que l'oublier dans une salle de douche. Les accents sont retirés avant
+   comparaison — « salle de bains » et « Salle de Bain » doivent tomber
+   dans le même filet. */
+function estPieceDEau(piece) {
+  const n = String(piece || "").toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return /salle de bain|salle d.eau|salle de douche|sdb|\bwc\b|toilette|douche|bain|sanitaire|lavabo|buanderie|cuisine/.test(n);
+}
+
+/* Constat de propreté des sanitaires.
+
+   RÈGLE DE FOND : on décrit, on ne juge pas. « WC entretenu » ou « sale »
+   sont des appréciations qu'un locataire conteste et qu'un juge écarte.
+   « Entartrage brunâtre sous le rebord » est un fait qui se vérifie sur
+   la photographie.
+
+   À l'entrée, un rappel court suffit : on fixe l'état initial.
+   À la sortie, le détail complet : c'est là que se décide la retenue, et
+   la distinction nettoyable / incrusté en est le coeur. */
+function morceauxSanitaires(sortie) {
+  if (!sortie) {
+    return [
+      "SANITAIRES — PROPRETÉ. Constate l'état de propreté visible, sans le juger. " +
+        "N'écris JAMAIS entretenu, propre, sale, négligé, correct : ce sont des " +
+        "appréciations. Décris le fait : entartrage, voile calcaire, cerne, dépôt, " +
+        "coulure, joint grisonnant, résidu savonneux.",
+
+      "À REGARDER dans une pièce d'eau : intérieur de la cuvette et dessous du " +
+        "rebord, niveau d'eau, pied et arrière du WC, lunette et abattant, chasse " +
+        "d'eau et son bouton, robinetterie, bonde et joints silicone, paroi de " +
+        "douche, joints de faïence, grille de ventilation.",
+
+      "AMPLEUR, comme pour tout défaut : entartrage sur le tiers inférieur de la " +
+        "cuve, cerne continu au niveau d'eau, joint noirci sur une quinzaine de " +
+        "centimètres.",
+    ];
+  }
+  return [
+    "SANITAIRES — PROPRETÉ, POINT DÉCISIF À LA SORTIE. La propreté des sanitaires " +
+      "est un poste de retenue fréquent. Constate-la précisément, sans jamais la " +
+      "juger : n'écris pas entretenu, propre, sale, négligé, correct. Ces mots sont " +
+      "des appréciations qu'un locataire conteste. Décris le fait observable.",
+
+    "CUVETTE DE WC. Intérieur de la cuve : entartrage, cerne au niveau d'eau, " +
+      "coloration brunâtre ou orangée, dépôt sous le rebord et sous la lunette, " +
+      "salissure organique. Extérieur : pied, arrière de la cuve, fixations au sol " +
+      "— ce sont les zones où la salissure s'accumule et qu'on néglige. Lunette et " +
+      "abattant : propreté, charnières, fêlure, jeu.",
+
+    "CHASSE D'EAU. Réservoir, bouton ou tirette, dessus du réservoir, coulure " +
+      "calcaire, trace d'écoulement le long de la cuve, condensation ou auréole.",
+
+    "LAVABO ET ÉVIER. Calcaire sur la robinetterie et autour de la bonde, cerne " +
+      "dans la vasque, joint silicone grisonnant ou décollé, trop-plein.",
+
+    "DOUCHE ET BAIGNOIRE. Calcaire sur la paroi et la robinetterie, joint silicone " +
+      "noirci ou moisi, joints de faïence grisonnants, résidu savonneux, siphon.",
+
+    "ROBINETTERIE CHROMÉE. Voile calcaire, ternissement, oxydation, piqûre du " +
+      "chromage. VENTILATION : grille empoussiérée ou encrassée.",
+
+    /* Second registre, distinct de la propreté : une salissure se nettoie,
+       une atteinte au matériau ne se répare pas. C'est elle qui justifie
+       une retenue. Absente des consignes jusqu'ici. */
+    "ATTEINTES AU MATÉRIAU — À NE PAS CONFONDRE AVEC LA SALETÉ. Cherche aussi : " +
+      "éclat, écornure, fêlure, percussion ou griffure sur émail, faïence, porcelaine " +
+      "ou résine ; altération du brillant de l'émail ; mousseur ou brise-jet entartré ; " +
+      "flexible de douche ; joint souple périphérique de baignoire ou de bac ; manchon " +
+      "de raccord derrière la cuvette ; inverseur bain-douche ; trace laissée par un " +
+      "adhésif antidérapant retiré. Une salissure se nettoie, une atteinte au matériau " +
+      "reste.",
+
+    "NETTOYABLE OU INCRUSTÉ — C'EST CETTE DISTINCTION QUI DÉCIDE. Pour chaque " +
+      "salissure, dis si elle paraît superficielle et d'allure nettoyable, ou " +
+      "incrustée dans le matériau. Un cerne qui part au produit n'est pas un dégât ; " +
+      "un émail piqué par le calcaire en est un. Si tu ne peux pas trancher sur la " +
+      "photographie, écris-le.",
+
+    "AMPLEUR OBLIGATOIRE : entartrage sur le tiers inférieur de la cuve, cerne " +
+      "continu au niveau d'eau, joint noirci sur une quinzaine de centimètres, " +
+      "voile calcaire sur toute la paroi.",
+
+    "EXEMPLE. Cuvette en porcelaine blanche. Entartrage brunâtre sous le rebord sur " +
+      "tout le pourtour et cerne continu au niveau d'eau, d'allure incrustée. " +
+      "Salissure grisâtre au pied et à l'arrière de la cuve, superficielle. Abattant " +
+      "blanc, charnières intactes. Réservoir sans coulure.",
+  ];
+}
+
 function morceauxConsigne(piece, type, niveau) {
   const sortie = (type === "EDLS");
   /* À la sortie, toujours le niveau détaillé : c'est là que se joue la
      comparaison, et c'est ce document qui servira devant le juge de paix. */
   if (!sortie && niveau === "sobre") return morceauxSobre(piece);
+  const eau = estPieceDEau(piece);
   return [
     /* AUCUNE PERSONA D'EXPERT ASSERMENTÉ. Deux raisons. Le bailleur n'est pas
        géomètre-expert : un procès-verbal signé ne doit pas le laisser croire.
@@ -146,6 +241,13 @@ function morceauxConsigne(piece, type, niveau) {
       : "CE QUI EST INTACT À L'ENTRÉE. Développe-le : matériau, finition, teinte, " +
         "état. C'est ce développement qui permettra, à la sortie, de démontrer qu'un " +
         "élément a changé.",
+
+    sortie
+      ? "DÉPÔT NICOTINIQUE. S'il est visible, décris-le comme une observation, jamais " +
+        "comme une imputation : jaunissement homogène du plafond ou des parois, " +
+        "empoussièrement gras sur les convecteurs, les prises et les interrupteurs, " +
+        "coloration des voilages. N'écris jamais que quelqu'un a fumé."
+      : "",
 
     sortie
       ? "AUCUN EUPHÉMISME À LA SORTIE. N'écris jamais un peu, quelques traces, " +
@@ -214,6 +316,17 @@ function morceauxConsigne(piece, type, niveau) {
       "nettement séparées : deux poinçons, trois griffes. Au-delà, ou si elles se " +
       "chevauchent, écris plusieurs ou une série et donne l'étendue de la zone. " +
       "Un compte faux est plus dommageable qu'un compte absent.",
+
+    /* Six points qui se voient sur une photographie et qu'on oublie de
+       regarder. Tirés de la liste wallonne des réparations locatives —
+       dont on ne retient QUE les points de contrôle, jamais la répartition
+       des charges : qualifier qui paie n'appartient pas au constat. */
+    "POINTS SOUVENT OUBLIÉS, s'ils sont dans le cadre : canaux d'évacuation des eaux " +
+      "de condensation en bas des châssis et chambre de décompression ; " +
+      "poinçonnement du sol par les pieds de meubles et traces de talons ; " +
+      "déchaussement des fuseaux ou balustres et descellement d'une main-courante ; " +
+      "oxydation du tain d'un miroir ; griffures et cristallisations sur une table de " +
+      "cuisson vitrocéramique ; grille de ventilation obstruée ou encrassée.",
 
     "MESURE OBLIGATOIRE. TOUT défaut consigné porte son ampleur, sans exception. " +
       "Sans ampleur, il ne pourra pas servir de point de comparaison lors de l'état " +
@@ -320,6 +433,11 @@ function morceauxConsigne(piece, type, niveau) {
     "Retiens de ces trois cas : jamais abîmé, sale, quelques, un peu, des traces. " +
       "Toujours l'élément, son matériau, le défaut nommé, sa localisation, son étendue.",
 
+    /* Bloc sanitaire, uniquement dans les pièces d'eau. Placé avant les
+       exemples, donc tard dans la consigne : Gemini pondère davantage ce
+       qui vient en fin de prompt. */
+    ...(eau ? morceauxSanitaires(sortie) : []),
+
     "EXEMPLE 1. Mur à droite sous peinture blanche mate. Deux poinçons de clou " +
       "à mi-hauteur et une trace de frottement d'allure lavable sur environ 2 dm². " +
       "Fendille longeant l'angle du plafond, pour mémoire.",
@@ -356,6 +474,7 @@ function morceauxConsigne(piece, type, niveau) {
    bouton « Décrire en détail » reste disponible à l'entrée pour les pièces
    où l'exhaustivité est souhaitée. */
 function morceauxSobre(piece) {
+  const eau = estPieceDEau(piece);
   return [
     "Tu rédiges le constat d'un état des lieux d'entrée en Région wallonne, " +
       "à partir d'une photographie. Tu décris ce que montre cette photographie.",
@@ -402,6 +521,10 @@ function morceauxSobre(piece) {
       "N'impute JAMAIS un défaut à quiconque. N'évalue JAMAIS un coût. N'affirme " +
       "JAMAIS qu'un appareil fonctionne, qu'un élément manque, ou l'origine d'une " +
       "humidité.",
+
+    /* Même dans le mode bref, une pièce d'eau reçoit le rappel court :
+       le calcaire et les cernes dépassent le seuil de ce mode. */
+    ...(eau ? morceauxSanitaires(false) : []),
 
     "EXEMPLE 1. Mur sous peinture blanche mate.",
     "EXEMPLE 2. Parquet stratifié ton chêne. Impact de 3 cm environ en zone centrale.",
