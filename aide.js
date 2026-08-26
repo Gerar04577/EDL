@@ -101,6 +101,11 @@ var AIDE = [
       "Quand une pièce demande quatre ou cinq vues, les décrire une par une fait " +
       "répéter la même fissure sous cinq angles. Coche-les et l'IA rédige UN seul " +
       "constat pour l'ensemble.",
+      "DEUX BOUTONS À L'ENTRÉE. « Décrire en détail » consigne tout défaut visible, " +
+      "même une griffe ou un poinçon de clou. « Brièvement » ne retient que ce qu'on " +
+      "remarque en entrant dans la pièce, et rédige en une à deux phrases. À la " +
+      "SORTIE, un seul bouton : toujours le détail, car c'est ce document qui sert " +
+      "devant le juge de paix.",
       "COCHER — sous chaque photographie déjà enregistrée, un bouton « cocher ». Il " +
       "n'apparaît pas sur une photographie encore en attente d'envoi : l'IA ne peut " +
       "pas la lire. À partir de deux cochées, un bloc s'ouvre en haut de l'écran.",
@@ -382,4 +387,25 @@ var GLOSSAIRE = [
   { g: "À ÉCRIRE — sortie (EDLS)", t: "marqué dans le matériau / superficiel d'allure lavable", d: "La distinction décisive : ce qui part au nettoyage ne se retient pas comme ce qui entame la matière." },
   { g: "À ÉCRIRE — sortie (EDLS)", t: "trois trous de cheville non rebouchés", d: "Compte quand tu peux compter. Un nombre vaut mieux que quelques." },
   { g: "À BANNIR — sortie (EDLS)", t: "un peu, quelques traces, correct, acceptable", d: "Les atténuations affaiblissent la retenue. Décris précisément, sans adoucir ni exagérer." },
+
+  { g: "À ÉCRIRE — sortie (EDLS)", t: "bord de fissure encrassé", d: "À la SORTIE seulement, l'ancienneté apparente se décrit quand elle se voit : bord encrassé ou net, coulure sèche ou fraîche, poussière déposée dans un impact. Formule ce que tu observes, jamais ce que tu supposes." },
+  { g: "À ÉCRIRE — sortie (EDLS)", t: "auréole partant du joint de châssis", d: "À la SORTIE, l'origine d'une humidité se mentionne si elle est visible. À l'ENTRÉE, jamais." },
+  { g: "À ÉCRIRE — sortie (EDLS)", t: "vitrocéramique fêlée, poignée arrachée", d: "À la SORTIE, l'état d'un appareil se constate quand il est manifeste à l'œil. À l'ENTRÉE, on ne se prononce pas." },
+
+  /* ---- Reformulation : ce qui marche et ce qui ne marche pas ----------
+     Tiré des essais du 26/08/2026. Le modèle obéit aux demandes qui
+     désignent un élément précis ou donnent un nombre ; il reste inerte
+     devant les demandes vagues. */
+
+  { g: "REFORMULER — demandes efficaces", t: "supprime la phrase sur le sol", d: "Désigne un élément précis du texte. C'est la forme qui marche le mieux." },
+  { g: "REFORMULER — demandes efficaces", t: "trois phrases maximum", d: "Un nombre fait loi et prime sur toute autre indication de longueur. Toujours chiffrer." },
+  { g: "REFORMULER — demandes efficaces", t: "regroupe les deux dernières phrases", d: "Une opération concrète sur une partie identifiable." },
+  { g: "REFORMULER — demandes efficaces", t: "développe la description du mur", d: "Nomme l'élément à étoffer. Sans photographies, l'IA ne peut qu'étoffer ce qui est déjà écrit." },
+  { g: "REFORMULER — demandes efficaces", t: "rends le texte plus fluide", d: "Fonctionne depuis que les règles de style cèdent devant la demande. Attention : un constat trop fluide perd le style d'expert qui fait sa crédibilité." },
+  { g: "REFORMULER — demandes efficaces", t: "ne parle pas des cadres photographiques", d: "Une exclusion nommée est comprise." },
+
+  { g: "REFORMULER — demandes inutiles", t: "tout, mieux, améliore", d: "Sans objet désigné, le modèle n'a rien à appliquer et recopie. L'application refuse d'ailleurs les instructions de moins de trois mots." },
+  { g: "REFORMULER — demandes inutiles", t: "plus court, plus long", d: "Sans nombre, l'indication est trop vague. Écris trois phrases maximum, ou développe le paragraphe sur le sol." },
+  { g: "REFORMULER — demandes inutiles", t: "tu as oublié le sol", d: "Avec « Reformuler », l'IA ne revoit pas les images : elle ne peut pas ajouter ce qu'elle ne voit pas. Utilise « Revoir les photos »." },
+  { g: "REFORMULER — demandes inutiles", t: "deux demandes contraires à la suite", d: "Plus court puis plus long : la demande du moment l'emporte, mais le résultat devient erratique. Utilise « Repartir du texte d'origine »." },
 ];

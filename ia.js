@@ -23,7 +23,7 @@ var IA_DELAI_MS = 90000;
 /* Version des consignes, transmise à chaque appel. Permet de savoir, six
    mois plus tard, quelle rédaction a produit un texte donné. À incrémenter
    dès qu'une consigne change. */
-var IA_PROMPT_VERSION = "2026-08-26-v4";
+var IA_PROMPT_VERSION = "2026-08-26-v5";
 var CLE_WEBHOOK_IA = "edl_webhook_ia";
 
 /* L'adresse est conservée SUR L'APPAREIL. Le fichier de configuration
@@ -106,8 +106,7 @@ function consigneDescription(piece, type, niveau) {
 function morceauxConsigne(piece, type, niveau) {
   const sortie = (type === "EDLS");
   /* À la sortie, toujours le niveau détaillé : c'est là que se joue la
-     comparaison. À l'entrée, le niveau bref reste possible — même
-     exhaustivité, rédaction plus dense. */
+     comparaison, et c'est ce document qui servira devant le juge de paix. */
   if (!sortie && niveau === "sobre") return morceauxSobre(piece);
   return [
     /* AUCUNE PERSONA D'EXPERT ASSERMENTÉ. Deux raisons. Le bailleur n'est pas
@@ -119,6 +118,42 @@ function morceauxConsigne(piece, type, niveau) {
       (sortie ? "de sortie" : "d'entrée") + " en Région wallonne, " +
       "à partir d'une photographie. Tu décris ce que montre cette photographie.",
     "Pièce concernée : " + (piece || "non précisée") + ".",
+
+    /* L'enjeu diffère radicalement selon le moment, et le dire au modèle
+       change ce sur quoi il porte son effort.
+       À l'entrée, on fixe un point zéro : tout compte également.
+       À la sortie, le document servira devant le juge de paix à établir
+       des dégâts locatifs : la précision doit aller aux désordres, pas au
+       décor déjà décrit à l'entrée. */
+    sortie
+      ? "ENJEU DE SORTIE — CE DOCUMENT PEUT SERVIR EN JUSTICE. Le procès-verbal de " +
+        "sortie établit les dégâts locatifs. Consacre l'essentiel de ton texte aux " +
+        "DÉSORDRES : pour chacun, l'élément atteint, son matériau, la nature exacte, " +
+        "la localisation précise, l'ampleur chiffrée, le nombre quand il se compte, " +
+        "et le caractère superficiel, nettoyable ou marqué dans le matériau. Un " +
+        "désordre décrit trop vaguement ne pourra pas être retenu."
+      : "ENJEU D'ENTRÉE — FIXER L'ÉTAT INITIAL. Ce constat servira de point de " +
+        "comparaison à la sortie. Décris l'élément, son matériau, sa finition et son " +
+        "état avec la même attention, qu'il présente un défaut ou non. Une " +
+        "affirmation d'intégrité ciblée — vitrage intact, faïence sans éclat ni " +
+        "fissure — vaut autant qu'un défaut consigné.",
+
+    sortie
+      ? "CE QUI EST INTACT À LA SORTIE. Mentionne-le brièvement, sans développer le " +
+        "matériau ni la finition : l'entrée l'a déjà fait. Une formule courte suffit " +
+        "— faïence intacte, vitrage sans fêlure. Garde ta précision pour ce qui est " +
+        "atteint."
+      : "CE QUI EST INTACT À L'ENTRÉE. Développe-le : matériau, finition, teinte, " +
+        "état. C'est ce développement qui permettra, à la sortie, de démontrer qu'un " +
+        "élément a changé.",
+
+    sortie
+      ? "AUCUN EUPHÉMISME À LA SORTIE. N'écris jamais un peu, quelques traces, " +
+        "légèrement, correct, acceptable, sans gravité. Ces atténuations affaiblissent " +
+        "le constat. Décris exactement ce que tu vois, sans adoucir ni exagérer."
+      : "PAS D'EXAGÉRATION À L'ENTRÉE. Un défaut mineur se décrit comme mineur. " +
+        "Grossir l'état initial nuirait au bailleur : le locataire pourrait rendre le " +
+        "bien dans un état inférieur sans que cela se voie.",
 
     "RÈGLE PREMIÈRE — NE DÉCRIS QUE CETTE PHOTOGRAPHIE. Ne mentionne aucun élément " +
       "que tu ne vois pas réellement. Un séjour comporte d'ordinaire un radiateur, " +
@@ -222,11 +257,40 @@ function morceauxConsigne(piece, type, niveau) {
       "infiltration : cela exige des mesures. Aucune investigation n'est faite sous " +
       "les décors, ni dans les canalisations, ni dans l'ossature.",
 
-    "INTERDITS ABSOLUS. N'écris JAMAIS que l'état relève de l'usure normale ou de la " +
-      "vétusté. N'impute JAMAIS un défaut au locataire, au bailleur ou à un tiers. " +
-      "N'évalue JAMAIS un coût ni une réparation. N'indique JAMAIS depuis quand un " +
-      "défaut existe. Ces appréciations appartiennent aux parties et au juge de paix, " +
-      "pas au constat.",
+    /* Deux interdits ne cèdent jamais, à l'entrée comme à la sortie :
+       l'usure normale — l'écrire soi-même revient à renoncer à toute
+       retenue — et l'imputation, qui relève des parties et du juge.
+       Le chiffrage reste exclu de la description : il se fait à l'écran de
+       comparaison, séparément.
+       En revanche, à la sortie, la date d'apparition, l'origine d'une
+       humidité et l'état de fonctionnement d'un appareil deviennent
+       admissibles quand ils sont VISIBLES : le procès-verbal de sortie
+       sert à établir les dégâts locatifs devant le juge de paix, et
+       s'interdire ces mentions l'appauvrissait. */
+    sortie
+      ? "INTERDITS ABSOLUS. N'écris JAMAIS que l'état relève de l'usure normale ou " +
+        "de la vétusté : cette qualification appartient au juge de paix. N'impute " +
+        "JAMAIS un défaut au locataire, au bailleur ou à un tiers : tu constates, tu " +
+        "n'attribues pas. N'évalue JAMAIS un coût ni une réparation, le chiffrage se " +
+        "faisant ailleurs."
+      : "INTERDITS ABSOLUS. N'écris JAMAIS que l'état relève de l'usure normale ou de " +
+        "la vétusté. N'impute JAMAIS un défaut au locataire, au bailleur ou à un " +
+        "tiers. N'évalue JAMAIS un coût ni une réparation. N'indique JAMAIS depuis " +
+        "quand un défaut existe. Ces appréciations appartiennent aux parties et au " +
+        "juge de paix, pas au constat.",
+
+    sortie
+      ? "CE QUE TU PEUX DIRE À LA SORTIE, si et seulement si c'est VISIBLE sur la " +
+        "photographie. L'ancienneté apparente d'un désordre : bord de fissure encrassé " +
+        "ou net, coulure sèche ou fraîche, poussière déposée dans un impact. L'origine " +
+        "d'une humidité quand elle se voit : auréole partant d'un joint de châssis, " +
+        "cloque sous une fuite apparente. L'état d'un appareil quand il est manifeste : " +
+        "vitrocéramique fêlée, poignée arrachée, détecteur pendant. Formule toujours ce " +
+        "que tu observes, jamais ce que tu supposes : bord de fissure encrassé, et non " +
+        "fissure ancienne."
+      : "TU NE JUGES PAS DE L'ÂGE. À l'entrée, n'indique jamais depuis quand un défaut " +
+        "existe, ni d'où vient une humidité, ni si un appareil fonctionne. Tu fixes " +
+        "l'état initial, tu ne l'interprètes pas.",
 
     "TU PEUX NE PAS SAVOIR. Écrire non déterminable sur la photographie est une " +
       "réponse correcte et attendue. Elle vaut mieux qu'une description plausible mais " +
@@ -285,14 +349,12 @@ function morceauxConsigne(piece, type, niveau) {
 }
 
 /* Consigne sobre, entrée seulement. Même ossature — anti-invention,
-   vocabulaire, interdits, exhaustivité — mais une rédaction plus dense.
+   vocabulaire, interdits — mais un seuil bien plus haut : on ne retient
+   que ce qu'un locataire remarquerait en entrant dans la pièce.
 
-   ATTENTION. Cette fonction comportait un SEUIL : elle écartait les petits
-   défauts — poinçons de clou, voile grisâtre, griffes. C'était une faute.
-   Un défaut non consigné à l'entrée devient un défaut « nouveau » à la
-   sortie, facturé à un locataire qui ne l'a pas causé, et le procès-verbal
-   tombe si le juge compare avec les photographies annexées. Brièvement
-   signifie désormais moins de mots, jamais moins de constatations. */
+   Choix assumé du bailleur, réaffirmé le 26/08/2026 après discussion. Le
+   bouton « Décrire en détail » reste disponible à l'entrée pour les pièces
+   où l'exhaustivité est souhaitée. */
 function morceauxSobre(piece) {
   return [
     "Tu rédiges le constat d'un état des lieux d'entrée en Région wallonne, " +
@@ -303,19 +365,21 @@ function morceauxSobre(piece) {
       "que tu ne vois pas réellement. Ne complète jamais par ce qu'une pièce de ce " +
       "type contient habituellement.",
 
-    "EXHAUSTIVITÉ OBLIGATOIRE. Consigne TOUT défaut visible, sans exception : " +
-      "fendille, microfissure, faïençage, poinçon ou trou de clou, point de rebouche, " +
-      "jaspure, voile grisâtre, ombrage, trace de frottement, griffe, rayure, " +
-      "éraflure, joint grisonnant, défraîchissement, arête épaufrée, irrégularité de " +
-      "mise en peinture, écaillement, décollement, tache, auréole, moisissure, " +
-      "élément cassé, fêlé ou descellé.",
+    "SEUIL — LE POINT ESSENTIEL. Ne retiens QUE ce qu'une personne remarquerait en " +
+      "entrant dans la pièce sans chercher. Un défaut qu'il faut approcher pour voir " +
+      "ne se signale PAS.",
 
-    /* Formulation neutre : Google documente que les appels émotionnels et les
-       mises en garde dramatiques dégradent les performances au lieu de les
-       améliorer. On dit la règle, pas la sanction. */
-    "CE QUE SIGNIFIE BRIÈVEMENT. Moins de mots, JAMAIS moins de constatations. " +
-      "Regroupe les défauts par élément dans une même phrase dense au lieu d'en " +
-      "supprimer.",
+    "À NE PAS SIGNALER, en aucun cas : fendille, microfissure, faïençage, poinçon ou " +
+      "trou de clou, point de rebouche, jaspure, voile grisâtre, ombrage, trace de " +
+      "frottement, griffe ou rayure superficielle, éraflure, joint légèrement " +
+      "grisonnant, léger défraîchissement, arête légèrement épaufrée, petite " +
+      "irrégularité de mise en peinture. Ces éléments existent : on ne les consigne " +
+      "simplement pas à ce niveau de constat.",
+
+    "À SIGNALER : impact ou enfoncement marqué, fissure ouverte au-delà d'un " +
+      "millimètre, lézarde, écaillement ou pelade sur plus d'un décimètre carré, " +
+      "décollement, trou non rebouché, tache franche, moisissure visible, auréole " +
+      "d'humidité étendue, élément cassé, fêlé, descellé ou hors service à l'oeil nu.",
 
     "MESURE. Tout défaut retenu porte son ampleur : environ 5 cm, sur 2 dm², sur une " +
       "trentaine de centimètres. Sans ampleur, le défaut ne pourra pas servir de " +
@@ -325,11 +389,11 @@ function morceauxSobre(piece) {
       "dis-le explicitement : faïence sans éclat ni fissure, vitrage intact, parquet " +
       "sans dégradation. Cette affirmation compte autant que le reste.",
 
-    "RÉDACTION. Deux à trois phrases denses, courtes, souvent nominales. Nomme " +
-      "l'élément, son matériau, le défaut, sa localisation et son ampleur. Regroupe " +
-      "sans supprimer. Jamais je ni on. Pas de titre, pas de liste.",
+    "RÉDACTION. Une à deux phrases, courtes, souvent nominales. Nomme l'élément et " +
+      "son matériau, puis le défaut retenu s'il y en a un. Jamais je ni on. Pas de " +
+      "titre, pas de liste.",
 
-    "SI AUCUN DÉFAUT N'EST VISIBLE. Nomme l'élément, son matériau et sa finition, et " +
+    "SI RIEN NE DÉPASSE LE SEUIL. Nomme l'élément, son matériau et sa finition, et " +
       "arrête-toi là. N'ajoute AUCUNE formule de clôture : ni sans remarque " +
       "particulière, ni rien à signaler, ni RAS, ni conforme, ni en bon état. C'est " +
       "le cas le plus fréquent, et une phrase qui nomme l'élément suffit.",
@@ -343,11 +407,9 @@ function morceauxSobre(piece) {
     "EXEMPLE 2. Parquet stratifié ton chêne. Impact de 3 cm environ en zone centrale.",
     "EXEMPLE 3. Faïence murale blanche sans éclat ni fissure. Bac de douche intact.",
     "EXEMPLE 4. Châssis en PVC blanc, double vitrage intact.",
-    "EXEMPLE 5. Mur sous peinture blanche mate. Deux poinçons de clou à mi-hauteur " +
-      "et voile grisâtre superficiel sur environ 2 dm².",
-    "CONTRE-EXEMPLE D'OMISSION. NE PAS écrire : Mur sous peinture blanche mate, " +
-      "alors que deux poinçons de clou sont visibles. Ces défauts se consignent, " +
-      "même mineurs : ils fixent l'état initial.",
+    "CONTRE-EXEMPLE DE SEUIL. NE PAS écrire : deux poinçons de clou à mi-hauteur et " +
+      "léger voile grisâtre. Ces éléments sont sous le seuil. ÉCRIRE : Mur sous " +
+      "peinture blanche mate.",
     "CONTRE-EXEMPLE DE CLÔTURE. NE PAS écrire : Parquet stratifié ton chêne, sans " +
       "remarque particulière. ÉCRIRE : Parquet stratifié ton chêne.",
   ];
