@@ -1336,7 +1336,10 @@ function dessinerAide() {
 
   $("vue").querySelectorAll("[data-aide]").forEach(b => b.onclick = () => {
     const v = b.getAttribute("data-aide");
-    const i = (v === "glossaire") ? "glossaire" : parseInt(v, 10);
+    /* Les sections du mode d'emploi sont numérotées ; le glossaire et les
+       obligations sont désignés par leur nom. Sans cette liste, parseInt
+       rendait NaN et le bloc ne s'ouvrait jamais. */
+    const i = (v === "glossaire" || v === "obligations") ? v : parseInt(v, 10);
     E.aideOuvert = (E.aideOuvert === i) ? null : i;
     dessinerAide();
   });
