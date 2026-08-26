@@ -24,7 +24,33 @@ function libererApercus() {
   _apercusEnCours = [];
 }
 
-function vue(html) { libererApercus(); $("vue").innerHTML = html; }
+/* Le redessin remplace tout le contenu, et le navigateur revient alors en
+   haut de page. Sur l'écran d'une pièce, coché une photo faisait remonter
+   l'écran : le doigt restait au même endroit, mais la photo qui s'y
+   trouvait n'était plus la même, et on cochait la mauvaise.
+
+   On conserve donc la position quand le MÊME écran se redessine. Un
+   changement d'écran, lui, doit bien repartir du haut. */
+var _ecranAffiche = null;
+
+function vue(html, memeEcran) {
+  /* La clé inclut la pièce : passer du séjour à la cuisine reste l'écran
+     « piece », mais c'est un contenu neuf, qui doit repartir du haut. */
+  const cle = String(E.ecran) + "|" + String(E.piece || "");
+  const identique = memeEcran === true ||
+    (memeEcran !== false && _ecranAffiche === cle);
+  const y = identique ? (window.scrollY || document.documentElement.scrollTop || 0) : 0;
+  libererApercus();
+  $("vue").innerHTML = html;
+  _ecranAffiche = cle;
+  if (y > 0) {
+    /* Après le remplacement du contenu, la hauteur de page n'est pas
+       encore recalculée : on attend le rendu avant de replacer. */
+    requestAnimationFrame(() => window.scrollTo(0, y));
+  } else if (!identique) {
+    window.scrollTo(0, 0);
+  }
+}
 function titre(t, s) { $("titre").textContent = t; $("sous-titre").textContent = s || ""; }
 function avert(html) { $("avertissement").innerHTML = html; }
 function echapper(s) { return String(s == null ? "" : s).replace(/[<>&"]/g, c =>
@@ -2555,6 +2581,149 @@ function blocGroupe(piece, photos) {
   </div>`;
 }
 
+/* ---- Corriger la description d'UNE photographie ------------------------
+
+   Pour un groupe, on dispose de « Reformuler » et « Revoir les photos ».
+   Une photographie seule n'avait que le clavier. Le même mécanisme sert
+   ici : reformulerTexte accepte une liste, on lui en passe une d'un seul
+   élément, et les routes Make existent déjà. */
+
+/* Instructions qui fonctionnent, tirées des essais du 26/08/2026. Le
+   modèle obéit quand la demande désigne un objet précis ou donne un
+   nombre ; il recopie devant une demande vague. */
+var EXEMPLES_CORRECTION = [
+  "supprime la phrase sur le sol",
+  "trois phrases maximum",
+  "développe la description du mur",
+  "regroupe les deux dernières phrases",
+];
+
+async function ecranCorrigerPhoto(photoId) {
+  E.ecran = "corriger";
+  const photo = VISITE.photos.find(x => x.photo_id === photoId);
+  if (!photo) return dessinerPiece("Photographie introuvable.");
+  E.corrige = {
+    photo_id: photoId,
+    texte: E.corrige && E.corrige.photo_id === photoId
+      ? E.corrige.texte
+      : (E.brouillons[photoId] !== undefined ? E.brouillons[photoId] : (photo.description || "")),
+    instruction: "",
+    historique: (E.corrige && E.corrige.photo_id === photoId) ? E.corrige.historique : [],
+    origine: (E.corrige && E.corrige.photo_id === photoId) ? E.corrige.origine : null,
+  };
+  if (!E.corrige.origine) E.corrige.origine = E.corrige.texte;
+  const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
+  titre("Corriger la description", piece ? piece.libelle : "");
+  dessinerCorrection();
+}
+
+function dessinerCorrection(message) {
+  const C = E.corrige;
+  const tours = (C.historique || []).length;
+  let html = message ? `<div class="succes">${echapper(message)}</div>` : "";
+
+  html += `<div class="bloc"><h2>Photographie ${numeroDansNom(
+      (VISITE.photos.find(x => x.photo_id === C.photo_id) || {}).nom_fichier)}</h2>
+    <textarea id="corr-texte" rows="7">${echapper(C.texte)}</textarea>
+    <p class="note">Tu peux corriger directement au clavier ou au micro.
+    Le texte final est le tien.</p>
+
+    <textarea id="corr-instruction" rows="2"
+      placeholder="Que faut-il changer ?">${echapper(C.instruction || "")}</textarea>
+
+    ${tours === 0 ? `<p class="note">Nomme ce qu'il faut changer. « Mieux » ou
+      « plus court » ne suffisent pas.</p>
+      ${EXEMPLES_CORRECTION.map(x =>
+        `<button class="lien" data-exemple="${echapper(x)}">${echapper(x)}</button>`
+      ).join(" · ")}` : ""}
+
+    <div class="duo">
+      <button class="decrire sobre" id="corr-reformuler">Reformuler</button>
+      <button class="decrire" id="corr-revoir">Revoir la photo</button>
+    </div>
+    ${tours === 0
+      ? `<p class="note">Reformuler retravaille le texte. Revoir la photo rouvre
+         l'image.</p>` : ""}
+    ${tours ? `<p class="note gris">${tours} correction(s) demandée(s) :
+      ${echapper((C.historique || []).join(" · "))}</p>` : ""}
+
+    <button id="corr-garder">Garder ce texte</button>
+    <div class="duo">
+      <button class="mini secondaire" id="corr-origine">Repartir du texte d'origine</button>
+      <button class="mini secondaire" id="corr-annuler">Annuler</button>
+    </div>
+  </div>`;
+
+  vue(html);
+  brancherCorrection();
+}
+
+function brancherCorrection() {
+  const C = E.corrige;
+  const t = $("corr-texte");
+  if (t) t.oninput = () => { C.texte = t.value; };
+  const i = $("corr-instruction");
+  if (i) i.oninput = () => { C.instruction = i.value; };
+
+  $("vue").querySelectorAll("[data-exemple]").forEach(b => b.onclick = () => {
+    C.instruction = b.getAttribute("data-exemple");
+    dessinerCorrection();
+  });
+
+  const lancer = async (avecPhoto) => {
+    const inst = String(C.instruction || "").trim();
+    if (!inst) return dessinerCorrection("Écris d'abord ce qu'il faut changer.");
+    if (inst.split(/\s+/).length < 3) {
+      return dessinerCorrection("Sois plus précis : nomme ce qu'il faut changer. " +
+        "Une demande vague ne change rien au texte.");
+    }
+    if (!iaDisponible()) return dessinerCorrection("Aucun relais IA enregistré.");
+    const photo = VISITE.photos.find(x => x.photo_id === C.photo_id);
+    if (avecPhoto && !(await confirmer("Revoir la photographie ?",
+        "L'IA rouvre l'image. Cet appel est facturé comme une description complète.",
+        "Oui, revoir"))) return;
+    const b = $(avecPhoto ? "corr-revoir" : "corr-reformuler");
+    b.disabled = true; b.textContent = avecPhoto ? "Relecture…" : "Reformulation…";
+    let texte;
+    try {
+      texte = await reformulerTexte(VISITE, [photo], C.texte, inst,
+                                    C.historique || [], avecPhoto);
+    } catch (e) {
+      return dessinerCorrection("Correction impossible : " + e.message);
+    }
+    if (/il faut revoir les photographies/i.test(texte)) {
+      return dessinerCorrection("L'IA ne peut pas répondre sans revoir l'image. " +
+        "Utilise « Revoir la photo ».");
+    }
+    C.texte = texte;
+    C.historique = (C.historique || []).concat([inst]);
+    C.instruction = "";
+    dessinerCorrection("Texte corrigé — relis-le");
+  };
+  if ($("corr-reformuler")) $("corr-reformuler").onclick = () => lancer(false);
+  if ($("corr-revoir")) $("corr-revoir").onclick = () => lancer(true);
+
+  if ($("corr-origine")) $("corr-origine").onclick = () => {
+    C.texte = C.origine; C.historique = []; C.instruction = "";
+    dessinerCorrection("Texte d'origine rétabli");
+  };
+
+  if ($("corr-garder")) $("corr-garder").onclick = async () => {
+    /* ecranPiece REMET LES BROUILLONS À ZÉRO au chargement : il faut donc
+       reposer le texte APRÈS son retour, sans quoi la correction est
+       perdue au moment même où on la garde. */
+    const id = C.photo_id, texte = C.texte;
+    E.corrige = null;
+    await ecranPiece(E.piece);
+    E.brouillons[id] = texte;
+    dessinerPiece("Texte corrigé repris — ajoute-le au constat");
+  };
+  if ($("corr-annuler")) $("corr-annuler").onclick = () => {
+    E.corrige = null;
+    ecranPiece(E.piece);
+  };
+}
+
 function numeroDansNom(nom) {
   const m = String(nom || "").match(/_(\d{3})_/);
   return m ? m[1] : "?";
@@ -2574,6 +2743,11 @@ function memoriserGroupe() {
 }
 
 function brancherGroupe(piece, photos) {
+  $("vue").querySelectorAll("[data-corriger]").forEach(b => b.onclick = () => {
+    memoriserGroupe();
+    ecranCorrigerPhoto(b.getAttribute("data-corriger"));
+  });
+
   $("vue").querySelectorAll("[data-grouper]").forEach(b => b.onclick = () => {
     memoriserGroupe();
     const id = b.getAttribute("data-grouper");
@@ -2805,8 +2979,12 @@ function dessinerPiece(message) {
                  </div>`
               : `<button class="decrire" data-decrire="${
                   echapper(p.photo_id)}">Décrire cette photo</button>`}
-            <button data-ajouter="${echapper(p.photo_id)}"${
-              brouillon.trim() ? "" : " disabled"}>Ajouter au constat</button>
+            <div class="duo">
+              <button data-ajouter="${echapper(p.photo_id)}"${
+                brouillon.trim() ? "" : " disabled"}>Ajouter au constat</button>
+              <button class="mini secondaire" data-corriger="${echapper(p.photo_id)}"${
+                brouillon.trim() ? "" : " disabled"}>Corriger</button>
+            </div>
             ${dejaConstat
               ? `<p class="note ok">Une constatation est rattachée à cette photo.</p>` : ""}
           ` : `<p class="note gris">En attente d'envoi</p>`}

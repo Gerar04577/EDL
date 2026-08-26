@@ -122,6 +122,10 @@ var AIDE = [
       "ensuite.",
       "RELIRE — le texte arrive dans un cadre que tu peux corriger au clavier ou au " +
       "micro. Le texte final est le tien.",
+      "CORRIGER UNE SEULE PHOTOGRAPHIE. Sous la description, le bouton « Corriger » " +
+      "ouvre un écran dédié : le texte, un champ pour dire ce qu'il faut changer, et " +
+      "les mêmes deux boutons que pour un groupe. « Garder ce texte » le renvoie dans " +
+      "le cadre de la photographie ; il reste à l'ajouter au constat.",
       "REFORMULER — écris ce qu'il faut changer, puis choisis. « Reformuler » " +
       "retravaille le texte sans rouvrir les images : rapide, presque gratuit. " +
       "« Revoir les photos » rouvre les images : plus lent, facturé comme une " +
