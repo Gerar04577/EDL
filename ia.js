@@ -19,6 +19,11 @@
 /* 45 s suffisaient pour une image. Un groupe de cinq oblige Make à
    télécharger cinq fichiers avant même d'appeler Gemini. */
 var IA_DELAI_MS = 90000;
+
+/* Version des consignes, transmise à chaque appel. Permet de savoir, six
+   mois plus tard, quelle rédaction a produit un texte donné. À incrémenter
+   dès qu'une consigne change. */
+var IA_PROMPT_VERSION = "2026-08-26-v4";
 var CLE_WEBHOOK_IA = "edl_webhook_ia";
 
 /* L'adresse est conservée SUR L'APPAREIL. Le fichier de configuration
@@ -101,14 +106,18 @@ function consigneDescription(piece, type, niveau) {
 function morceauxConsigne(piece, type, niveau) {
   const sortie = (type === "EDLS");
   /* À la sortie, toujours le niveau détaillé : c'est là que se joue la
-     comparaison. À l'entrée, le niveau sobre est possible — un état des
-     lieux d'entrée exhaustif documente des défauts qui deviendront
-     « déjà présents » et ne pourront plus être réclamés. */
+     comparaison. À l'entrée, le niveau bref reste possible — même
+     exhaustivité, rédaction plus dense. */
   if (!sortie && niveau === "sobre") return morceauxSobre(piece);
   return [
-    "Tu es géomètre-expert immobilier assermenté et tu rédiges un procès-verbal " +
-      "d'état des lieux " + (sortie ? "de sortie" : "d'entrée") + " en Région wallonne. " +
-      "Tu décris une photographie.",
+    /* AUCUNE PERSONA D'EXPERT ASSERMENTÉ. Deux raisons. Le bailleur n'est pas
+       géomètre-expert : un procès-verbal signé ne doit pas le laisser croire.
+       Et la documentation de Gemini est explicite — le modèle prend sa
+       persona au sérieux et ignore parfois des instructions pour la
+       préserver. C'est ce qui rendait les demandes de style inopérantes. */
+    "Tu rédiges le constat d'un état des lieux " +
+      (sortie ? "de sortie" : "d'entrée") + " en Région wallonne, " +
+      "à partir d'une photographie. Tu décris ce que montre cette photographie.",
     "Pièce concernée : " + (piece || "non précisée") + ".",
 
     "RÈGLE PREMIÈRE — NE DÉCRIS QUE CETTE PHOTOGRAPHIE. Ne mentionne aucun élément " +
@@ -171,10 +180,14 @@ function morceauxConsigne(piece, type, niveau) {
       "chevauchent, écris plusieurs ou une série et donne l'étendue de la zone. " +
       "Un compte faux est plus dommageable qu'un compte absent.",
 
-    "MESURE. Ordre de grandeur seulement, jamais une mesure précise : millimétrique, " +
-      "centimétrique, sur 3 à 4 cm, environ 2 cm, sur une dizaine de centimètres, " +
-      "sur 1 m². Pour les surfaces, emploie cm², dm² ou m². Écris toujours environ ou " +
-      "de l'ordre de : les longueurs sont estimées, non mesurées.",
+    "MESURE OBLIGATOIRE. TOUT défaut consigné porte son ampleur, sans exception. " +
+      "Sans ampleur, il ne pourra pas servir de point de comparaison lors de l'état " +
+      "des lieux de sortie, et le constat perd sa raison d'être.",
+
+    "COMMENT MESURER. Ordre de grandeur seulement, jamais une mesure précise : " +
+      "millimétrique, centimétrique, sur 3 à 4 cm, environ 2 cm, sur une dizaine de " +
+      "centimètres, sur 1 m². Pour les surfaces, emploie cm², dm² ou m². Écris " +
+      "toujours environ ou de l'ordre de : les longueurs sont estimées, non mesurées.",
 
     "FISSURES. Ne chiffre l'ouverture qu'au-delà d'un demi-millimètre. En deçà : " +
       "fendille, fissure filiforme, fissure d'ouverture capillaire, faïençage. " +
@@ -272,33 +285,37 @@ function morceauxConsigne(piece, type, niveau) {
 }
 
 /* Consigne sobre, entrée seulement. Même ossature — anti-invention,
-   vocabulaire, interdits — mais un seuil bien plus haut : on ne retient
-   que ce qu'un locataire remarquerait en entrant dans la pièce. */
+   vocabulaire, interdits, exhaustivité — mais une rédaction plus dense.
+
+   ATTENTION. Cette fonction comportait un SEUIL : elle écartait les petits
+   défauts — poinçons de clou, voile grisâtre, griffes. C'était une faute.
+   Un défaut non consigné à l'entrée devient un défaut « nouveau » à la
+   sortie, facturé à un locataire qui ne l'a pas causé, et le procès-verbal
+   tombe si le juge compare avec les photographies annexées. Brièvement
+   signifie désormais moins de mots, jamais moins de constatations. */
 function morceauxSobre(piece) {
   return [
-    "Tu es expert immobilier et tu rédiges un constat d'état des lieux d'entrée " +
-      "en Région wallonne. Tu décris une photographie.",
+    "Tu rédiges le constat d'un état des lieux d'entrée en Région wallonne, " +
+      "à partir d'une photographie. Tu décris ce que montre cette photographie.",
     "Pièce concernée : " + (piece || "non précisée") + ".",
 
     "RÈGLE PREMIÈRE — NE DÉCRIS QUE CETTE PHOTOGRAPHIE. Ne mentionne aucun élément " +
       "que tu ne vois pas réellement. Ne complète jamais par ce qu'une pièce de ce " +
       "type contient habituellement.",
 
-    "SEUIL — LE POINT ESSENTIEL. Ne retiens QUE ce qu'une personne remarquerait en " +
-      "entrant dans la pièce sans chercher. Un défaut qu'il faut approcher pour voir " +
-      "ne se signale PAS.",
+    "EXHAUSTIVITÉ OBLIGATOIRE. Consigne TOUT défaut visible, sans exception : " +
+      "fendille, microfissure, faïençage, poinçon ou trou de clou, point de rebouche, " +
+      "jaspure, voile grisâtre, ombrage, trace de frottement, griffe, rayure, " +
+      "éraflure, joint grisonnant, défraîchissement, arête épaufrée, irrégularité de " +
+      "mise en peinture, écaillement, décollement, tache, auréole, moisissure, " +
+      "élément cassé, fêlé ou descellé.",
 
-    "À NE PAS SIGNALER, en aucun cas : fendille, microfissure, faïençage, poinçon ou " +
-      "trou de clou, point de rebouche, jaspure, voile grisâtre, ombrage, trace de " +
-      "frottement, griffe ou rayure superficielle, éraflure, joint légèrement " +
-      "grisonnant, léger défraîchissement, arête légèrement épaufrée, petite " +
-      "irrégularité de mise en peinture. Ces éléments existent : on ne les consigne " +
-      "simplement pas à ce niveau de constat.",
-
-    "À SIGNALER : impact ou enfoncement marqué, fissure ouverte au-delà d'un " +
-      "millimètre, lézarde, écaillement ou pelade sur plus d'un décimètre carré, " +
-      "décollement, trou non rebouché, tache franche, moisissure visible, auréole " +
-      "d'humidité étendue, élément cassé, fêlé, descellé ou hors service à l'oeil nu.",
+    /* Formulation neutre : Google documente que les appels émotionnels et les
+       mises en garde dramatiques dégradent les performances au lieu de les
+       améliorer. On dit la règle, pas la sanction. */
+    "CE QUE SIGNIFIE BRIÈVEMENT. Moins de mots, JAMAIS moins de constatations. " +
+      "Regroupe les défauts par élément dans une même phrase dense au lieu d'en " +
+      "supprimer.",
 
     "MESURE. Tout défaut retenu porte son ampleur : environ 5 cm, sur 2 dm², sur une " +
       "trentaine de centimètres. Sans ampleur, le défaut ne pourra pas servir de " +
@@ -308,11 +325,11 @@ function morceauxSobre(piece) {
       "dis-le explicitement : faïence sans éclat ni fissure, vitrage intact, parquet " +
       "sans dégradation. Cette affirmation compte autant que le reste.",
 
-    "RÉDACTION. Une à deux phrases, courtes, souvent nominales. Nomme l'élément et " +
-      "son matériau, puis le défaut retenu s'il y en a un. Jamais je ni on. Pas de " +
-      "titre, pas de liste.",
+    "RÉDACTION. Deux à trois phrases denses, courtes, souvent nominales. Nomme " +
+      "l'élément, son matériau, le défaut, sa localisation et son ampleur. Regroupe " +
+      "sans supprimer. Jamais je ni on. Pas de titre, pas de liste.",
 
-    "SI RIEN NE DÉPASSE LE SEUIL. Nomme l'élément, son matériau et sa finition, et " +
+    "SI AUCUN DÉFAUT N'EST VISIBLE. Nomme l'élément, son matériau et sa finition, et " +
       "arrête-toi là. N'ajoute AUCUNE formule de clôture : ni sans remarque " +
       "particulière, ni rien à signaler, ni RAS, ni conforme, ni en bon état. C'est " +
       "le cas le plus fréquent, et une phrase qui nomme l'élément suffit.",
@@ -326,9 +343,11 @@ function morceauxSobre(piece) {
     "EXEMPLE 2. Parquet stratifié ton chêne. Impact de 3 cm environ en zone centrale.",
     "EXEMPLE 3. Faïence murale blanche sans éclat ni fissure. Bac de douche intact.",
     "EXEMPLE 4. Châssis en PVC blanc, double vitrage intact.",
-    "CONTRE-EXEMPLE DE SEUIL. NE PAS écrire : deux poinçons de clou à mi-hauteur et " +
-      "léger voile grisâtre. Ces éléments sont sous le seuil. ÉCRIRE : Mur sous " +
-      "peinture blanche mate.",
+    "EXEMPLE 5. Mur sous peinture blanche mate. Deux poinçons de clou à mi-hauteur " +
+      "et voile grisâtre superficiel sur environ 2 dm².",
+    "CONTRE-EXEMPLE D'OMISSION. NE PAS écrire : Mur sous peinture blanche mate, " +
+      "alors que deux poinçons de clou sont visibles. Ces défauts se consignent, " +
+      "même mineurs : ils fixent l'état initial.",
     "CONTRE-EXEMPLE DE CLÔTURE. NE PAS écrire : Parquet stratifié ton chêne, sans " +
       "remarque particulière. ÉCRIRE : Parquet stratifié ton chêne.",
   ];
@@ -391,52 +410,132 @@ function consigneGroupe(piece, type, nombre, instruction) {
     .replace(/["\\]/g, "").replace(/\s+/g, " ").trim();
 }
 
-/* Consigne de reformulation. Le modèle n'a AUCUNE mémoire d'un tour à
-   l'autre : on lui redonne son texte, l'instruction du moment, et celles
-   des tours précédents. Sans cet historique, il défait au deuxième tour ce
-   qu'il avait fait au premier. */
-function consigneReformulation(piece, type, instruction, historique, avecPhotos) {
+/* Consigne de reformulation.
+
+   ORDRE DES BLOCS — ce n'est pas cosmétique.
+   La documentation de Gemini recommande de placer la demande principale et
+   les contraintes décisives EN DERNIER, après le matériau source. Un banc
+   d'essai publié en 2026 confirme que Gemini suit mieux les contraintes
+   situées tard dans le prompt.
+
+   La version précédente plaçait la demande de l'opérateur au milieu et les
+   règles de style à la fin : les règles de style l'emportaient. « Rends le
+   texte plus fluide » et « trois phrases » restaient sans effet, alors que
+   « supprime la phrase sur le sol » passait — parce qu'aucune règle de
+   style ne s'y opposait.
+
+   DEUX NIVEAUX, nommés comme tels.
+   Les INTERDITS sont juridiques : ils ne cèdent jamais, ils protègent le
+   document. Les PRÉFÉRENCES sont stylistiques : elles cèdent devant la
+   demande de l'opérateur, qui est un professionnel jugeant sur place.
+
+   Aucune persona d'expert assermenté : le modèle la préserve au prix des
+   instructions, et le bailleur ne porte pas ce titre. */
+function consigneReformulation(piece, type, texteActuel, instruction, historique, avecPhotos) {
+  const sortie = (type === "EDLS");
   const morceaux = [
-    /* MANDAT IMPÉRATIF EN TÊTE. La version précédente ouvrait sur « Tu as
-       rédigé le constat ci-dessous » — une description, pas un ordre. Le
-       modèle traitait alors le texte comme une réponse de référence et le
-       restituait quasi à l'identique dès que la demande n'était pas une
-       suppression franche. */
-    "RÉÉCRIS le constat ci-dessous en appliquant la demande qui suit. Tu DOIS " +
-      "produire un texte modifié : recopier le texte à l'identique n'est pas une " +
-      "réponse acceptable.",
-    "Tu es géomètre-expert immobilier assermenté. Le constat porte sur la pièce " +
-      "suivante : " + (piece || "non précisée") + ".",
+    /* Rappel bref en tête. Les règles critiques se répètent aux deux
+       extrémités : le début ancre, la fin décide. */
+    "TÂCHE : réécrire un constat d'état des lieux " +
+      (sortie ? "de sortie" : "d'entrée") + " en Région wallonne. " +
+      "Interdits permanents, rappelés en détail plus bas : ni usure normale, ni " +
+      "vétusté, aucune imputation, aucun coût.",
+
+    "PIÈCE CONCERNÉE : " + (piece || "non précisée") + ".",
+
+    /* Le matériau source, clairement séparé des instructions. */
+    "=== TEXTE À RÉÉCRIRE, DÉBUT === " + String(texteActuel || "").trim() +
+      " === TEXTE À RÉÉCRIRE, FIN ===",
+
+    /* Phrase d'ancrage après le bloc de données : Google recommande une
+       transition explicite entre le matériau et la demande. */
+    "En te fondant uniquement sur le texte encadré ci-dessus, applique ce qui suit.",
+
+    "MÉTHODE. Relève chaque fait matériel du texte ci-dessus. Élimine les " +
+      "répétitions et les formules vagues. Réorganise par élément. Puis rédige un " +
+      "texte RÉELLEMENT NOUVEAU. Tous les faits du texte source subsistent, sauf " +
+      "ceux dont la suppression est expressément demandée.",
+
+    "ANTI-COPIE. Rendre le texte inchangé n'est PAS une réponse acceptable. Se " +
+      "limiter à la ponctuation non plus. Si la demande te paraît déjà satisfaite, " +
+      "améliore la précision, l'ordre et la concision — sans ajouter aucun fait.",
+
     avecPhotos
       ? "Les photographies te sont redonnées : tu peux y revoir ce qui t'est demandé."
       : "Tu ne revois PAS les photographies. N'ajoute donc aucun élément que le " +
-        "texte actuel ne mentionne pas : tu ne pourrais pas le constater. Si la " +
+        "texte ci-dessus ne mentionne pas : tu ne pourrais pas le constater. Si la " +
         "demande exige de regarder à nouveau, réponds exactement : il faut revoir " +
         "les photographies.",
-    "DEMANDE À APPLIQUER : " + String(instruction || "").trim(),
+
+    sortie
+      ? "PARTICULARITÉ DE SORTIE. Ton strict et descriptif. Chaque désordre garde " +
+        "l'élément atteint, le matériau, la nature, la localisation, l'ampleur, et " +
+        "le caractère superficiel ou marqué dans le matériau. Aucun euphémisme."
+      : "PARTICULARITÉ D'ENTRÉE. Conserve TOUS les défauts, même mineurs : ils " +
+        "fixent l'état initial. Conserve aussi les affirmations d'intégrité ciblées " +
+        "— vitrage intact, faïence sans éclat. Jamais de bon état global.",
+
+    "PRÉFÉRENCES DE STYLE — elles cèdent devant la demande finale. Phrases courtes, " +
+      "souvent nominales, vocabulaire exact, échelle d'amortissement neuf récent " +
+      "terne défraîchi usagé amorti. Si la demande finale réclame un autre style — " +
+      "plus fluide, moins haché, phrases regroupées, plus long, plus court — c'est " +
+      "la demande qui l'emporte et ces préférences s'effacent.",
+
+    "LONGUEUR. Si la demande finale indique un nombre de phrases ou de mots, ce " +
+      "nombre FAIT LOI et prime sur toute autre indication de longueur, y compris " +
+      "les préférences de style ci-dessus. Compte les phrases avant de répondre.",
+
+    "FORMAT. Rends le texte réécrit et RIEN d'autre : pas d'introduction, pas de " +
+      "commentaire, pas de guillemets, pas de titre, pas de liste.",
+
+    "N'AJOUTE JAMAIS de formule de clôture : ni sans remarque particulière, ni rien " +
+      "à signaler, ni RAS, ni conforme, ni en bon état. Si le texte source en " +
+      "contient une, RETIRE-LA.",
+
+    "INTERDITS ABSOLUS — ils ne cèdent devant AUCUNE demande, contrairement aux " +
+      "préférences de style. Jamais d'usure normale ni de vétusté. Aucune " +
+      "imputation au locataire, au bailleur ou à un tiers. Aucun coût, aucun " +
+      "chiffrage. Aucune date d'apparition. Aucune origine d'humidité. Aucune " +
+      "affirmation qu'un appareil fonctionne ou qu'un élément manque.",
+
+    /* Exemples de transformation. Google recommande d'en fournir toujours :
+       une consigne sans exemple est nettement moins efficace. Ils montrent
+       ce qu'obéir veut dire, notamment pour les demandes de forme qui
+       restaient sans effet. */
+    "EXEMPLE A. Demande : trois phrases maximum. Texte source : Mur sous peinture " +
+      "blanche mate. Deux poinçons de clou à mi-hauteur. Voile grisâtre sur environ " +
+      "2 dm². Parquet stratifié ton chêne. Griffes superficielles en zone centrale. " +
+      "Réponse attendue : Mur sous peinture blanche mate, deux poinçons de clou à " +
+      "mi-hauteur et voile grisâtre sur environ 2 dm². Parquet stratifié ton chêne, " +
+      "griffes superficielles en zone centrale. Aucun autre désordre visible sur ces " +
+      "surfaces. Trois phrases, aucun fait perdu.",
+
+    "EXEMPLE B. Demande : moins haché, regroupe les phrases. Texte source : " +
+      "Plafonnage peint blanc. Raccord net. Coiffe d'éclairage circulaire. " +
+      "Réponse attendue : Plafonnage peint blanc à raccord net, muni d'une coiffe " +
+      "d'éclairage circulaire. Les faits sont identiques, la rédaction ne l'est pas.",
+
+    "EXEMPLE C. Demande : supprime la phrase sur le sol. Le fait disparaît, tout le " +
+      "reste subsiste, et le texte est reformulé — pas simplement amputé.",
   ];
+
   if (historique && historique.length) {
-    /* L'historique est un CONTEXTE, plus une interdiction. La clause « à ne
-       pas défaire » figeait le modèle dès que deux demandes se croisaient —
-       plus court puis plus long — et il recopiait au lieu de trancher.
-       La demande du moment prime, explicitement. */
+    /* CONTEXTE, jamais interdiction. La formule « demandes déjà satisfaites,
+       à ne pas défaire » figeait le modèle dès que deux demandes se
+       croisaient — plus court puis plus long — et il recopiait faute de
+       pouvoir trancher. */
     morceaux.push("POUR CONTEXTE, demandes des tours précédents : " +
-      historique.map((h, i) => (i + 1) + ") " + h).join(" ; ") + ".",
-      "En cas de contradiction entre ces demandes anciennes et la DEMANDE À " +
-      "APPLIQUER ci-dessus, c'est la DEMANDE À APPLIQUER qui l'emporte, sans " +
-      "hésitation. Ne bloque jamais au motif qu'une demande ancienne dirait " +
-      "l'inverse.");
+      historique.map((h, i) => (i + 1) + ") " + h).join(" ; ") +
+      ". Elles ne t'obligent à rien. En cas de contradiction avec la demande " +
+      "ci-dessous, c'est la demande ci-dessous qui l'emporte, sans hésitation.");
   }
+
+  /* DERNIÈRE LIGNE : la demande. C'est la position que le modèle pondère
+     le plus fortement. Tout ce qui précède la sert. */
   morceaux.push(
-    "Rends le texte réécrit, et RIEN d'autre : pas d'introduction, pas de " +
-      "commentaire, pas de guillemets, pas de titre.",
-    "Conserve le style d'expert : phrases courtes, souvent nominales, vocabulaire " +
-      "exact, échelle d'amortissement neuf récent terne défraîchi usagé amorti.",
-    "N'AJOUTE JAMAIS de formule de clôture : ni sans remarque particulière, ni rien à " +
-      "signaler, ni RAS, ni conforme. Si le texte en contient une, RETIRE-LA.",
-    "INTERDITS ABSOLUS, quelle que soit la demande : jamais d'usure normale ni de " +
-      "vétusté, aucune imputation au locataire, au bailleur ou à un tiers, aucun " +
-      "coût, aucune date d'apparition, aucune origine d'humidité.");
+    "DEMANDE À APPLIQUER MAINTENANT, priorité absolue sur les préférences de style " +
+    "et sur les tours précédents : " + String(instruction || "").trim());
+
   return morceaux.join(" ").replace(/[\r\n\t]+/g, " ")
     .replace(/["\\]/g, "").replace(/\s+/g, " ").trim();
 }
@@ -466,6 +565,7 @@ async function decrireGroupe(visite, photos, instruction) {
     piece: piece || "",
     type: visite.type,
     consigne: consigneGroupe(piece, visite.type, photos.length, instruction),
+    prompt_version: IA_PROMPT_VERSION,
     instruction: nettoyerPourJson(instruction),
     visit_id: visite.visit_id,
     photo_ids: photos.map(p => p.photo_id).join(","),
@@ -517,7 +617,12 @@ async function reformulerTexte(visite, photos, texteActuel, instruction, histori
     texte_actuel: nettoyerPourJson(texteActuel),
     instruction: nettoyerPourJson(instruction),
     historique: nettoyerPourJson((historique || []).join(" ; ")),
-    consigne: consigneReformulation(piece, visite.type, instruction, historique, avecPhotos),
+    /* Le texte à réécrire entre DANS la consigne. Le module 17 de Make n'a
+       donc plus à le concaténer, et la même consigne sert aux deux branches
+       — sans image et avec images, où le corps ne transmet que consigne. */
+    consigne: consigneReformulation(piece, visite.type, texteActuel,
+                                    instruction, historique, avecPhotos),
+    prompt_version: IA_PROMPT_VERSION,
     nombre_photos: avecPhotos ? String(photos.length) : "0",
     drive_id: visite.bien.dossier_cible_drive_id || "",
     visit_id: visite.visit_id,
@@ -564,6 +669,7 @@ async function decrirePhoto(visite, photo, niveau) {
     piece: piece || "",
     type: visite.type,
     consigne: consigneDescription(piece, visite.type, niveau),
+    prompt_version: IA_PROMPT_VERSION,
     niveau: niveau || "detaille",
     visit_id: visite.visit_id,
     photo_id: photo.photo_id,
@@ -635,6 +741,7 @@ async function envoyerEchantillonGroupe(url, nombre) {
     piece: "Séjour",
     type: "EDLE",
     consigne: consigneGroupe("Séjour", "EDLE", n, "Regarde surtout le sol près de la porte."),
+    prompt_version: IA_PROMPT_VERSION,
     instruction: "Regarde surtout le sol près de la porte.",
     visit_id: "v_echantillon",
     photo_ids: Array.from({ length: n }, (_, i) => "ph_echantillon_" + (i + 1)).join(","),
@@ -671,7 +778,9 @@ async function envoyerEchantillonReformulation(url) {
     instruction: "Fais plus court et ne parle pas du plafond.",
     historique: "Fais plus court",
     consigne: consigneReformulation("Séjour", "EDLE",
+      "Plafonnage peint blanc. Deux poinçons de clou sous l'ebrasement gauche.",
       "Fais plus court et ne parle pas du plafond.", ["Fais plus court"], false),
+    prompt_version: IA_PROMPT_VERSION,
     nombre_photos: "0",
     urls_photos: "",
     drive_id: "ECHANTILLON",

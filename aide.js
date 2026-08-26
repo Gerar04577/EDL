@@ -359,4 +359,27 @@ var GLOSSAIRE = [
   { g: "Formules d'expert", t: "usure normale", d: "Vieillissement inévitable d'un logement occupé normalement. À la charge du bailleur, jamais du locataire." },
   { g: "Formules d'expert", t: "vétusté", d: "Perte de valeur due à l'âge. Se déduit de ce qu'on peut réclamer." },
   { g: "Formules d'expert", t: "dégât locatif", d: "Dégradation liée à l'occupation, au-delà de l'usure normale. C'est ce qui se retient sur la garantie." },
+
+  /* ---- Formules à employer et à bannir ---------------------------------
+     Ce que l'IA écrit vient de la consigne ; ce que TU écris ou corriges
+     dans le cadre éditable n'est contrôlé par personne. D'où ce glossaire :
+     il vaut pour tes corrections à la main autant que pour la relecture. */
+
+  { g: "À BANNIR — toujours", t: "usure normale, vétusté", d: "Ces mots reconnaissent que le défaut n'est pas imputable. Les écrire dans un constat revient à renoncer à toute retenue. C'est au juge de qualifier, pas à toi." },
+  { g: "À BANNIR — toujours", t: "le locataire a, il a été causé par", d: "Aucune imputation dans le constat. Tu décris ce que tu vois ; la responsabilité se discute ailleurs, avec la comparaison entrée-sortie." },
+  { g: "À BANNIR — toujours", t: "à remplacer, coût, devis, environ 200 euros", d: "Aucun chiffrage dans la description. Le chiffrage se fait à l'écran de comparaison, séparément." },
+  { g: "À BANNIR — toujours", t: "récent, depuis peu, apparu après", d: "Aucune date d'apparition : une photographie ne dit pas quand un défaut est né." },
+  { g: "À BANNIR — toujours", t: "infiltration, remontée capillaire, condensation", d: "L'origine d'une humidité ne se voit pas sur une photographie. Écris auréole, cloque, moisissure — le constat, pas la cause." },
+  { g: "À BANNIR — toujours", t: "RAS, conforme, bon état général, sans remarque particulière", d: "Ne décrivent rien et noient les vraies constatations. Nomme l'élément et son matériau, puis arrête-toi." },
+  { g: "À BANNIR — toujours", t: "il semble, on dirait, probablement", d: "Un constat affirme ce qui est visible ou se tait. L'hypothèse fragilise tout le document." },
+
+  { g: "À ÉCRIRE — entrée (EDLE)", t: "faïence sans éclat ni fissure", d: "L'affirmation d'intégrité porte sur un élément NOMMÉ et sur ce qu'il ne présente pas. C'est ce qui te sert à la sortie si la faïence est fêlée." },
+  { g: "À ÉCRIRE — entrée (EDLE)", t: "double vitrage intact", d: "Même principe. Vaut bien mieux qu'un bon état général, qui ne prouve rien." },
+  { g: "À ÉCRIRE — entrée (EDLE)", t: "deux poinçons de clou à mi-hauteur", d: "Les petits défauts se consignent AUSSI à l'entrée. Un défaut non consigné devient un défaut nouveau à la sortie, réclamé à quelqu'un qui ne l'a pas causé — et le procès-verbal tombe si le juge regarde les photographies." },
+  { g: "À ÉCRIRE — entrée (EDLE)", t: "sur environ 2 dm², de l'ordre de 5 cm", d: "Sans ampleur, un défaut d'entrée ne sert pas de point de comparaison. Toujours en ordre de grandeur, jamais au millimètre." },
+
+  { g: "À ÉCRIRE — sortie (EDLS)", t: "impact de 3 cm en zone centrale", d: "Élément, nature, localisation, ampleur. Les quatre, à chaque fois." },
+  { g: "À ÉCRIRE — sortie (EDLS)", t: "marqué dans le matériau / superficiel d'allure lavable", d: "La distinction décisive : ce qui part au nettoyage ne se retient pas comme ce qui entame la matière." },
+  { g: "À ÉCRIRE — sortie (EDLS)", t: "trois trous de cheville non rebouchés", d: "Compte quand tu peux compter. Un nombre vaut mieux que quelques." },
+  { g: "À BANNIR — sortie (EDLS)", t: "un peu, quelques traces, correct, acceptable", d: "Les atténuations affaiblissent la retenue. Décris précisément, sans adoucir ni exagérer." },
 ];
