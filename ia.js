@@ -23,7 +23,7 @@ var IA_DELAI_MS = 90000;
 /* Version des consignes, transmise à chaque appel. Permet de savoir, six
    mois plus tard, quelle rédaction a produit un texte donné. À incrémenter
    dès qu'une consigne change. */
-var IA_PROMPT_VERSION = "2026-08-26-v7";
+var IA_PROMPT_VERSION = "2026-08-26-v8";
 var CLE_WEBHOOK_IA = "edl_webhook_ia";
 
 /* L'adresse est conservée SUR L'APPAREIL. Le fichier de configuration
@@ -438,6 +438,70 @@ function morceauxConsigne(piece, type, niveau) {
        qui vient en fin de prompt. */
     ...(eau ? morceauxSanitaires(sortie) : []),
 
+    /* STRUCTURE OBLIGATOIRE.
+
+       Sans elle, le modèle énumère les éléments dans l'ordre où il les
+       aperçoit : plafond, sol, foyer, mur, étagères. Sur un groupe de
+       photographies, le résultat est un mélange où l'on ne sait plus de
+       quel mur on parle — et un constat qui ne situe pas ses observations
+       ne tient pas devant un juge de paix.
+
+       Les intitulés sont en majuscules suivies d'un tiret : le procès-
+       verbal les imprime tels quels, sans mise en forme particulière. */
+    "STRUCTURE OBLIGATOIRE DU CONSTAT. Organise ton texte en rubriques, dans CET " +
+      "ordre exact, du haut vers le bas : PLAFOND, RETOMBÉES ET JOUES, les MURS, " +
+      "MENUISERIES, SOLS, ÉQUIPEMENTS FIXES, APPAREILS. Chaque rubrique commence par " +
+      "son intitulé en majuscules suivi d'un tiret, puis le constat. N'écris QUE les " +
+      "rubriques dont un élément est visible : une rubrique sans objet ne s'écrit pas.",
+
+    "NOMMER CHAQUE MUR — LE POINT DÉCISIF. Un constat qui dit seulement les murs ne " +
+      "situe rien et ne vaut rien en cas de litige. Désigne chaque mur par CE QU'IL " +
+      "PORTE : MUR DE LA FENÊTRE, MUR DE LA PORTE, MUR DU FOYER, MUR DE LA " +
+      "BIBLIOTHÈQUE, MUR DU RADIATEUR, MUR DU LAVABO, MUR DE LA CUISINIÈRE.",
+
+    "SI RIEN NE DISTINGUE UN MUR, écris MUR SANS ÉLÉMENT DISTINCTIF. N'invente " +
+      "JAMAIS une orientation — ni nord, ni sud, ni est, ni ouest : tu ne peux pas la " +
+      "connaître, et une orientation fausse dans un document signé se retourne contre " +
+      "celui qui l'a écrite. N'écris pas non plus mur de gauche ou mur de droite : " +
+      "gauche par rapport à quoi ?",
+
+    "PLUSIEURS MURS. Si les photographies montrent des murs différents, fais une " +
+      "rubrique par mur. Ne les fonds jamais en une seule.",
+
+    "SI L'EXPERT A NOMMÉ LES MURS dans ses consignes, emploie SES désignations plutôt " +
+      "que les tiennes : il était sur place, pas toi.",
+
+    "EXEMPLE COMPLET DE STRUCTURE, sur trois photographies d'un salon. " +
+      "PLAFOND — Plafonnage peint blanc mat, à raccords nets, sans fissure ni auréole. " +
+      "RETOMBÉE DU LINTEAU — Peinte beige taupe mat. Reprise de peinture apparente en " +
+      "partie haute sur une trentaine de centimètres, laissant transparaître un fond " +
+      "plus clair. " +
+      "MUR DU POÊLE — Plafonnage peint beige taupe mat. Niche d'encastrement de même " +
+      "teinte, arêtes vives, sans épaufrure. Plinthe blanche en pied de niche. " +
+      "MUR DE LA PORTE — Plafonnage peint beige taupe mat, homogène. Interrupteur " +
+      "double blanc à droite du chambranle. " +
+      "MUR DE LA BIBLIOTHÈQUE — Plafonnage peint beige taupe mat. Bibliothèque " +
+      "encastrée toute hauteur, onze tablettes fixes teintées gris anthracite, sans " +
+      "dégradation. " +
+      "MENUISERIES — Porte intérieure en bois peint blanc à panneau central creusé " +
+      "peint ton mur, chambranle et cadre blancs. Trois paumelles en laiton doré. " +
+      "Poignée et rosace de cylindre chromées. " +
+      "SOLS — Carrelage de terre cuite ton ocre à joints ciment, posé en diagonale, " +
+      "carreaux sans éclat ni fissure. Sur l'emprise du foyer, pierre naturelle polie " +
+      "à veinage gris et rosé, joints fins, sans écornure. " +
+      "ÉQUIPEMENTS FIXES — Socle de foyer habillé de pierre naturelle polie, en deux " +
+      "niveaux, arêtes intactes. Plaque de sol métallique noire, plane. " +
+      "APPAREILS — Poêle à pellets cylindrique, corps thermolaqué noir, habillages " +
+      "supérieur et inférieur en céramique blanche, porte vitrée intacte. Buse noire à " +
+      "double coude et conduit vertical en place.",
+
+    "CE QUE MONTRE CHAQUE PHOTOGRAPHIE. Termine par une ligne commençant par " +
+      "PHOTOGRAPHIES suivie, pour chacune et dans l'ordre où elles te sont données, " +
+      "de ce qu'elle montre, séparées par un point-virgule. Exemple : PHOTOGRAPHIES — " +
+      "mur du poêle, niche et appareil ; mur de la bibliothèque ; mur de la porte et " +
+      "menuiserie. Cette ligne rattache chaque cliché à un élément nommé, ce " +
+      "qu'exige la jurisprudence.",
+
     "EXEMPLE 1. Mur à droite sous peinture blanche mate. Deux poinçons de clou " +
       "à mi-hauteur et une trace de frottement d'allure lavable sur environ 2 dm². " +
       "Fendille longeant l'angle du plafond, pour mémoire.",
@@ -512,6 +576,14 @@ function morceauxSobre(piece) {
       "son matériau, puis le défaut retenu s'il y en a un. Jamais je ni on. Pas de " +
       "titre, pas de liste.",
 
+    /* Même en mode bref, un mur doit être situé : sans repère, le constat
+       ne vaut rien en cas de litige. La structure complète serait
+       disproportionnée pour deux phrases, mais le repère est essentiel. */
+    "SITUER LE MUR. Si tu décris un mur, désigne-le par CE QU'IL PORTE : mur de la " +
+      "fenêtre, mur de la porte, mur du foyer, mur du radiateur. Si rien ne le " +
+      "distingue, écris mur sans élément distinctif. N'invente JAMAIS une orientation " +
+      "— ni nord, ni sud — et n'écris pas mur de gauche : gauche par rapport à quoi ?",
+
     "SI RIEN NE DÉPASSE LE SEUIL. Nomme l'élément, son matériau et sa finition, et " +
       "arrête-toi là. N'ajoute AUCUNE formule de clôture : ni sans remarque " +
       "particulière, ni rien à signaler, ni RAS, ni conforme, ni en bon état. C'est " +
@@ -575,11 +647,24 @@ function consigneGroupe(piece, type, nombre, instruction) {
       "rapprochement qui justifie de les avoir prises ensemble.",
     "CE QUI N'APPARAÎT QUE SUR UNE VUE se décrit normalement, sans préciser sur " +
       "laquelle : le constat ne renvoie pas aux photographies une par une.",
-    "LONGUEUR. Quatre à six phrases pour un groupe, quelle que soit le nombre de " +
-      "vues. Un constat de groupe n'est pas la somme des constats.",
+    "LONGUEUR. Une à trois phrases par rubrique, pas davantage. Le nombre de " +
+      "rubriques dépend de ce qui est visible, pas du nombre de photographies.",
     "AUCUNE FORMULE DE CLÔTURE, à plus forte raison sur un groupe : ni sans remarque " +
       "particulière, ni rien à signaler, ni RAS, ni conforme. Le constat s'achève sur " +
-      "le dernier élément décrit.",
+      "la ligne PHOTOGRAPHIES.",
+
+    /* La structure prend tout son sens sur un groupe : c'est là que le
+       mélange devenait illisible. La règle « un seul constat » n'interdit
+       pas les rubriques — au contraire, elle les rend nécessaires. */
+    "LA STRUCTURE PRIME SUR LA BRIÈVETÉ. UN SEUL constat, mais organisé en rubriques " +
+      "comme indiqué plus haut : PLAFOND, RETOMBÉES, les MURS nommés, MENUISERIES, " +
+      "SOLS, ÉQUIPEMENTS FIXES, APPAREILS. Un élément vu sur plusieurs photographies " +
+      "se décrit UNE FOIS, dans sa rubrique.",
+
+    "AUTANT DE RUBRIQUES DE MUR QUE DE MURS VUS. Si trois photographies montrent " +
+      "trois murs différents, écris trois rubriques, chacune nommée par ce que porte " +
+      "le mur. C'est la raison d'être du constat de groupe : rassembler sans " +
+      "confondre.",
   ]);
   if (instruction && String(instruction).trim()) {
     morceaux.push(

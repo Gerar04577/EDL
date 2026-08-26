@@ -431,6 +431,12 @@ var GLOSSAIRE = [
   { g: "À BANNIR — toujours", t: "récent, depuis peu, apparu après", d: "Aucune date d'apparition : une photographie ne dit pas quand un défaut est né." },
   { g: "À BANNIR — toujours", t: "infiltration, remontée capillaire, condensation", d: "L'origine d'une humidité ne se voit pas sur une photographie. Écris auréole, cloque, moisissure — le constat, pas la cause." },
   { g: "À BANNIR — toujours", t: "RAS, conforme, bon état général, sans remarque particulière", d: "Ne décrivent rien et noient les vraies constatations. Nomme l'élément et son matériau, puis arrête-toi." },
+  { g: "Structure du constat", t: "MUR DE LA FENÊTRE, MUR DU FOYER, MUR DE LA PORTE", d: "Chaque mur se désigne par ce qu'il porte. Un constat qui dit seulement « les murs » ne situe rien : devant un juge, on ne saura pas de quel mur il s'agit." },
+  { g: "Structure du constat", t: "MUR SANS ÉLÉMENT DISTINCTIF", d: "Quand rien ne permet de nommer un mur. Vaut mieux que d'inventer une orientation ou d'écrire « mur de gauche » — gauche par rapport à quoi ?" },
+  { g: "Structure du constat", t: "ordre des rubriques", d: "PLAFOND, RETOMBÉES ET JOUES, les MURS, MENUISERIES, SOLS, ÉQUIPEMENTS FIXES, APPAREILS. Toujours le même ordre, du haut vers le bas : c'est ce qui rendra la comparaison entrée-sortie lisible." },
+  { g: "Structure du constat", t: "ligne PHOTOGRAPHIES", d: "En fin de constat, ce que montre chaque cliché. Elle rattache chaque photographie à un élément nommé, ce qu'exige la jurisprudence pour qu'une photo ait valeur probante." },
+  { g: "Structure du constat", t: "nord, sud, est, ouest", d: "À BANNIR. L'IA ne peut pas connaître l'orientation, et une orientation fausse dans un document signé se retourne contre celui qui l'a écrite. Si tu la connais, écris-la toi-même." },
+
   { g: "À BANNIR — toujours", t: "il semble, on dirait, probablement", d: "Un constat affirme ce qui est visible ou se tait. L'hypothèse fragilise tout le document." },
 
   { g: "À ÉCRIRE — entrée (EDLE)", t: "faïence sans éclat ni fissure", d: "L'affirmation d'intégrité porte sur un élément NOMMÉ et sur ce qu'il ne présente pas. C'est ce qui te sert à la sortie si la faïence est fêlée." },
