@@ -2527,7 +2527,10 @@ function blocGroupe(piece, photos) {
          ${echapper((E.groupeHistorique || []).join(" · "))}</p>` : ""}
 
     <button id="btn-groupe-ajouter">Ajouter au constat</button>
-    <button class="mini secondaire" id="btn-groupe-abandon">Abandonner ce constat</button>
+    <div class="duo">
+      <button class="mini secondaire" id="btn-groupe-repartir">Repartir du texte d'origine</button>
+      <button class="mini secondaire" id="btn-groupe-abandon">Abandonner ce constat</button>
+    </div>
   </div>`;
 }
 
@@ -2538,7 +2541,7 @@ function numeroDansNom(nom) {
 
 function viderGroupe() {
   E.groupe = []; E.groupeTexte = null; E.groupeAvant = "";
-  E.groupeInstruction = ""; E.groupeHistorique = [];
+  E.groupeInstruction = ""; E.groupeHistorique = []; E.groupeOrigine = null;
 }
 
 /* Mémorise ce qui est tapé avant tout redessin : sans cela, une photographie
@@ -2582,6 +2585,17 @@ function brancherGroupe(piece, photos) {
   if ($("btn-groupe-vider")) $("btn-groupe-vider").onclick = () => {
     viderGroupe(); dessinerPiece();
   };
+  /* Sortie de secours quand les corrections successives se sont enlisées :
+     on revient au texte que l'IA avait produit et on efface l'historique,
+     sans repayer une description complète. */
+  if ($("btn-groupe-repartir")) $("btn-groupe-repartir").onclick = () => {
+    if (!E.groupeOrigine) return dessinerPiece("Aucun texte d'origine conservé.");
+    E.groupeTexte = E.groupeOrigine;
+    E.groupeHistorique = [];
+    E.groupeInstruction = "";
+    dessinerPiece("Texte d'origine rétabli — les corrections précédentes sont oubliées");
+  };
+
   if ($("btn-groupe-abandon")) $("btn-groupe-abandon").onclick = () => {
     E.groupeTexte = null; E.groupeInstruction = ""; E.groupeHistorique = [];
     dessinerPiece();
@@ -2601,6 +2615,7 @@ function brancherGroupe(piece, photos) {
     b.disabled = true; b.textContent = "Lecture des " + lot.length + " photos…";
     try {
       E.groupeTexte = await decrireGroupe(VISITE, lot, E.groupeAvant);
+      E.groupeOrigine = E.groupeTexte;
       E.groupeHistorique = [];
       E.groupeInstruction = "";
     } catch (e) {
@@ -2614,6 +2629,12 @@ function brancherGroupe(piece, photos) {
     const lot = cochees();
     const instruction = String(E.groupeInstruction || "").trim();
     if (!instruction) return dessinerPiece("Écris d'abord ce qu'il faut changer.");
+    // « Tout », « mieux », « non » : le modèle n'a rien à appliquer et recopie.
+    if (instruction.split(/\s+/).length < 3) {
+      return dessinerPiece("Sois plus précis : « supprime la phrase sur le sol », " +
+        "« trois phrases maximum », « ne parle pas des cadres ». " +
+        "Une demande vague ne change rien au texte.");
+    }
     if (avecPhotos && !(await confirmer("Revoir les photographies ?",
         "L'IA rouvre les " + lot.length + " images. Cet appel est facturé comme " +
         "une description complète.", "Oui, revoir"))) return;

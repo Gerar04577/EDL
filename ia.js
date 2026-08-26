@@ -348,6 +348,16 @@ function morceauxSobre(piece) {
    règles propres au rapprochement de plusieurs vues. Les instructions de
    l'utilisateur s'AJOUTENT à la fin — elles ne remplacent jamais les
    interdits, qui n'appartiennent pas au modèle. */
+/* Tout texte inséré dans le corps JSON construit dans Make doit passer par
+   ici : guillemets, antislash et sauts de ligne le rendraient invalide. */
+function nettoyerPourJson(texte) {
+  return String(texte == null ? "" : texte)
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/["\\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function consigneGroupe(piece, type, nombre, instruction) {
   const morceaux = morceauxConsigne(piece, type, "detaille").concat([
     "PLUSIEURS PHOTOGRAPHIES. Tu reçois " + nombre + " photographies de cette " +
@@ -387,22 +397,38 @@ function consigneGroupe(piece, type, nombre, instruction) {
    qu'il avait fait au premier. */
 function consigneReformulation(piece, type, instruction, historique, avecPhotos) {
   const morceaux = [
-    "Tu es géomètre-expert immobilier assermenté. Tu as rédigé le constat " +
-      "ci-dessous pour la pièce suivante : " + (piece || "non précisée") + ".",
+    /* MANDAT IMPÉRATIF EN TÊTE. La version précédente ouvrait sur « Tu as
+       rédigé le constat ci-dessous » — une description, pas un ordre. Le
+       modèle traitait alors le texte comme une réponse de référence et le
+       restituait quasi à l'identique dès que la demande n'était pas une
+       suppression franche. */
+    "RÉÉCRIS le constat ci-dessous en appliquant la demande qui suit. Tu DOIS " +
+      "produire un texte modifié : recopier le texte à l'identique n'est pas une " +
+      "réponse acceptable.",
+    "Tu es géomètre-expert immobilier assermenté. Le constat porte sur la pièce " +
+      "suivante : " + (piece || "non précisée") + ".",
     avecPhotos
       ? "Les photographies te sont redonnées : tu peux y revoir ce qui t'est demandé."
       : "Tu ne revois PAS les photographies. N'ajoute donc aucun élément que le " +
         "texte actuel ne mentionne pas : tu ne pourrais pas le constater. Si la " +
         "demande exige de regarder à nouveau, réponds exactement : il faut revoir " +
         "les photographies.",
-    "DEMANDE DE L'EXPERT : " + String(instruction || "").trim(),
+    "DEMANDE À APPLIQUER : " + String(instruction || "").trim(),
   ];
   if (historique && historique.length) {
-    morceaux.push("DEMANDES DÉJÀ SATISFAITES, à ne pas défaire : " +
-      historique.map((h, i) => (i + 1) + ") " + h).join(" ; ") + ".");
+    /* L'historique est un CONTEXTE, plus une interdiction. La clause « à ne
+       pas défaire » figeait le modèle dès que deux demandes se croisaient —
+       plus court puis plus long — et il recopiait au lieu de trancher.
+       La demande du moment prime, explicitement. */
+    morceaux.push("POUR CONTEXTE, demandes des tours précédents : " +
+      historique.map((h, i) => (i + 1) + ") " + h).join(" ; ") + ".",
+      "En cas de contradiction entre ces demandes anciennes et la DEMANDE À " +
+      "APPLIQUER ci-dessus, c'est la DEMANDE À APPLIQUER qui l'emporte, sans " +
+      "hésitation. Ne bloque jamais au motif qu'une demande ancienne dirait " +
+      "l'inverse.");
   }
   morceaux.push(
-    "Rends le texte corrigé, et RIEN d'autre : pas d'introduction, pas de " +
+    "Rends le texte réécrit, et RIEN d'autre : pas d'introduction, pas de " +
       "commentaire, pas de guillemets, pas de titre.",
     "Conserve le style d'expert : phrases courtes, souvent nominales, vocabulaire " +
       "exact, échelle d'amortissement neuf récent terne défraîchi usagé amorti.",
@@ -440,7 +466,7 @@ async function decrireGroupe(visite, photos, instruction) {
     piece: piece || "",
     type: visite.type,
     consigne: consigneGroupe(piece, visite.type, photos.length, instruction),
-    instruction: String(instruction || "").trim(),
+    instruction: nettoyerPourJson(instruction),
     visit_id: visite.visit_id,
     photo_ids: photos.map(p => p.photo_id).join(","),
   };
@@ -484,9 +510,13 @@ async function reformulerTexte(visite, photos, texteActuel, instruction, histori
     modele: CONFIG.ia.modele,
     piece: piece || "",
     type: visite.type,
-    texte_actuel: String(texteActuel || ""),
-    instruction: String(instruction || "").trim(),
-    historique: (historique || []).join(" ; "),
+    /* Les guillemets et les sauts de ligne sont retirés AVANT l'envoi :
+       le corps de la requête est du JSON écrit à la main dans Make, et un
+       guillemet tapé par l'opérateur dans le cadre éditable le casserait.
+       Même précaution que pour la consigne. */
+    texte_actuel: nettoyerPourJson(texteActuel),
+    instruction: nettoyerPourJson(instruction),
+    historique: nettoyerPourJson((historique || []).join(" ; ")),
     consigne: consigneReformulation(piece, visite.type, instruction, historique, avecPhotos),
     nombre_photos: avecPhotos ? String(photos.length) : "0",
     drive_id: visite.bien.dossier_cible_drive_id || "",
