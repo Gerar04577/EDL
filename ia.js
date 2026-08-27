@@ -23,7 +23,7 @@ var IA_DELAI_MS = 90000;
 /* Version des consignes, transmise à chaque appel. Permet de savoir, six
    mois plus tard, quelle rédaction a produit un texte donné. À incrémenter
    dès qu'une consigne change. */
-var IA_PROMPT_VERSION = "2026-08-26-v8";
+var IA_PROMPT_VERSION = "2026-08-26-v9";
 var CLE_WEBHOOK_IA = "edl_webhook_ia";
 
 /* L'adresse est conservée SUR L'APPAREIL. Le fichier de configuration
@@ -290,6 +290,19 @@ function morceauxConsigne(piece, type, niveau) {
       "observation. Elles ne décrivent rien et n'ont aucune valeur au constat. " +
       "Le mot conforme est banni : conforme à quoi ?",
 
+    /* Deux familles vues à l'essai du 26/08/2026 et qu'il fallait nommer :
+       l'appréciation d'âge — que rien sur une photographie ne fonde — et
+       l'appréciation d'état sans point de comparaison. */
+    "APPRÉCIATIONS D'ÂGE INTERDITES. N'écris JAMAIS : récent, d'aspect récent, décor " +
+      "récent, ancien, d'origine, refait récemment, remis à neuf, dernier décor. Une " +
+      "photographie ne dit pas l'âge d'une peinture. Décris ce que tu vois : peinture " +
+      "sans écaillage ni reprise apparente, ou au contraire raccord de teinte visible.",
+
+    "APPRÉCIATIONS SANS POINT DE COMPARAISON INTERDITES. N'écris pas décor terne, " +
+      "décor fatigué, décor défraîchi sans dire ce qui le montre. Terne par rapport à " +
+      "quoi ? Si tu constates un affaiblissement, dis ce qui se voit : perte de " +
+      "brillant du feuil, teinte inégale entre deux pans, empoussièrement du feuil.",
+
     "VOCABULAIRE DES DÉFAUTS. Emploie le terme exact. Enduit et plafonnage : " +
       "fendille, fissuration naissante, évidement, écrasement, éclat, écaillement, " +
       "effritement, pelade, boursouflure, décollement, point de rebouche, hors plomb, " +
@@ -450,9 +463,19 @@ function morceauxConsigne(piece, type, niveau) {
        verbal les imprime tels quels, sans mise en forme particulière. */
     "STRUCTURE OBLIGATOIRE DU CONSTAT. Organise ton texte en rubriques, dans CET " +
       "ordre exact, du haut vers le bas : PLAFOND, RETOMBÉES ET JOUES, les MURS, " +
-      "MENUISERIES, SOLS, ÉQUIPEMENTS FIXES, APPAREILS. Chaque rubrique commence par " +
-      "son intitulé en majuscules suivi d'un tiret, puis le constat. N'écris QUE les " +
-      "rubriques dont un élément est visible : une rubrique sans objet ne s'écrit pas.",
+      "PORTES, CHÂSSIS, ESCALIER, SOLS, ÉQUIPEMENTS FIXES, APPAREILS. Chaque rubrique " +
+      "commence par son intitulé en majuscules suivi d'un tiret, puis le constat. " +
+      "N'écris QUE les rubriques dont un élément est visible : une rubrique sans objet " +
+      "ne s'écrit pas.",
+
+    /* Trois rubriques distinctes, jamais une seule MENUISERIES. Une porte,
+       un châssis et un escalier ne se dégradent pas de la même façon et ne
+       se comparent pas ensemble à la sortie. */
+    "NE FONDS JAMAIS PORTES, CHÂSSIS ET ESCALIER EN UNE SEULE RUBRIQUE. PORTES : " +
+      "vantail, chambranle, paumelles, poignée, serrure, chants. CHÂSSIS : dormant, " +
+      "ouvrant, vitrage, quincaillerie, canaux d'évacuation de condensation. " +
+      "ESCALIER : limon, marches, contre-marches, nez de marche, garde-corps, " +
+      "balustres, main courante, ancrages. Chacun sa rubrique.",
 
     "NOMMER CHAQUE MUR — LE POINT DÉCISIF. Un constat qui dit seulement les murs ne " +
       "situe rien et ne vaut rien en cas de litige. Désigne chaque mur par CE QU'IL " +
@@ -483,9 +506,9 @@ function morceauxConsigne(piece, type, niveau) {
       "MUR DE LA BIBLIOTHÈQUE — Plafonnage peint beige taupe mat. Bibliothèque " +
       "encastrée toute hauteur, onze tablettes fixes teintées gris anthracite, sans " +
       "dégradation. " +
-      "MENUISERIES — Porte intérieure en bois peint blanc à panneau central creusé " +
-      "peint ton mur, chambranle et cadre blancs. Trois paumelles en laiton doré. " +
-      "Poignée et rosace de cylindre chromées. " +
+      "PORTES — Porte intérieure en bois peint blanc à panneau central creusé peint " +
+      "ton mur, chambranle et cadre blancs. Trois paumelles en laiton doré. Poignée et " +
+      "rosace de cylindre chromées. Chants sans épaufrure. " +
       "SOLS — Carrelage de terre cuite ton ocre à joints ciment, posé en diagonale, " +
       "carreaux sans éclat ni fissure. Sur l'emprise du foyer, pierre naturelle polie " +
       "à veinage gris et rosé, joints fins, sans écornure. " +
@@ -657,9 +680,9 @@ function consigneGroupe(piece, type, nombre, instruction) {
        mélange devenait illisible. La règle « un seul constat » n'interdit
        pas les rubriques — au contraire, elle les rend nécessaires. */
     "LA STRUCTURE PRIME SUR LA BRIÈVETÉ. UN SEUL constat, mais organisé en rubriques " +
-      "comme indiqué plus haut : PLAFOND, RETOMBÉES, les MURS nommés, MENUISERIES, " +
-      "SOLS, ÉQUIPEMENTS FIXES, APPAREILS. Un élément vu sur plusieurs photographies " +
-      "se décrit UNE FOIS, dans sa rubrique.",
+      "comme indiqué plus haut : PLAFOND, RETOMBÉES, les MURS nommés, PORTES, " +
+      "CHÂSSIS, ESCALIER, SOLS, ÉQUIPEMENTS FIXES, APPAREILS. Un élément vu sur " +
+      "plusieurs photographies se décrit UNE FOIS, dans sa rubrique.",
 
     "AUTANT DE RUBRIQUES DE MUR QUE DE MURS VUS. Si trois photographies montrent " +
       "trois murs différents, écris trois rubriques, chacune nommée par ce que porte " +
