@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Essai — cadrage automatique</title>
+
+<!--
+  BANC D'ESSAI ISOLÉ, second du genre. Ne touche à rien de l'application.
+
+  Question à trancher : l'application peut-elle reconnaître SEULE quand le
+  cadrage correspond à celui de la photographie d'entrée ?
+
+  Aucune bibliothèque externe. Charger huit mégaoctets d'OpenCV pour un
+  score d'alignement serait disproportionné, et le téléchargement seul
+  découragerait l'usage sur le terrain. Le noyau tient en cent lignes.
+
+  À ouvrir dans SAFARI, à l'adresse du depot suivie de ce nom de fichier.
+-->
+
+<style>
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; padding:calc(14px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));
+    font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    color:#1a1a1a; background:#f7f6f3; }
+  h1 { font-size:19px; margin:0 0 2px; }
+  .sous { color:#6b6b6b; font-size:14px; margin:0 0 16px; }
+  .bloc { background:#fff; border:1px solid #e3e0da; border-radius:12px;
+    padding:14px; margin-bottom:12px; }
+  .bloc h2 { font-size:12px; text-transform:uppercase; letter-spacing:.07em;
+    color:#8a8a8a; margin:0 0 10px; font-weight:600; }
+  button { width:100%; padding:13px; font-size:16px; font-weight:500;
+    border:1px solid #d0ccc4; border-radius:10px; background:#fff;
+    color:#1a1a1a; margin-bottom:8px; }
+  button.principal { background:#2f7d63; color:#fff; border-color:#2f7d63; }
+  button:disabled { opacity:.45; }
+  .note { font-size:13px; color:#6b6b6b; margin:6px 0; }
+  .ko { color:#b03a2e; } .ok { color:#1f7a4d; } .attention { color:#8a5a12; }
+  input[type=range] { width:100%; }
+
+  #scene { position:relative; width:100%; aspect-ratio:3/4; background:#000;
+    border-radius:12px; overflow:hidden; margin-bottom:10px;
+    max-height:58vh; margin-left:auto; margin-right:auto; }
+  #flux, #calque { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  #calque { pointer-events:none; }
+
+  /* Le verdict, en surimpression : lisible d'un coup d'oeil, bras tendu. */
+  #verdict { position:absolute; left:0; right:0; top:0; padding:10px 12px;
+    font-size:15px; font-weight:600; color:#fff; text-align:center;
+    background:rgba(20,20,20,.55); backdrop-filter:blur(6px); }
+  #jauge { position:absolute; left:0; bottom:0; height:6px; width:0%;
+    background:#c9403a; transition:width .12s linear, background .2s; }
+  #cible { position:absolute; inset:0; border:3px solid transparent;
+    border-radius:12px; pointer-events:none; transition:border-color .2s; }
+
+  .ligne { display:flex; justify-content:space-between; gap:12px;
+    padding:6px 0; border-bottom:1px solid #f0eeea; font-size:14px; }
+  .ligne:last-child { border-bottom:0; }
+  .ligne span:last-child { color:#4a4a4a; font-variant-numeric:tabular-nums; }
+  .cote-a-cote { display:flex; gap:8px; }
+  .cote-a-cote figure { flex:1; margin:0; }
+  .cote-a-cote img { width:100%; border-radius:8px; display:block; }
+  .cote-a-cote figcaption { font-size:12px; color:#8a8a8a; margin-top:4px; text-align:center; }
+  .cache { display:none; }
+</style>
+</head>
+<body>
+
+<h1>Essai — cadrage automatique</h1>
+<p class="sous">L'application reconnaît-elle seule le bon cadrage ?</p>
+
+<div class="bloc">
+  <h2>1. Photographie de référence</h2>
+  <button id="btn-pellicule">Choisir dans la pellicule</button>
+  <input type="file" accept="image/*" id="fichier" class="cache">
+  <p class="note" id="etat-ref">Aucune référence chargée.</p>
+  <div id="diag-ref" class="cache">
+    <div class="ligne"><span>Contours détectés</span><span id="densite">—</span></div>
+    <div class="ligne"><span>Analysable</span><span id="analysable">—</span></div>
+  </div>
+</div>
+
+<div class="bloc">
+  <h2>2. Visée</h2>
+  <button id="btn-camera" class="principal">Allumer la caméra</button>
+  <p class="note" id="etat-camera">Caméra éteinte.</p>
+
+  <div id="scene" class="cache">
+    <video id="flux" playsinline muted autoplay></video>
+    <img id="calque" alt="">
+    <div id="cible"></div>
+    <div id="verdict">—</div>
+    <div id="jauge"></div>
+  </div>
+
+  <div id="reglages" class="cache">
+    <div class="ligne"><span>Opacité de la référence</span><span id="val-opacite">35 %</span></div>
+    <input type="range" id="opacite" min="0" max="100" value="35">
+    <div class="ligne"><span>Seuil de déclenchement</span><span id="val-seuil">60 %</span></div>
+    <input type="range" id="seuil" min="30" max="95" value="60">
+    <button id="btn-auto">Déclenchement automatique : NON</button>
+    <button id="btn-prendre" class="principal">Prendre la photo</button>
+    <button id="btn-eteindre">Éteindre la caméra</button>
+    <div class="ligne"><span>Analyses par seconde</span><span id="cadence">—</span></div>
+    <div class="ligne"><span>Temps par analyse</span><span id="duree">—</span></div>
+  </div>
+</div>
+
+<div class="bloc cache" id="bloc-resultat">
+  <h2>3. Comparaison</h2>
+  <div class="cote-a-cote">
+    <figure><img id="vue-ref" alt=""><figcaption>Référence</figcaption></figure>
+    <figure><img id="vue-prise" alt=""><figcaption>Prise</figcaption></figure>
+  </div>
+  <div style="margin-top:12px">
+    <div class="ligne"><span>Score au déclenchement</span><span id="score-final">—</span></div>
+    <div class="ligne"><span>Résolution</span><span id="res">—</span></div>
+    <div class="ligne"><span>Poids</span><span id="poids">—</span></div>
+  </div>
+  <button id="btn-recommencer" style="margin-top:10px">Recommencer</button>
+</div>
+
+<div class="bloc">
+  <h2>4. Journal</h2>
+  <p class="note" id="journal">En attente.</p>
+</div>
+
+<script>
+/* ================= NOYAU DE RECALAGE ================= */
+const TAILLE = 96;   // côté de l'image de travail
+
+/* Réduit une image (tableau RGBA) en niveaux de gris à TAILLE×TAILLE. */
+function reduire(rgba, L, H) {
+  const g = new Float32Array(TAILLE * TAILLE);
+  for (let y = 0; y < TAILLE; y++) {
+    const sy = Math.floor(y * H / TAILLE);
+    for (let x = 0; x < TAILLE; x++) {
+      const sx = Math.floor(x * L / TAILLE);
+      const i = (sy * L + sx) * 4;
+      g[y * TAILLE + x] = 0.299 * rgba[i] + 0.587 * rgba[i+1] + 0.114 * rgba[i+2];
+    }
+  }
+  return g;
+}
+
+/* Amplitude du gradient (Sobel). On compare des CONTOURS, pas des teintes :
+   l'éclairage change entre l'entrée et la sortie, les arêtes non. */
+function contours(g) {
+  const c = new Float32Array(TAILLE * TAILLE);
+  for (let y = 1; y < TAILLE - 1; y++) {
+    for (let x = 1; x < TAILLE - 1; x++) {
+      const i = y * TAILLE + x;
+      const gx = -g[i-TAILLE-1] - 2*g[i-1] - g[i+TAILLE-1]
+                 + g[i-TAILLE+1] + 2*g[i+1] + g[i+TAILLE+1];
+      const gy = -g[i-TAILLE-1] - 2*g[i-TAILLE] - g[i-TAILLE+1]
+                 + g[i+TAILLE-1] + 2*g[i+TAILLE] + g[i+TAILLE+1];
+      c[i] = Math.sqrt(gx*gx + gy*gy);
+    }
+  }
+  return c;
+}
+
+/* Densité de contours : dit si l'image offre de quoi s'accrocher.
+   Un mur beige uniforme donne une valeur très basse — et le score
+   d'alignement n'y voudra rien dire. */
+function densiteContours(c) {
+  let n = 0, somme = 0;
+  for (let i = 0; i < c.length; i++) { somme += c[i]; if (c[i] > 40) n++; }
+  return { part: n / c.length, moyenne: somme / c.length };
+}
+
+/* Corrélation croisée normalisée entre deux cartes de contours, la
+   seconde décalée de (dx, dy) et mise à l'échelle e. */
+function correlation(a, b, dx, dy, e) {
+  let sa = 0, sb = 0, sab = 0, saa = 0, sbb = 0, n = 0;
+  const centre = TAILLE / 2;
+  for (let y = 4; y < TAILLE - 4; y += 2) {
+    for (let x = 4; x < TAILLE - 4; x += 2) {
+      const bx = Math.round(centre + (x - centre) / e + dx);
+      const by = Math.round(centre + (y - centre) / e + dy);
+      if (bx < 0 || by < 0 || bx >= TAILLE || by >= TAILLE) continue;
+      const va = a[y * TAILLE + x], vb = b[by * TAILLE + bx];
+      sa += va; sb += vb; sab += va * vb; saa += va * va; sbb += vb * vb; n++;
+    }
+  }
+  if (n < 100) return 0;
+  const num = sab - sa * sb / n;
+  const den = Math.sqrt((saa - sa*sa/n) * (sbb - sb*sb/n));
+  return den > 0 ? num / den : 0;
+}
+
+/* Cherche le meilleur alignement dans une plage volontairement étroite :
+   on guide un geste, on ne recale pas un scanner. */
+function chercher(refC, fluxC) {
+  let meilleur = { score: -1, brut: -1, dx: 0, dy: 0, e: 1 };
+  const echelles = [0.85, 0.93, 1, 1.08, 1.18];
+  for (const e of echelles) {
+    for (let dy = -14; dy <= 14; dy += 2) {
+      for (let dx = -14; dx <= 14; dx += 2) {
+        const brut = correlation(refC, fluxC, dx, dy, e);
+        /* PÉNALITÉ DE COMPLEXITÉ. Sans elle, plusieurs transformations
+           très différentes obtiennent des scores voisins, et le bruit
+           décide : un décalage vertical se voyait annoncé comme « avance,
+           pivote à droite ». On préfère donc, à score égal, la
+           transformation la plus simple — celle qui bouge le moins. */
+        const cout = (Math.abs(dx) + Math.abs(dy)) * 0.004
+                   + Math.abs(Math.log(e)) * 0.15;
+        const s = brut - cout;
+        if (s > meilleur.score) meilleur = { score: s, brut, dx, dy, e };
+      }
+    }
+  }
+  /* Le score rendu est la corrélation réelle, pas la valeur pénalisée. */
+  meilleur.score = meilleur.brut;
+  return meilleur;
+}
+
+/* Traduit le décalage en consigne compréhensible. */
+/* Les seuils sont en pixels de l'image de travail (96 de côté) : deux
+   pixels y valent une vingtaine sur la photographie finale. */
+function conseil(m) {
+  const t = [];
+  if (m.e < 0.96) t.push("avance");
+  else if (m.e > 1.04) t.push("recule");
+  if (m.dx > 2) t.push("pivote à droite");
+  else if (m.dx < -2) t.push("pivote à gauche");
+  if (m.dy > 2) t.push("baisse");
+  else if (m.dy < -2) t.push("relève");
+  return t.length ? t.join(", ") : "alignement correct";
+}
+
+
+/* ================= FIN DU NOYAU ================= */
+
+const $ = (id) => document.getElementById(id);
+let fluxCamera = null, refContours = null, refL = 0, refH = 0;
+let boucle = null, auto = false, dernierScore = 0;
+let compteur = 0, dernierRelevé = Date.now(), sommeDurees = 0;
+let priseURL = null;
+
+function noter(t, c) {
+  const j = $("journal");
+  j.innerHTML = `<span class="${c||""}">${new Date().toLocaleTimeString("fr-BE")} — ${t}</span><br>` + j.innerHTML;
+}
+
+/* ---- Référence ---- */
+$("btn-pellicule").onclick = () => $("fichier").click();
+$("fichier").onchange = (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  const url = URL.createObjectURL(f);
+  const img = new Image();
+  img.onload = () => {
+    refL = img.naturalWidth; refH = img.naturalHeight;
+    $("calque").src = url; $("vue-ref").src = url;
+    $("scene").style.aspectRatio = refL + " / " + refH;
+
+    /* On réduit la référence au format de travail et on en extrait les
+       contours une fois pour toutes. */
+    const c = document.createElement("canvas");
+    c.width = TAILLE; c.height = TAILLE;
+    c.getContext("2d").drawImage(img, 0, 0, TAILLE, TAILLE);
+    const px = c.getContext("2d").getImageData(0, 0, TAILLE, TAILLE).data;
+    refContours = contours(reduire(px, TAILLE, TAILLE));
+
+    const d = densiteContours(refContours);
+    const utilisable = d.part > 0.02;
+    $("densite").textContent = (d.part * 100).toFixed(1) + " %";
+    $("analysable").textContent = utilisable ? "oui" : "NON — surface trop unie";
+    $("analysable").className = utilisable ? "ok" : "ko";
+    $("diag-ref").classList.remove("cache");
+    $("etat-ref").textContent = "Référence chargée — " + refL + "×" + refH;
+    $("etat-ref").className = "note ok";
+    noter("Référence " + refL + "×" + refH + " — contours " +
+      (d.part*100).toFixed(1) + " %" + (utilisable ? "." : ", TROP UNIE."),
+      utilisable ? "ok" : "ko");
+  };
+  img.src = url;
+};
+
+/* ---- Caméra ---- */
+$("btn-camera").onclick = async () => {
+  if (!refContours) return noter("Charge d'abord une référence.", "ko");
+  $("btn-camera").disabled = true;
+  try {
+    fluxCamera = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode:{ideal:"environment"}, width:{ideal:1920}, height:{ideal:1440} },
+      audio: false });
+    $("flux").srcObject = fluxCamera;
+    await $("flux").play();
+    const r = fluxCamera.getVideoTracks()[0].getSettings();
+    $("etat-camera").textContent = "Caméra allumée — " + (r.width||"?") + "×" + (r.height||"?");
+    $("etat-camera").className = "note ok";
+    $("scene").classList.remove("cache");
+    $("reglages").classList.remove("cache");
+    $("btn-camera").classList.add("cache");
+    noter("Caméra allumée.", "ok");
+    lancerBoucle();
+  } catch (e) {
+    $("etat-camera").textContent = "Refus ou erreur : " + e.name;
+    $("etat-camera").className = "note ko";
+    noter("Caméra refusée : " + e.name, "ko");
+    $("btn-camera").disabled = false;
+  }
+};
+
+function eteindre() {
+  if (boucle) { clearInterval(boucle); boucle = null; }
+  if (fluxCamera) fluxCamera.getTracks().forEach(t => t.stop());
+  fluxCamera = null;
+  $("scene").classList.add("cache"); $("reglages").classList.add("cache");
+  $("btn-camera").classList.remove("cache"); $("btn-camera").disabled = false;
+  $("etat-camera").textContent = "Caméra éteinte."; $("etat-camera").className = "note";
+}
+$("btn-eteindre").onclick = eteindre;
+
+/* ---- Analyse en continu ---- */
+const travail = document.createElement("canvas");
+travail.width = TAILLE; travail.height = TAILLE;
+const ctxT = travail.getContext("2d", { willReadFrequently: true });
+
+function lancerBoucle() {
+  /* Dix analyses par seconde suffisent pour guider un geste, et laissent
+     l'iPhone respirer. Une analyse en continu à la cadence de l'écran
+     chaufferait l'appareil pour rien. */
+  boucle = setInterval(analyser, 100);
+}
+
+function analyser() {
+  const v = $("flux");
+  if (!v.videoWidth || !refContours) return;
+  const t0 = performance.now();
+
+  /* On échantillonne la même fenêtre que celle affichée : centre du flux,
+     au format de la référence. */
+  const rapport = refL / refH;
+  let cl = v.videoWidth, ch = Math.round(v.videoWidth / rapport);
+  if (ch > v.videoHeight) { ch = v.videoHeight; cl = Math.round(v.videoHeight * rapport); }
+  const dx = Math.round((v.videoWidth - cl) / 2), dy = Math.round((v.videoHeight - ch) / 2);
+  ctxT.drawImage(v, dx, dy, cl, ch, 0, 0, TAILLE, TAILLE);
+  const px = ctxT.getImageData(0, 0, TAILLE, TAILLE).data;
+  const fluxC = contours(reduire(px, TAILLE, TAILLE));
+
+  const m = chercher(refContours, fluxC);
+  const pourcent = Math.max(0, Math.round(m.score * 100));
+  dernierScore = pourcent;
+
+  const seuil = Number($("seuil").value);
+  const bon = pourcent >= seuil;
+  $("verdict").textContent = pourcent + " % — " + (bon ? "aligné" : conseil(m));
+  $("jauge").style.width = pourcent + "%";
+  $("jauge").style.background = bon ? "#2f7d63" : pourcent > seuil * 0.7 ? "#c8891f" : "#c9403a";
+  $("cible").style.borderColor = bon ? "#2f7d63" : "transparent";
+
+  sommeDurees += performance.now() - t0;
+  compteur++;
+  if (Date.now() - dernierRelevé > 1000) {
+    $("cadence").textContent = compteur + " / s";
+    $("duree").textContent = (sommeDurees / compteur).toFixed(1) + " ms";
+    compteur = 0; sommeDurees = 0; dernierRelevé = Date.now();
+  }
+
+  if (auto && bon) { auto = false; majAuto(); noter("Déclenchement automatique à " + pourcent + " %.", "ok"); prendre(); }
+}
+
+/* ---- Réglages ---- */
+$("opacite").oninput = (e) => {
+  $("calque").style.opacity = e.target.value / 100;
+  $("val-opacite").textContent = e.target.value + " %";
+};
+$("calque").style.opacity = 0.35;
+$("seuil").oninput = (e) => { $("val-seuil").textContent = e.target.value + " %"; };
+
+function majAuto() {
+  $("btn-auto").textContent = "Déclenchement automatique : " + (auto ? "OUI" : "NON");
+  $("btn-auto").className = auto ? "principal" : "";
+}
+$("btn-auto").onclick = () => { auto = !auto; majAuto(); };
+
+/* ---- Prise de vue ---- */
+$("btn-prendre").onclick = prendre;
+
+function prendre() {
+  const v = $("flux");
+  if (!v.videoWidth) return noter("Flux pas encore prêt.", "ko");
+  const rapport = (refL && refH) ? refL / refH : v.videoWidth / v.videoHeight;
+  let cl = v.videoWidth, ch = Math.round(v.videoWidth / rapport);
+  if (ch > v.videoHeight) { ch = v.videoHeight; cl = Math.round(v.videoHeight * rapport); }
+  const dx = Math.round((v.videoWidth - cl) / 2), dy = Math.round((v.videoHeight - ch) / 2);
+
+  const f = Math.min(1, 1600 / Math.max(cl, ch));
+  const fin = document.createElement("canvas");
+  fin.width = Math.round(cl * f); fin.height = Math.round(ch * f);
+  fin.getContext("2d").drawImage(v, dx, dy, cl, ch, 0, 0, fin.width, fin.height);
+
+  fin.toBlob((blob) => {
+    if (!blob) return noter("Capture impossible.", "ko");
+    if (priseURL) URL.revokeObjectURL(priseURL);
+    priseURL = URL.createObjectURL(blob);
+    $("vue-prise").src = priseURL;
+    $("score-final").textContent = dernierScore + " %";
+    $("res").textContent = fin.width + " × " + fin.height;
+    $("poids").textContent = Math.round(blob.size / 1024) + " Ko";
+    $("bloc-resultat").classList.remove("cache");
+    noter("Photo prise à " + dernierScore + " % — " + fin.width + "×" + fin.height +
+      ", " + Math.round(blob.size/1024) + " Ko.", "ok");
+  }, "image/jpeg", 0.82);
+}
+
+$("btn-recommencer").onclick = () => {
+  $("bloc-resultat").classList.add("cache");
+  window.scrollTo(0, 0);
+};
+
+document.addEventListener("visibilitychange", () => {
+  if (!fluxCamera || document.hidden) return;
+  const p = fluxCamera.getVideoTracks()[0];
+  if (!p || p.readyState !== "live") {
+    noter("Le flux a été coupé par iOS — rallume la caméra.", "ko");
+    eteindre();
+  }
+});
+
+majAuto();
+noter("Prêt. Charge une référence, puis allume la caméra.");
+</script>
+</body>
+</html>
