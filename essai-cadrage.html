@@ -46,8 +46,14 @@
 
   /* La scène : le flux de la caméra, et l'image de référence par-dessus.
      Le rapport 3/4 correspond à l'orientation portrait de l'iPhone. */
+  /* Le format de la scène suit celui de la RÉFÉRENCE : comparer une image
+     verticale dans un cadre horizontal rend l'alignement impossible.
+     La valeur est posée en JavaScript une fois la référence chargée. */
   #scene { position:relative; width:100%; aspect-ratio:3/4; background:#000;
-    border-radius:12px; overflow:hidden; margin-bottom:10px; }
+    border-radius:12px; overflow:hidden; margin-bottom:10px;
+    /* En portrait, la scène dépasserait l'écran : on la borne, et la
+       largeur suit d'elle-même grâce au rapport imposé. */
+    max-height:62vh; margin-left:auto; margin-right:auto; }
   #flux, #calque { position:absolute; inset:0; width:100%; height:100%;
     object-fit:cover; }
   #calque { pointer-events:none; }
@@ -139,6 +145,7 @@
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null;      // MediaStream
 let imageRef = null;        // objet URL de la référence
+let refL = 0, refH = 0;     // ses dimensions réelles
 let priseURL = null;        // objet URL de la photo prise
 
 function noter(texte, classe) {
@@ -179,9 +186,26 @@ function poserReference(url, libelle) {
   imageRef = url;
   $("calque").src = url;
   $("vue-ref").src = url;
-  $("etat-ref").textContent = "Référence chargée — " + libelle;
-  $("etat-ref").className = "note ok";
-  noter("Référence chargée.", "ok");
+
+  /* On relève les dimensions réelles : elles imposeront le format de la
+     scène, et donc celui de la photographie prise. */
+  const sonde = new Image();
+  sonde.onload = () => {
+    refL = sonde.naturalWidth;
+    refH = sonde.naturalHeight;
+    const portrait = refH > refL;
+    $("scene").style.aspectRatio = refL + " / " + refH;
+    $("etat-ref").textContent = "Référence chargée — " + libelle +
+      " · " + refL + "×" + refH + " · " + (portrait ? "portrait" : "paysage");
+    $("etat-ref").className = "note ok";
+    noter("Référence " + refL + "×" + refH + " (" +
+      (portrait ? "portrait" : "paysage") + ").", "ok");
+  };
+  sonde.onerror = () => {
+    $("etat-ref").textContent = "Référence chargée — " + libelle;
+    $("etat-ref").className = "note ok";
+  };
+  sonde.src = url;
 }
 
 /* ---- 2. Caméra ------------------------------------------------------- */
@@ -261,20 +285,33 @@ $("btn-prendre").onclick = () => {
   const v = $("flux");
   if (!v.videoWidth) return noter("Flux pas encore prêt.", "ko");
 
-  /* On capture la pleine résolution du flux, puis on applique la même
-     compression que l'application : 1600 px au plus grand côté, qualité
-     0,82. C'est ce qui permet de juger la qualité finale, pas celle du
-     capteur. */
-  const brut = document.createElement("canvas");
-  brut.width = v.videoWidth;
-  brut.height = v.videoHeight;
-  brut.getContext("2d").drawImage(v, 0, 0);
+  /* SAFARI LIVRE LE FLUX DANS L'ORIENTATION DU CAPTEUR, jamais dans celle
+     du téléphone : même en tenant l'iPhone droit, la vidéo sort en
+     paysage. La première capture donnait donc du 1600×1270 horizontal
+     face à une référence verticale — l'alignement était impossible avant
+     même d'essayer.
 
-  const facteur = Math.min(1, 1600 / Math.max(brut.width, brut.height));
+     On recadre donc au format de la référence, exactement comme l'écran
+     l'affiche : object-fit cover, c'est-à-dire on garde le centre et on
+     rogne ce qui dépasse. Ce que Julien voit à l'écran est alors ce qu'il
+     obtient. */
+  const fluxL = v.videoWidth, fluxH = v.videoHeight;
+  const rapport = (refL && refH) ? (refL / refH) : (fluxL / fluxH);
+
+  /* Fenêtre de rognage au centre du flux, au rapport voulu. */
+  let cadreL = fluxL, cadreH = Math.round(fluxL / rapport);
+  if (cadreH > fluxH) { cadreH = fluxH; cadreL = Math.round(fluxH * rapport); }
+  const decalX = Math.round((fluxL - cadreL) / 2);
+  const decalY = Math.round((fluxH - cadreH) / 2);
+
+  /* Puis la compression de l'application : 1600 px au plus grand côté,
+     qualité 0,82. */
+  const facteur = Math.min(1, 1600 / Math.max(cadreL, cadreH));
   const fin = document.createElement("canvas");
-  fin.width = Math.round(brut.width * facteur);
-  fin.height = Math.round(brut.height * facteur);
-  fin.getContext("2d").drawImage(brut, 0, 0, fin.width, fin.height);
+  fin.width = Math.round(cadreL * facteur);
+  fin.height = Math.round(cadreH * facteur);
+  fin.getContext("2d").drawImage(v, decalX, decalY, cadreL, cadreH,
+                                    0, 0, fin.width, fin.height);
 
   fin.toBlob((blob) => {
     if (!blob) return noter("Capture impossible.", "ko");
@@ -282,7 +319,7 @@ $("btn-prendre").onclick = () => {
     priseURL = URL.createObjectURL(blob);
     $("vue-prise").src = priseURL;
     $("res").textContent = fin.width + " × " + fin.height +
-      " (capteur " + brut.width + " × " + brut.height + ")";
+      " (flux " + fluxL + " × " + fluxH + ")";
     $("poids").textContent = Math.round(blob.size / 1024) + " Ko";
     $("bloc-resultat").classList.remove("cache");
     noter("Photo prise — " + fin.width + "×" + fin.height +
