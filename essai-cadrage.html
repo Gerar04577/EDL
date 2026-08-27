@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Essai — cadrage guidé</title>
+
+<!--
+  BANC D'ESSAI ISOLÉ. Ne fait partie de l'application EDL en aucune façon :
+  aucun script de l'application n'est chargé, rien n'est écrit dans la base
+  locale, aucune connexion Microsoft, aucun envoi.
+
+  Une seule question à trancher : superposer la photographie d'entrée au
+  flux de la caméra aide-t-il à retrouver le même cadrage à la sortie ?
+
+  Le reste — résolution, poids, survie du flux en arrière-plan — est
+  affiché parce que c'est peu coûteux et que ces obstacles se découvrent
+  mieux maintenant que plus tard.
+
+  À ouvrir dans SAFARI, à l'adresse du dépôt suivie de ce nom de fichier.
+  Pas depuis l'icône de l'application, qui est enfermée sur index.html.
+-->
+
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; padding: calc(14px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));
+    font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    color:#1a1a1a; background:#f7f6f3; }
+  h1 { font-size:19px; margin:0 0 2px; }
+  .sous { color:#6b6b6b; font-size:14px; margin:0 0 16px; }
+  .bloc { background:#fff; border:1px solid #e3e0da; border-radius:12px;
+    padding:14px; margin-bottom:12px; }
+  .bloc h2 { font-size:12px; text-transform:uppercase; letter-spacing:.07em;
+    color:#8a8a8a; margin:0 0 10px; font-weight:600; }
+  button { width:100%; padding:13px; font-size:16px; font-weight:500;
+    border:1px solid #d0ccc4; border-radius:10px; background:#fff;
+    color:#1a1a1a; margin-bottom:8px; }
+  button.principal { background:#2f7d63; color:#fff; border-color:#2f7d63; }
+  button:disabled { opacity:.45; }
+  .note { font-size:13px; color:#6b6b6b; margin:6px 0; }
+  .ko { color:#b03a2e; }
+  .ok { color:#1f7a4d; }
+  input[type=range] { width:100%; }
+  input[type=text] { width:100%; padding:10px; font-size:15px;
+    border:1px solid #d0ccc4; border-radius:8px; }
+
+  /* La scène : le flux de la caméra, et l'image de référence par-dessus.
+     Le rapport 3/4 correspond à l'orientation portrait de l'iPhone. */
+  #scene { position:relative; width:100%; aspect-ratio:3/4; background:#000;
+    border-radius:12px; overflow:hidden; margin-bottom:10px; }
+  #flux, #calque { position:absolute; inset:0; width:100%; height:100%;
+    object-fit:cover; }
+  #calque { pointer-events:none; }
+  #mire { position:absolute; inset:0; pointer-events:none; }
+  #mire::before, #mire::after { content:""; position:absolute;
+    background:rgba(255,255,255,.35); }
+  #mire::before { left:33.33%; right:33.33%; top:0; bottom:0;
+    border-left:1px solid rgba(255,255,255,.35);
+    border-right:1px solid rgba(255,255,255,.35); background:none; }
+  #mire::after { top:33.33%; bottom:33.33%; left:0; right:0;
+    border-top:1px solid rgba(255,255,255,.35);
+    border-bottom:1px solid rgba(255,255,255,.35); background:none; }
+
+  .cote-a-cote { display:flex; gap:8px; }
+  .cote-a-cote figure { flex:1; margin:0; }
+  .cote-a-cote img { width:100%; border-radius:8px; display:block; }
+  .cote-a-cote figcaption { font-size:12px; color:#8a8a8a; margin-top:4px;
+    text-align:center; }
+  .ligne { display:flex; justify-content:space-between; gap:12px;
+    padding:6px 0; border-bottom:1px solid #f0eeea; font-size:14px; }
+  .ligne:last-child { border-bottom:0; }
+  .ligne span:last-child { color:#4a4a4a; font-variant-numeric:tabular-nums; }
+  .cache { display:none; }
+</style>
+</head>
+<body>
+
+<h1>Essai — cadrage guidé</h1>
+<p class="sous">La superposition aide-t-elle à retrouver un cadrage ?</p>
+
+<!-- 1. L'image de référence ------------------------------------------- -->
+<div class="bloc">
+  <h2>1. Photographie de référence</h2>
+  <button id="btn-pellicule">Choisir dans la pellicule</button>
+  <input type="file" accept="image/*" id="fichier" class="cache">
+  <p class="note">Enregistre d'abord une photo d'entrée depuis OneDrive
+  sur l'iPhone : appui long sur la photo, « Enregistrer dans les photos ».</p>
+
+  <p class="note">Ou colle un lien de partage OneDrive :</p>
+  <input type="text" id="lien" placeholder="https://1drv.ms/…" inputmode="url">
+  <button id="btn-lien" style="margin-top:8px">Charger depuis le lien</button>
+  <p class="note" id="etat-ref">Aucune référence chargée.</p>
+</div>
+
+<!-- 2. La caméra ------------------------------------------------------- -->
+<div class="bloc">
+  <h2>2. Caméra</h2>
+  <button id="btn-camera" class="principal">Allumer la caméra</button>
+  <p class="note" id="etat-camera">Caméra éteinte.</p>
+
+  <div id="scene" class="cache">
+    <video id="flux" playsinline muted autoplay></video>
+    <img id="calque" alt="">
+    <div id="mire"></div>
+  </div>
+
+  <div id="reglages" class="cache">
+    <div class="ligne"><span>Opacité de la référence</span><span id="val-opacite">45 %</span></div>
+    <input type="range" id="opacite" min="0" max="100" value="45">
+    <button id="btn-prendre" class="principal" style="margin-top:10px">Prendre la photo</button>
+    <button id="btn-eteindre">Éteindre la caméra</button>
+  </div>
+</div>
+
+<!-- 3. Le résultat ----------------------------------------------------- -->
+<div class="bloc cache" id="bloc-resultat">
+  <h2>3. Comparaison</h2>
+  <div class="cote-a-cote">
+    <figure><img id="vue-ref" alt=""><figcaption>Référence</figcaption></figure>
+    <figure><img id="vue-prise" alt=""><figcaption>Prise</figcaption></figure>
+  </div>
+  <div style="margin-top:12px">
+    <div class="ligne"><span>Résolution obtenue</span><span id="res">—</span></div>
+    <div class="ligne"><span>Poids après compression</span><span id="poids">—</span></div>
+    <div class="ligne"><span>Compression</span><span id="reglage-compression">1600 px · qualité 0,82</span></div>
+  </div>
+  <button id="btn-recommencer" style="margin-top:10px">Recommencer</button>
+</div>
+
+<!-- 4. Le journal ------------------------------------------------------ -->
+<div class="bloc">
+  <h2>4. Journal</h2>
+  <p class="note" id="journal">En attente.</p>
+</div>
+
+<script>
+/* Aucune dépendance, aucun stockage, aucun envoi. Tout vit dans la page. */
+
+const $ = (id) => document.getElementById(id);
+let fluxCamera = null;      // MediaStream
+let imageRef = null;        // objet URL de la référence
+let priseURL = null;        // objet URL de la photo prise
+
+function noter(texte, classe) {
+  const j = $("journal");
+  const h = new Date().toLocaleTimeString("fr-BE");
+  j.innerHTML = `<span class="${classe || ""}">${h} — ${texte}</span><br>` + j.innerHTML;
+}
+
+/* ---- 1. Référence ---------------------------------------------------- */
+
+$("btn-pellicule").onclick = () => $("fichier").click();
+
+$("fichier").onchange = (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  poserReference(URL.createObjectURL(f), f.name + " · " + Math.round(f.size / 1024) + " Ko");
+};
+
+/* Un lien de partage OneDrive ouvre une page, pas l'image. Le suffixe
+   ?download=1 renvoie le fichier lui-même. Rien ne garantit que Microsoft
+   l'autorise depuis une autre origine — d'où la pellicule en solution
+   principale, et ce lien en commodité. */
+$("btn-lien").onclick = () => {
+  const brut = $("lien").value.trim();
+  if (!brut) return;
+  const url = brut + (brut.includes("?") ? "&" : "?") + "download=1";
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => {
+    poserReference(url, "lien OneDrive · " + img.naturalWidth + "×" + img.naturalHeight);
+    noter("Lien chargé.", "ok");
+  };
+  img.onerror = () => noter("Lien refusé par OneDrive. Passe par la pellicule.", "ko");
+  img.src = url;
+};
+
+function poserReference(url, libelle) {
+  imageRef = url;
+  $("calque").src = url;
+  $("vue-ref").src = url;
+  $("etat-ref").textContent = "Référence chargée — " + libelle;
+  $("etat-ref").className = "note ok";
+  noter("Référence chargée.", "ok");
+}
+
+/* ---- 2. Caméra ------------------------------------------------------- */
+
+$("btn-camera").onclick = async () => {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    $("etat-camera").textContent = "Ce navigateur ne donne pas accès à la caméra.";
+    $("etat-camera").className = "note ko";
+    return noter("getUserMedia indisponible.", "ko");
+  }
+  $("btn-camera").disabled = true;
+  try {
+    /* facingMode environment = caméra arrière. La résolution demandée est
+       un souhait, pas une garantie : on relèvera ce qu'on obtient. */
+    fluxCamera = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" },
+               width: { ideal: 2400 }, height: { ideal: 3200 } },
+      audio: false,
+    });
+    $("flux").srcObject = fluxCamera;
+    await $("flux").play();
+
+    const piste = fluxCamera.getVideoTracks()[0];
+    const r = piste.getSettings ? piste.getSettings() : {};
+    $("etat-camera").textContent = "Caméra allumée — flux " +
+      (r.width || "?") + "×" + (r.height || "?");
+    $("etat-camera").className = "note ok";
+    noter("Caméra allumée en " + (r.width || "?") + "×" + (r.height || "?") + ".", "ok");
+
+    $("scene").classList.remove("cache");
+    $("reglages").classList.remove("cache");
+    $("btn-camera").classList.add("cache");
+  } catch (e) {
+    $("etat-camera").textContent = "Refus ou erreur : " + e.name;
+    $("etat-camera").className = "note ko";
+    noter("Caméra refusée : " + e.name + " — " + (e.message || ""), "ko");
+    $("btn-camera").disabled = false;
+  }
+};
+
+$("btn-eteindre").onclick = eteindre;
+
+function eteindre() {
+  if (fluxCamera) fluxCamera.getTracks().forEach(t => t.stop());
+  fluxCamera = null;
+  $("scene").classList.add("cache");
+  $("reglages").classList.add("cache");
+  $("btn-camera").classList.remove("cache");
+  $("btn-camera").disabled = false;
+  $("etat-camera").textContent = "Caméra éteinte.";
+  $("etat-camera").className = "note";
+}
+
+$("opacite").oninput = (e) => {
+  const v = e.target.value;
+  $("calque").style.opacity = v / 100;
+  $("val-opacite").textContent = v + " %";
+};
+$("calque").style.opacity = 0.45;
+
+/* Survie du flux quand l'application passe en arrière-plan — le point
+   qu'iOS traite le plus mal. */
+document.addEventListener("visibilitychange", () => {
+  if (!fluxCamera) return;
+  if (document.hidden) { noter("Passage en arrière-plan."); return; }
+  const piste = fluxCamera.getVideoTracks()[0];
+  const vivant = piste && piste.readyState === "live";
+  noter("Retour au premier plan — flux " +
+    (vivant ? "toujours actif." : "INTERROMPU, il faut rallumer."),
+    vivant ? "ok" : "ko");
+  if (!vivant) eteindre();
+});
+
+/* ---- Prise de vue ---------------------------------------------------- */
+
+$("btn-prendre").onclick = () => {
+  const v = $("flux");
+  if (!v.videoWidth) return noter("Flux pas encore prêt.", "ko");
+
+  /* On capture la pleine résolution du flux, puis on applique la même
+     compression que l'application : 1600 px au plus grand côté, qualité
+     0,82. C'est ce qui permet de juger la qualité finale, pas celle du
+     capteur. */
+  const brut = document.createElement("canvas");
+  brut.width = v.videoWidth;
+  brut.height = v.videoHeight;
+  brut.getContext("2d").drawImage(v, 0, 0);
+
+  const facteur = Math.min(1, 1600 / Math.max(brut.width, brut.height));
+  const fin = document.createElement("canvas");
+  fin.width = Math.round(brut.width * facteur);
+  fin.height = Math.round(brut.height * facteur);
+  fin.getContext("2d").drawImage(brut, 0, 0, fin.width, fin.height);
+
+  fin.toBlob((blob) => {
+    if (!blob) return noter("Capture impossible.", "ko");
+    if (priseURL) URL.revokeObjectURL(priseURL);
+    priseURL = URL.createObjectURL(blob);
+    $("vue-prise").src = priseURL;
+    $("res").textContent = fin.width + " × " + fin.height +
+      " (capteur " + brut.width + " × " + brut.height + ")";
+    $("poids").textContent = Math.round(blob.size / 1024) + " Ko";
+    $("bloc-resultat").classList.remove("cache");
+    noter("Photo prise — " + fin.width + "×" + fin.height +
+      ", " + Math.round(blob.size / 1024) + " Ko.", "ok");
+    $("bloc-resultat").scrollIntoView({ behavior: "smooth", block: "start" });
+  }, "image/jpeg", 0.82);
+};
+
+$("btn-recommencer").onclick = () => {
+  $("bloc-resultat").classList.add("cache");
+  window.scrollTo(0, 0);
+};
+
+noter("Prêt. Charge une référence, puis allume la caméra.");
+</script>
+</body>
+</html>
