@@ -2758,6 +2758,34 @@ function numeroDansNom(nom) {
   return m ? m[1] : "?";
 }
 
+/* Libellé et couleur d'un bouton « cocher », sans toucher au reste. */
+function majBoutonCocher(bouton, coche) {
+  if (!bouton) return;
+  bouton.textContent = coche ? "cochée" : "cocher";
+  bouton.className = "seg" + (coche ? " actif" : "");
+}
+
+/* Remplace le SEUL bloc de groupe, et rebranche ce qu'il contient.
+   La hauteur de la page change — le bloc apparaît ou disparaît — mais le
+   contenu au-dessus n'est pas remplacé, donc rien n'est repositionné. */
+function rafraichirZoneGroupe(piece, photos) {
+  const zone = $("zone-groupe");
+  if (!zone) return dessinerPiece();
+  zone.innerHTML = blocGroupe(piece, photos);
+  brancherZoneGroupe(piece, photos);
+}
+
+/* Message passager, affiché sans reconstruire l'écran. */
+function messageBref(texte) {
+  const zone = $("zone-groupe");
+  if (!zone || !zone.parentNode) return;
+  const avis = document.createElement("div");
+  avis.className = "avert";
+  avis.textContent = texte;
+  zone.parentNode.insertBefore(avis, zone);
+  setTimeout(() => { if (avis.parentNode) avis.parentNode.removeChild(avis); }, 4000);
+}
+
 function viderGroupe() {
   E.groupe = []; E.groupeTexte = null; E.groupeAvant = "";
   E.groupeInstruction = ""; E.groupeHistorique = []; E.groupeOrigine = null;
@@ -2777,6 +2805,17 @@ function brancherGroupe(piece, photos) {
     ecranCorrigerPhoto(b.getAttribute("data-corriger"));
   });
 
+  /* COCHER NE RECONSTRUIT PLUS L'ÉCRAN.
+
+     Redessiner toute la pièce remplaçait le contenu de la page. Safari
+     ramenait alors le défilement en haut, et l'on se retrouvait devant la
+     première photographie au lieu de celle qu'on venait de cocher. Trois
+     tentatives de rétablissement de la position ont échoué : la page
+     défile sur le body, dont la hauteur s'effondre le temps de l'échange.
+
+     On ne touche donc plus qu'à ce qui change : le libellé du bouton et le
+     bloc de groupe. Aucun remplacement global, donc aucune position à
+     rétablir. Le problème disparaît par construction. */
   $("vue").querySelectorAll("[data-grouper]").forEach(b => b.onclick = () => {
     memoriserGroupe();
     const id = b.getAttribute("data-grouper");
@@ -2784,18 +2823,26 @@ function brancherGroupe(piece, photos) {
     const i = E.groupe.indexOf(id);
     if (i >= 0) E.groupe.splice(i, 1);
     else if (E.groupe.length >= GROUPE_MAX_PHOTOS) {
-      /* Au-delà de dix, la requête approche la limite de 20 Mo de Gemini
-         et le constat d'ensemble se dilue. */
-      return dessinerPiece("Dix photographies au maximum par groupe. " +
+      /* Au-delà de dix, la requête approche la limite de 20 Mo de Gemini.
+         Message affiché sans redessin, pour ne pas faire sauter l'écran. */
+      return messageBref("Dix photographies au maximum par groupe. " +
         "Décoches-en une, ou fais un second groupe.");
     }
     else E.groupe.push(id);
     /* Décocher pendant qu'un constat est ouvert changerait le groupe auquel
        il se rattache : on repart alors de zéro. */
     if (E.groupeTexte) { E.groupeTexte = null; E.groupeHistorique = []; }
-    dessinerPiece();
+
+    majBoutonCocher(b, E.groupe.includes(id));
+    rafraichirZoneGroupe(piece, photos);
   });
 
+  brancherZoneGroupe(piece, photos);
+}
+
+/* Branche ce qui vit DANS le bloc de groupe. Rappelée à chaque
+   rafraîchissement de la zone, sans toucher au reste de l'écran. */
+function brancherZoneGroupe(piece, photos) {
   const cochees = () => (E.groupe || [])
     .map(id => photos.find(p => p.photo_id === id)).filter(Boolean);
 
@@ -2807,7 +2854,10 @@ function brancherGroupe(piece, photos) {
   if (gi) gi.oninput = () => { E.groupeInstruction = gi.value; };
 
   if ($("btn-groupe-vider")) $("btn-groupe-vider").onclick = () => {
-    viderGroupe(); dessinerPiece();
+    viderGroupe();
+    /* Remettre tous les boutons à « cocher » sans reconstruire l'écran. */
+    $("vue").querySelectorAll("[data-grouper]").forEach(b => majBoutonCocher(b, false));
+    rafraichirZoneGroupe(piece, photos);
   };
   /* Sortie de secours quand les corrections successives se sont enlisées :
      on revient au texte que l'IA avait produit et on efface l'historique,
@@ -2970,7 +3020,7 @@ function dessinerPiece(message) {
          Les photographies restent sur le téléphone : rien n'est perdu. Elles
          repartiront dès que la cause sera levée.</div>` : ""}
 
-    ${blocGroupe(piece, photos)}
+    <div id="zone-groupe">${blocGroupe(piece, photos)}</div>
 
     <div class="bloc"><h2>${photos.length} photo${photos.length > 1 ? "s" : ""}${
         photos.length ? " — " + deposees + " enregistrée" + (deposees > 1 ? "s" : "") : ""}</h2>
