@@ -23,7 +23,7 @@ var IA_DELAI_MS = 90000;
 /* Version des consignes, transmise à chaque appel. Permet de savoir, six
    mois plus tard, quelle rédaction a produit un texte donné. À incrémenter
    dès qu'une consigne change. */
-var IA_PROMPT_VERSION = "2026-08-26-v9";
+var IA_PROMPT_VERSION = "2026-08-26-v10";
 var CLE_WEBHOOK_IA = "edl_webhook_ia";
 
 /* L'adresse est conservée SUR L'APPAREIL. Le fichier de configuration
@@ -413,7 +413,13 @@ function morceauxConsigne(piece, type, niveau) {
         "cloque sous une fuite apparente. L'état d'un appareil quand il est manifeste : " +
         "vitrocéramique fêlée, poignée arrachée, détecteur pendant. Formule toujours ce " +
         "que tu observes, jamais ce que tu supposes : bord de fissure encrassé, et non " +
-        "fissure ancienne."
+        "fissure ancienne." +
+        " OBSERVER N'EST PAS CONCLURE. Un luminaire allumé sur la photographie se " +
+        "décrit : allumé au moment de la prise de vue. N'écris pas qu'il est " +
+        "fonctionnel — tu n'as actionné aucun interrupteur, et une affirmation de " +
+        "fonctionnement démentie plus tard fragilise tout le document. De même : " +
+        "voyant éteint, et non appareil hors service ; robinet fermé, et non robinet " +
+        "étanche."
       : "TU NE JUGES PAS DE L'ÂGE. À l'entrée, n'indique jamais depuis quand un défaut " +
         "existe, ni d'où vient une humidité, ni si un appareil fonctionne. Tu fixes " +
         "l'état initial, tu ne l'interprètes pas.",
@@ -463,10 +469,20 @@ function morceauxConsigne(piece, type, niveau) {
        verbal les imprime tels quels, sans mise en forme particulière. */
     "STRUCTURE OBLIGATOIRE DU CONSTAT. Organise ton texte en rubriques, dans CET " +
       "ordre exact, du haut vers le bas : PLAFOND, RETOMBÉES ET JOUES, les MURS, " +
-      "PORTES, CHÂSSIS, ESCALIER, SOLS, ÉQUIPEMENTS FIXES, APPAREILS. Chaque rubrique " +
-      "commence par son intitulé en majuscules suivi d'un tiret, puis le constat. " +
-      "N'écris QUE les rubriques dont un élément est visible : une rubrique sans objet " +
-      "ne s'écrit pas.",
+      "PORTES, CHÂSSIS, ESCALIER, SOLS, ÉLECTRICITÉ, ÉQUIPEMENTS FIXES, APPAREILS. " +
+      "Chaque rubrique commence par son intitulé en majuscules suivi d'un tiret, puis " +
+      "le constat. N'écris QUE les rubriques dont un élément est visible : une " +
+      "rubrique sans objet ne s'écrit pas.",
+
+    /* Regrouper l'appareillage électrique évite qu'il se disperse entre
+       les rubriques de mur et les équipements fixes — où il apparaissait
+       deux fois. Rassemblé, il se compare aussi bien plus facilement à la
+       sortie. */
+    "ÉLECTRICITÉ — RUBRIQUE À PART. Prises de courant, interrupteurs, variateurs, " +
+      "boîtiers, plaques de finition, points lumineux et plafonniers vont TOUS dans " +
+      "cette rubrique, jamais dans les rubriques de mur ni dans les équipements " +
+      "fixes. Situe chacun : au droit du chambranle, sous les châssis, en partie " +
+      "basse. Décris la plaque, sa matière, sa teinte, son état.",
 
     /* Trois rubriques distinctes, jamais une seule MENUISERIES. Une porte,
        un châssis et un escalier ne se dégradent pas de la même façon et ne
@@ -501,8 +517,7 @@ function morceauxConsigne(piece, type, niveau) {
       "plus clair. " +
       "MUR DU POÊLE — Plafonnage peint beige taupe mat. Niche d'encastrement de même " +
       "teinte, arêtes vives, sans épaufrure. Plinthe blanche en pied de niche. " +
-      "MUR DE LA PORTE — Plafonnage peint beige taupe mat, homogène. Interrupteur " +
-      "double blanc à droite du chambranle. " +
+      "MUR DE LA PORTE — Plafonnage peint beige taupe mat, homogène, sans éclat. " +
       "MUR DE LA BIBLIOTHÈQUE — Plafonnage peint beige taupe mat. Bibliothèque " +
       "encastrée toute hauteur, onze tablettes fixes teintées gris anthracite, sans " +
       "dégradation. " +
@@ -512,6 +527,9 @@ function morceauxConsigne(piece, type, niveau) {
       "SOLS — Carrelage de terre cuite ton ocre à joints ciment, posé en diagonale, " +
       "carreaux sans éclat ni fissure. Sur l'emprise du foyer, pierre naturelle polie " +
       "à veinage gris et rosé, joints fins, sans écornure. " +
+      "ÉLECTRICITÉ — Interrupteur double à plaque synthétique blanche à droite du " +
+      "chambranle. Prise double de même appareillage en pied du mur de la " +
+      "bibliothèque. Plaques sans fêlure ni jaunissement. " +
       "ÉQUIPEMENTS FIXES — Socle de foyer habillé de pierre naturelle polie, en deux " +
       "niveaux, arêtes intactes. Plaque de sol métallique noire, plane. " +
       "APPAREILS — Poêle à pellets cylindrique, corps thermolaqué noir, habillages " +
@@ -681,8 +699,8 @@ function consigneGroupe(piece, type, nombre, instruction) {
        pas les rubriques — au contraire, elle les rend nécessaires. */
     "LA STRUCTURE PRIME SUR LA BRIÈVETÉ. UN SEUL constat, mais organisé en rubriques " +
       "comme indiqué plus haut : PLAFOND, RETOMBÉES, les MURS nommés, PORTES, " +
-      "CHÂSSIS, ESCALIER, SOLS, ÉQUIPEMENTS FIXES, APPAREILS. Un élément vu sur " +
-      "plusieurs photographies se décrit UNE FOIS, dans sa rubrique.",
+      "CHÂSSIS, ESCALIER, SOLS, ÉLECTRICITÉ, ÉQUIPEMENTS FIXES, APPAREILS. Un élément " +
+      "vu sur plusieurs photographies se décrit UNE FOIS, dans sa rubrique.",
 
     "AUTANT DE RUBRIQUES DE MUR QUE DE MURS VUS. Si trois photographies montrent " +
       "trois murs différents, écris trois rubriques, chacune nommée par ce que porte " +

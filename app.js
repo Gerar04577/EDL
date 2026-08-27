@@ -39,16 +39,45 @@ function vue(html, memeEcran) {
   const cle = String(E.ecran) + "|" + String(E.piece || "");
   const identique = memeEcran === true ||
     (memeEcran !== false && _ecranAffiche === cle);
+  const boite = $("vue");
   const y = identique ? (window.scrollY || document.documentElement.scrollTop || 0) : 0;
+
+  /* FIGER LA HAUTEUR PENDANT L'ÉCHANGE.
+
+     Remplacer le contenu vide la page un instant. Sa hauteur retombe
+     presque à zéro, et Safari ramène aussitôt le défilement à la seule
+     position possible : le haut. Replacer ensuite ne suffit pas — la
+     consigne est écrêtée à son tour tant que la page n'a pas repris sa
+     hauteur.
+
+     On impose donc l'ancienne hauteur au conteneur avant l'échange, et on
+     ne la libère qu'une fois le nouveau contenu en place. Safari n'a alors
+     jamais l'occasion de rabattre la position.
+
+     Symptôme corrigé : cocher la troisième photographie d'une pièce
+     faisait remonter l'écran, et le doigt cochait la première. */
+  const hauteur = identique && boite ? boite.offsetHeight : 0;
+  if (hauteur > 0) boite.style.minHeight = hauteur + "px";
+
   libererApercus();
-  $("vue").innerHTML = html;
+  boite.innerHTML = html;
   _ecranAffiche = cle;
+
   if (y > 0) {
-    /* Après le remplacement du contenu, la hauteur de page n'est pas
-       encore recalculée : on attend le rendu avant de replacer. */
-    requestAnimationFrame(() => window.scrollTo(0, y));
-  } else if (!identique) {
-    window.scrollTo(0, 0);
+    window.scrollTo(0, y);
+    /* Deux cycles d'affichage : le premier laisse Safari calculer la
+       nouvelle hauteur, le second replace pour de bon. Un seul cycle se
+       révélait trop tôt sur iPhone. */
+    requestAnimationFrame(() => {
+      window.scrollTo(0, y);
+      requestAnimationFrame(() => {
+        window.scrollTo(0, y);
+        if (hauteur > 0) boite.style.minHeight = "";
+      });
+    });
+  } else {
+    if (hauteur > 0) boite.style.minHeight = "";
+    if (!identique) window.scrollTo(0, 0);
   }
 }
 function titre(t, s) { $("titre").textContent = t; $("sous-titre").textContent = s || ""; }
