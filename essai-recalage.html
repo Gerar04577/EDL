@@ -53,6 +53,15 @@
   #cible { position:absolute; inset:0; border:3px solid transparent;
     border-radius:12px; pointer-events:none; transition:border-color .2s; }
 
+  /* Confirmation de prise de vue. En grand et par-dessus la scène : au
+     déclenchement automatique, l'écran n'est pas regardé de près, et il
+     faut savoir sans hésiter que la photographie est faite. */
+  #flash { position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; background:rgba(47,125,99,.88); color:#fff;
+    font-size:30px; font-weight:700; letter-spacing:.02em; text-align:center;
+    opacity:0; pointer-events:none; transition:opacity .18s; }
+  #flash.visible { opacity:1; }
+
   .ligne { display:flex; justify-content:space-between; gap:12px;
     padding:6px 0; border-bottom:1px solid #f0eeea; font-size:14px; }
   .ligne:last-child { border-bottom:0; }
@@ -67,7 +76,8 @@
 <body>
 
 <h1>Essai — cadrage automatique</h1>
-<p class="sous">L'application reconnaît-elle seule le bon cadrage ?</p>
+<p class="sous">L'application reconnaît-elle seule le bon cadrage ?
+  <strong id="version"></strong></p>
 
 <div class="bloc">
   <h2>1. Photographie de référence</h2>
@@ -91,6 +101,7 @@
     <div id="cible"></div>
     <div id="verdict">—</div>
     <div id="jauge"></div>
+    <div id="flash">PHOTO PRISE</div>
   </div>
 
   <div id="reglages" class="cache">
@@ -98,7 +109,8 @@
     <input type="range" id="opacite" min="0" max="100" value="35">
     <div class="ligne"><span>Seuil de déclenchement</span><span id="val-seuil">60 %</span></div>
     <input type="range" id="seuil" min="30" max="95" value="60">
-    <button id="btn-auto">Déclenchement automatique : NON</button>
+    <button id="btn-auto">Activer le déclenchement automatique</button>
+    <p class="note" id="etat-auto">Automatique arrêté.</p>
     <button id="btn-prendre" class="principal">Prendre la photo</button>
     <button id="btn-eteindre">Éteindre la caméra</button>
     <div class="ligne"><span>Analyses par seconde</span><span id="cadence">—</span></div>
@@ -232,6 +244,10 @@ function conseil(m) {
 
 /* ================= FIN DU NOYAU ================= */
 
+/* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
+   ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
+const VERSION = "essai 1.2";
+
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
 let boucle = null, auto = false, dernierScore = 0;
@@ -360,7 +376,14 @@ function analyser() {
     compteur = 0; sommeDurees = 0; dernierRelevé = Date.now();
   }
 
-  if (auto && bon) { auto = false; majAuto(); noter("Déclenchement automatique à " + pourcent + " %.", "ok"); prendre(); }
+  /* Un seul déclenchement par activation : sinon la photo se reprendrait
+     dix fois par seconde tant que l'alignement tient. L'état revient donc
+     à l'arrêt, et le bouton le dit. */
+  if (auto && bon) {
+    auto = false; majAuto();
+    noter("Déclenchement automatique à " + pourcent + " %.", "ok");
+    prendre();
+  }
 }
 
 /* ---- Réglages ---- */
@@ -371,11 +394,21 @@ $("opacite").oninput = (e) => {
 $("calque").style.opacity = 0.35;
 $("seuil").oninput = (e) => { $("val-seuil").textContent = e.target.value + " %"; };
 
+/* Le libellé disait l'ÉTAT — « automatique : NON » — ce qui se lit comme
+   une action et laisse croire que le bouton est mort quand on le presse.
+   Il dit désormais ce qu'un appui VA FAIRE, et l'état s'affiche en
+   dessous. Plus d'ambiguïté possible. */
 function majAuto() {
-  $("btn-auto").textContent = "Déclenchement automatique : " + (auto ? "OUI" : "NON");
+  $("btn-auto").textContent = auto
+    ? "Désactiver le déclenchement automatique"
+    : "Activer le déclenchement automatique";
   $("btn-auto").className = auto ? "principal" : "";
+  $("etat-auto").textContent = auto
+    ? "Automatique ACTIF — la photo partira seule au seuil atteint."
+    : "Automatique arrêté — appuie sur « Prendre la photo ».";
+  $("etat-auto").className = auto ? "note ok" : "note";
 }
-$("btn-auto").onclick = () => { auto = !auto; majAuto(); };
+$("btn-auto").onclick = () => { auto = !auto; majAuto(); noter(auto ? "Automatique activé." : "Automatique arrêté."); };
 
 /* ---- Prise de vue ---- */
 $("btn-prendre").onclick = prendre;
@@ -402,9 +435,24 @@ function prendre() {
     $("res").textContent = fin.width + " × " + fin.height;
     $("poids").textContent = Math.round(blob.size / 1024) + " Ko";
     $("bloc-resultat").classList.remove("cache");
+    confirmerPrise(dernierScore);
     noter("Photo prise à " + dernierScore + " % — " + fin.width + "×" + fin.height +
       ", " + Math.round(blob.size/1024) + " Ko.", "ok");
   }, "image/jpeg", 0.82);
+}
+
+/* Confirmation visible, plus une vibration quand l'appareil la permet :
+   au déclenchement automatique, le regard est sur la pièce, pas sur
+   l'écran. */
+let minuterieFlash = null;
+function confirmerPrise(score) {
+  const f = $("flash");
+  f.textContent = "PHOTO PRISE" + (score ? "\n" + score + " %" : "");
+  f.style.whiteSpace = "pre-line";
+  f.classList.add("visible");
+  if (navigator.vibrate) { try { navigator.vibrate(60); } catch (_) {} }
+  if (minuterieFlash) clearTimeout(minuterieFlash);
+  minuterieFlash = setTimeout(() => f.classList.remove("visible"), 1400);
 }
 
 $("btn-recommencer").onclick = () => {
@@ -421,8 +469,10 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+$("version").textContent = "· " + VERSION;
+document.title = "Essai cadrage — " + VERSION;
 majAuto();
-noter("Prêt. Charge une référence, puis allume la caméra.");
+noter(VERSION + " — prêt. Charge une référence, puis allume la caméra.");
 </script>
 </body>
 </html>
