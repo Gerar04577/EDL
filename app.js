@@ -3048,7 +3048,8 @@ function dessinerVisee(message) {
   vue(`
     ${message ? `<div class="succes">${echapper(message)}</div>` : ""}
     <div class="bloc"><h2>Photographie ${echapper(libelleVignette(V.ref))} de l'entrée</h2>
-      <div id="scene-visee">
+      <div id="scene-visee"${V.refL && V.refH
+        ? ` style="aspect-ratio:${V.refL} / ${V.refH}"` : ""}>
         <video id="visee-flux" playsinline muted autoplay></video>
         <img id="visee-calque" src="${echapper(V.lien)}" alt="">
         <div id="visee-cadre"></div>
@@ -3103,8 +3104,9 @@ function brancherVisee() {
   if ($("visee-plus")) $("visee-plus").onclick = () => {
     E.viseeReglagesOuverts = !E.viseeReglagesOuverts;
     dessinerVisee();
-    /* Le redessin efface le flux : on le rebranche sans rallumer la
-       caméra, qui tourne toujours. */
+    /* Le redessin recrée les éléments : on rend son flux à la vidéo sans
+       rallumer la caméra, qui tourne toujours. Le format de la scène,
+       lui, est reposé par dessinerVisee à partir de V.refL et V.refH. */
     if (V.camera) { $("visee-flux").srcObject = V.camera; $("visee-flux").play(); }
   };
 
@@ -3199,7 +3201,10 @@ async function allumerVisee() {
   try {
     const img = await chargerImage(V.lien);
     V.refL = img.naturalWidth; V.refH = img.naturalHeight;
-    $("scene-visee").style.aspectRatio = V.refL + " / " + V.refH;
+    /* Le format est désormais posé par dessinerVisee, à chaque redessin.
+       Ici on ne fait que le rattraper pour l'affichage en cours. */
+    const scene = $("scene-visee");
+    if (scene) scene.style.aspectRatio = V.refL + " / " + V.refH;
 
     const c = document.createElement("canvas");
     c.width = TAILLE; c.height = TAILLE;
