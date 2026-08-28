@@ -86,6 +86,14 @@
     opacity:0; pointer-events:none; transition:opacity .18s; }
   #visee-flash.visible { opacity:1; }
   .vignette { cursor:pointer; }
+  /* Contrôle après la prise : la référence et la photographie obtenue,
+     côte à côte, pour juger avant d'enregistrer. */
+  .cote-a-cote { display:flex; gap:8px; margin-bottom:12px; }
+  .cote-a-cote figure { flex:1; margin:0; }
+  .cote-a-cote img { width:100%; border-radius:8px; display:block;
+    background:#f0eeea; }
+  .cote-a-cote figcaption { font-size:12px; color:#8a8a8a; margin-top:4px;
+    text-align:center; }
   .vignette.reprise img { outline:3px solid #2f7d63; outline-offset:-3px; }
   .vignette.reprise figcaption { color:#1f7a4d; font-weight:600; }
   .barre { position:sticky; top:0; z-index:5; margin:-6px -18px 12px; padding:9px 18px;

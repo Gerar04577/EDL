@@ -1620,6 +1620,7 @@ function ecranIA(message) {
       puis appuie sur le bouton correspondant.</p>
       <button class="mini" id="btn-ech-groupe">Envoyer un échantillon groupé</button>
       <button class="mini" id="btn-ech-reformulation">Envoyer un échantillon de reformulation</button>
+      <button class="mini" id="btn-ech-comparaison">Envoyer un échantillon de comparaison</button>
       <p class="note">L'échantillon groupé porte cinq photographies. Si tu comptes
       en cocher davantage, refais-le avec le nombre maximum que tu utiliseras :
       Make n'affiche que les champs qu'il a vus passer.</p>
@@ -2537,7 +2538,7 @@ async function ecranPiece(pieceId) {
   /* Filet : quitter la visée sans passer par son bouton — retour arrière,
      navigation — laisserait la caméra allumée et la boucle d'analyse en
      marche. */
-  if (E.visee) arreterVisee();
+  if (E.visee) arreterVisee();   /* caméra et boucle d'analyse */
   E.ecran = "piece";
   E.piece = pieceId;
   E.brouillons = {}; E.etat = undefined; E.proprete = undefined;
@@ -2769,6 +2770,49 @@ function brancherCorrection() {
    Rien du TEXTE de l'entrée n'est montré ici. Voir une image ne conduit
    pas à recopier des mots ; le constat de sortie se rédige à l'aveugle,
    et les textes ne s'ouvrent qu'à l'écran de comparaison. */
+/* ---- Comparaison d'une paire entrée / sortie ----------------------------
+
+   L'IA constate l'écart entre les deux vues. Elle ne classe pas, ne chiffre
+   pas, n'impute pas : le texte revient dans le cadre de la photographie,
+   et c'est le bailleur qui en tire les conséquences. */
+async function comparerAvecEntree(photoId) {
+  const photo = (VISITE.photos || []).find(p => p.photo_id === photoId);
+  if (!photo) return dessinerPiece("Photographie introuvable.");
+  if (!photo.photo_entree_id)
+    return dessinerPiece("Cette photographie n'est rattachée à aucune vue d'entrée.");
+  if (!iaDisponible()) return dessinerPiece("Aucun relais IA enregistré.");
+
+  if (!(await confirmer("Comparer les deux photographies ?",
+      "L'IA reçoit la vue d'entrée et celle de sortie. Cet appel est facturé " +
+      "comme une description. Elle constate l'écart : le classement et le " +
+      "montant restent à toi.",
+      "Oui, comparer"))) return;
+
+  const b = $("vue").querySelector('[data-comparer="' + photoId + '"]');
+  if (b) { b.disabled = true; b.textContent = "Comparaison…"; }
+
+  /* La photographie d'entrée vit dans un autre dossier : on demande son
+     adresse à Microsoft, comme pour les vignettes. Make la téléchargera. */
+  let texte;
+  try {
+    const ref = (E.photosEntree && E.photosEntree.photos || [])
+      .find(p => p.onedrive_item_id === photo.photo_entree_id);
+    if (!ref) throw new Error("Vue d'entrée introuvable. Rouvre « Photos de l'entrée ».");
+    const urlEntree = await apercuPhotoEntree(ref, true);
+    texte = await comparerPhotographies(VISITE, photo, urlEntree);
+  } catch (err) {
+    return dessinerPiece("Comparaison impossible : " + err.message);
+  }
+
+  if (/COMPARAISON IMPOSSIBLE/i.test(texte)) {
+    E.brouillons[photoId] = texte;
+    return dessinerPiece("L'IA n'a pas pu comparer les deux vues — lis sa raison.");
+  }
+
+  E.brouillons[photoId] = texte;
+  dessinerPiece("Écart constaté — relis-le avant de l'ajouter au constat");
+}
+
 /* Nombre de vignettes par tranche. Un studio d'étudiant peut porter deux
    cents photographies : les charger toutes fige l'écran plusieurs
    dizaines de secondes, pour une liste que personne ne parcourt en
@@ -2799,7 +2843,11 @@ function blocPhotosEntree() {
   const lot = lotAffiche();
   const visibles = lot.slice(0, E.vignettesAffichees || TRANCHE_VIGNETTES);
   const reste = lot.length - visibles.length;
-  const reprises = (VISITE.photos || []).map(p => p.photo_entree_id).filter(Boolean);
+  /* On compte des VUES D'ENTRÉE reprises, pas des prises de vue : deux
+     essais sur la même référence ne font qu'une reprise. Le compteur
+     annonçait « 4 déjà reprises » alors qu'il n'y avait que deux vues. */
+  const reprises = [...new Set((VISITE.photos || [])
+    .map(p => p.photo_entree_id).filter(Boolean))];
   const avecConstat = photosAvecConstat(e.photos, e.edle);
 
   return `<div class="bloc"><h2>Photos de l'entrée</h2>
@@ -2814,7 +2862,10 @@ function blocPhotosEntree() {
       données : le tri par constat n'est pas possible.</p>`}
 
     <p class="note">${visibles.length} sur ${lot.length} affichée(s)${
-      reprises.length ? " · " + reprises.length + " déjà reprise(s)" : ""}</p>
+      (() => {
+        const n = lot.filter(p => reprises.includes(p.onedrive_item_id)).length;
+        return n ? " · " + n + " sur " + lot.length + " déjà reprise(s)" : "";
+      })()}</p>
 
     <div class="vignettes">
       ${visibles.map(p => {
@@ -3118,6 +3169,15 @@ function canevasTravail() {
   return _canevasVisee;
 }
 
+/* La photographie n'est PAS enregistrée à la prise.
+
+   Avant, elle partait aussitôt dans la file d'attente et l'écran revenait
+   à la pièce : on prenait sans jamais voir. Un déclenchement automatique
+   au mauvais moment déposait une mauvaise image dans OneDrive, qu'il
+   fallait ensuite aller retirer.
+
+   Elle est donc mise de côté, montrée à côté de sa référence, et
+   n'est enregistrée qu'après « Garder ». */
 async function prendreVisee() {
   const V = E.visee;
   const v = $("visee-flux");
@@ -3134,45 +3194,85 @@ async function prendreVisee() {
   if (!blob) return dessinerVisee("Capture impossible.");
 
   confirmerVisee(V.score);
+  V.prise = { blob, score: V.score,
+              largeur: fin.width, hauteur: fin.height,
+              url: noterApercu(URL.createObjectURL(blob)) };
 
-  try {
-    /* La photographie suit le chemin habituel : compression déjà faite,
-       empreinte, file d'attente, sous-dossier Photos. Deux champs de plus
-       la rattachent à sa référence. */
-    await ajouterPhoto(VISITE, E.piece, blob, {
-      photo_entree_id: V.ref.onedrive_item_id,
-      photo_entree_nom: V.ref.nom_fichier,
-      score_alignement: V.score,
-    }, true);   /* déjà compressée par le canevas */
-  } catch (err) {
-    return dessinerVisee("Enregistrement impossible : " + err.message);
-  }
+  /* La caméra s'éteint : on ne vise plus, on juge. Elle se rallumera si
+     Julien veut refaire. */
+  if (V.boucle) { clearInterval(V.boucle); V.boucle = null; }
+  if (V.camera) { V.camera.getTracks().forEach(t => t.stop()); V.camera = null; }
 
-  await journaliser("visee_photo_prise",
-    { entree: V.ref.nom_fichier, score: V.score });
-
-  /* On revient à la pièce : la photographie est prise, il n'y a plus rien
-     à viser. Julien touchera une autre vignette pour la suivante. */
-  arreterVisee();
-  await ecranPiece(E.piece);
-  dessinerPiece("Photographie reprise à " + V.score + " % d'alignement");
+  dessinerControleVisee();
 }
 
-/* iOS coupe la caméra dès que la page passe en arrière-plan. Sans ce
-   contrôle, Julien revient sur un écran figé qui ne mesure plus rien. */
-document.addEventListener("visibilitychange", () => {
+/* Les deux images côte à côte, comme au banc d'essai. C'est ce qui
+   manquait : on ne voyait jamais ce qu'on venait de prendre. */
+function dessinerControleVisee(message) {
   const V = E.visee;
-  if (!V || !V.camera || document.hidden) return;
-  const piste = V.camera.getVideoTracks()[0];
-  if (!piste || piste.readyState !== "live") {
-    arreterVisee();
-    if (E.ecran === "visee") {
-      E.visee = { ref: null };   // évité : dessinerVisee lirait un état vide
-      ecranPiece(E.piece).then(() =>
-        dessinerPiece("La caméra a été coupée par iOS. Touche à nouveau la photographie."));
-    }
+  const p = V.prise;
+  E.ecran = "visee-controle";
+  titre("Garder cette photographie ?", "");
+  vue(`
+    ${message ? `<div class="erreur">${echapper(message)}</div>` : ""}
+    <div class="bloc"><h2>Alignement ${p.score} %</h2>
+      <div class="cote-a-cote">
+        <figure><img src="${echapper(V.lien)}" alt="">
+          <figcaption>Entrée — ${echapper(libelleVignette(V.ref))}</figcaption></figure>
+        <figure><img src="${echapper(p.url)}" alt="">
+          <figcaption>Ce que tu viens de prendre</figcaption></figure>
+      </div>
+      <div class="ligne"><span>Définition</span>
+        <span>${p.largeur} × ${p.hauteur}</span></div>
+      <div class="ligne"><span>Poids</span>
+        <span>${Math.round(p.blob.size / 1024)} Ko</span></div>
+
+      <button id="visee-garder">Garder cette photographie</button>
+      <div class="duo">
+        <button class="mini secondaire" id="visee-refaire">Refaire</button>
+        <button class="mini secondaire" id="visee-abandon">Abandonner</button>
+      </div>
+      <p class="note">Tant que tu n'as pas gardé, rien n'est enregistré ni
+      envoyé dans OneDrive.</p>
+    </div>
+  `, true);
+
+  $("visee-garder").onclick = garderVisee;
+  $("visee-refaire").onclick = () => {
+    E.visee.prise = null;
+    E.ecran = "visee";
+    dessinerVisee("Reprends le cadrage.");
+    allumerVisee();
+  };
+  $("visee-abandon").onclick = () => { arreterVisee(); ecranPiece(E.piece); };
+}
+
+async function garderVisee() {
+  const V = E.visee;
+  const p = V.prise;
+  const b = $("visee-garder");
+  if (b) { b.disabled = true; b.textContent = "Enregistrement…"; }
+
+  try {
+    /* La photographie suit le chemin habituel — empreinte, file d'attente,
+       sous-dossier Photos. Trois champs de plus la rattachent à sa
+       référence et conservent la qualité du cadrage. */
+    await ajouterPhoto(VISITE, E.piece, p.blob, {
+      photo_entree_id: V.ref.onedrive_item_id,
+      photo_entree_nom: V.ref.nom_fichier,
+      score_alignement: p.score,
+    }, true);   /* déjà compressée par le canevas */
+  } catch (err) {
+    return dessinerControleVisee("Enregistrement impossible : " + err.message);
   }
-});
+
+  await journaliser("visee_photo_gardee",
+    { entree: V.ref.nom_fichier, score: p.score });
+
+  arreterVisee();
+  await ecranPiece(E.piece);
+  dessinerPiece("Photographie reprise à " + p.score + " % d'alignement");
+}
 
 var _minuterieVisee = null;
 function confirmerVisee(score) {
@@ -3258,6 +3358,11 @@ function brancherGroupe(piece, photos) {
     E.vignettesAffichees = (E.vignettesAffichees || TRANCHE_VIGNETTES) + TRANCHE_VIGNETTES;
     dessinerPiece(); chargerLiensVisibles();
   };
+
+  $("vue").querySelectorAll("[data-comparer]").forEach(b => b.onclick = () => {
+    memoriserGroupe();
+    comparerAvecEntree(b.getAttribute("data-comparer"));
+  });
 
   $("vue").querySelectorAll("[data-corriger]").forEach(b => b.onclick = () => {
     memoriserGroupe();
@@ -3525,6 +3630,10 @@ function dessinerPiece(message) {
               <button class="mini secondaire" data-corriger="${echapper(p.photo_id)}"${
                 brouillon.trim() ? "" : " disabled"}>Corriger</button>
             </div>
+            ${p.photo_entree_id ? `<button class="mini secondaire"
+              data-comparer="${echapper(p.photo_id)}"${
+              p.onedrive_item_id ? "" : " disabled"}>Comparer avec l'entrée${
+              p.score_alignement ? " — " + p.score_alignement + " %" : ""}</button>` : ""}
             ${dejaConstat
               ? `<p class="note ok">Une constatation est rattachée à cette photo.</p>` : ""}
           ` : `<p class="note gris">En attente d'envoi</p>`}
