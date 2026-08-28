@@ -742,6 +742,9 @@ async function lancerVisite() {
 var VISITE = null;
 
 async function ecranVisiteReprise(visite) {
+  /* Changement de visite : les photographies d'entrée du logement
+     précédent n'ont plus rien à faire ici. */
+  if (!VISITE || VISITE.visit_id !== visite.visit_id) oublierPhotosEntree();
   VISITE = visite;
   E.ecran = "visite";
   titre(visite.bien.unite_source, visite.type + " — " + visite.bien.dossier_locataire_onedrive);
@@ -2841,7 +2844,38 @@ async function comparerAvecEntree(photoId) {
    entier. */
 var TRANCHE_VIGNETTES = 50;
 
+/* LES PHOTOGRAPHIES D'ENTRÉE APPARTIENNENT À UNE VISITE.
+
+   Elles sont gardées d'une pièce à l'autre pour ne pas refaire les appels
+   à OneDrive. Mais rien ne les jetait au CHANGEMENT DE VISITE : on
+   retrouvait les photographies du logement précédent, ce qui est pire
+   qu'inutile — on risquait de comparer une sortie aux vues d'un autre
+   locataire.
+
+   On les marque donc de l'identifiant de la visite et on les jette dès
+   qu'il change. Ce contrôle est fait à l'affichage, donc il couvre tous
+   les chemins : reprise, création, retour depuis une autre visite. */
+function oublierPhotosEntree() {
+  E.photosEntree = null;
+  E.liensEntree = {};
+  E.triEntree = null;
+  E.vignettesAffichees = null;
+  E.photosEntreeVisite = null;
+}
+
+function verifierPhotosEntree() {
+  if (!VISITE) return;
+  if (E.photosEntreeVisite && E.photosEntreeVisite !== VISITE.visit_id) {
+    E.photosEntree = null;
+    E.liensEntree = {};
+    E.triEntree = null;
+    E.vignettesAffichees = null;
+    E.photosEntreeVisite = null;
+  }
+}
+
 function blocPhotosEntree() {
+  verifierPhotosEntree();
   const e = E.photosEntree;
   if (!e) {
     return `<div class="bloc"><h2>État des lieux d'entrée</h2>
@@ -2949,6 +2983,7 @@ async function ouvrirPhotosEntree() {
   }
 
   E.photosEntree = e;
+  E.photosEntreeVisite = VISITE.visit_id;   /* à qui appartient cette liste */
   E.liensEntree = E.liensEntree || {};
   E.vignettesAffichees = TRANCHE_VIGNETTES;
   E.triEntree = photosAvecConstat(e.photos, e.edle) ? "constat" : "toutes";
