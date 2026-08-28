@@ -191,6 +191,22 @@ var AIDE = [
       "verdit à 60 %, valeur éprouvée sur le terrain. En dessous, une consigne " +
       "s'affiche — recule, pivote à gauche, relève.",
 
+      "L'ÉCHELLE SE CHERCHE TOUTE SEULE, et c'est indispensable. L'appareil " +
+      "photo de l'iPhone et la caméra du navigateur ne voient pas la même " +
+      "largeur : à la même place, le meuble paraît plus gros d'un côté que de " +
+      "l'autre, et aucun déplacement ne les fait coïncider. L'application " +
+      "essaie donc les échelles de 50 à 150 % et retient la meilleure. " +
+      "L'écran affiche celle qu'elle a trouvée.",
+
+      "Elle se fige dès que l'alignement est bon, et ne bouge plus tant qu'il " +
+      "le reste : sans cela, le score serait flatté — on retiendrait à chaque " +
+      "fois la meilleure des échelles essayées, ce qui n'est plus une mesure " +
+      "de l'alignement. Si l'alignement se perd durablement, la recherche " +
+      "repart.",
+
+      "SI ELLE SE TROMPE, le bouton « Régler l'échelle à la main » te rend un " +
+      "curseur. À l'inverse, le rappuyer relance la recherche depuis le début.",
+
       "DÉCLENCHEMENT AUTOMATIQUE. Un bouton l'active. Une fois les 60 % " +
       "atteints, le cadre passe à l'orange et un décompte s'affiche : NE BOUGE " +
       "PLUS pendant une seconde. C'est ce temps qui permet à l'appareil de faire " +
@@ -210,7 +226,7 @@ var AIDE = [
       "d'entrée et le score obtenu. Ce score figurera au procès-verbal : il dit " +
       "objectivement à quel point les deux vues sont comparables.",
 
-      "TROIS RÉGLAGES, sous le bouton « Réglages » de l'écran de visée. Le SEUIL " +
+      "TROIS RÉGLAGES DE PLUS, sous le bouton « Réglages » de l'écran de visée. Le SEUIL " +
       "d'alignement — bas, il déclenche vite mais cadre moins bien ; haut, il " +
       "exige une précision parfois impossible. L'IMMOBILITÉ avant la prise — la " +
       "mettre à zéro rend les photographies floues. La QUALITÉ de l'image, entre " +
@@ -221,6 +237,12 @@ var AIDE = [
       "le score sera peu fiable, fie-toi alors à la superposition. En pratique " +
       "c'est rare : un mur porte presque toujours une plinthe, un angle, une " +
       "prise.",
+
+      "LES ANCIENS ÉTATS DES LIEUX marchent aussi. Leurs photographies ont été " +
+      "prises à l'iPhone et déposées à la main dans OneDrive : elles sont au " +
+      "format HEIC, que le navigateur n'affiche pas, et portent des noms sans " +
+      "numéro ni pièce. L'application les convertit à la volée et affiche " +
+      "l'heure de prise à la place du numéro, dans l'ordre de la visite.",
     ],
     attention: "La caméra s'éteint dès que tu quittes l'application, même deux " +
       "secondes : iOS l'impose. L'écran te le dit et te ramène à la pièce ; " +
