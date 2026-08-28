@@ -36,7 +36,18 @@
   button:disabled { opacity:.45; }
   .note { font-size:13px; color:#6b6b6b; margin:6px 0; }
   .ko { color:#b03a2e; } .ok { color:#1f7a4d; } .attention { color:#8a5a12; }
-  input[type=range] { width:100%; }
+  /* Curseurs épais : la poignée d'origine fait une dizaine de pixels, on
+     la manque une fois sur deux avec un pouce, bras tendu, dans une pièce.
+     Trente-deux pixels et une zone tactile élargie corrigent ça. */
+  input[type=range] { width:100%; height:44px; margin:2px 0 10px;
+    -webkit-appearance:none; background:transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height:10px;
+    border-radius:5px; background:#dcd8d0; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none;
+    width:32px; height:32px; margin-top:-11px; border-radius:50%;
+    background:#2f7d63; border:3px solid #fff;
+    box-shadow:0 1px 4px rgba(0,0,0,.3); }
+  input[type=range]:disabled::-webkit-slider-thumb { background:#b5b1a9; }
 
   #scene { position:relative; width:100%; aspect-ratio:3/4; background:#000;
     border-radius:12px; overflow:hidden; margin-bottom:10px;
@@ -124,11 +135,16 @@
     <div class="ligne"><span>Seuil de déclenchement</span><span id="val-seuil">60 %</span></div>
     <input type="range" id="seuil" min="30" max="95" value="60">
 
-    <div class="ligne" style="margin-top:10px"><span>Zoom de la RÉFÉRENCE</span>
+    <label class="ligne" style="margin-top:10px">
+      <span>Chercher l'échelle automatiquement</span>
+      <input type="checkbox" id="echelle-auto" checked
+        style="width:28px;height:28px"></label>
+
+    <div class="ligne"><span>Zoom de la RÉFÉRENCE</span>
       <span id="val-zoom-ref">100 %</span></div>
-    <input type="range" id="zoom-ref" min="60" max="220" step="2" value="100">
-    <p class="note">Agrandis la référence jusqu'à ce qu'elle coïncide avec ce
-    que tu vois. L'écart est fixe : une fois trouvé, il vaut partout.</p>
+    <input type="range" id="zoom-ref" min="50" max="150" step="2" value="100">
+    <p class="note">L'application essaie les échelles de 50 à 150 % et retient
+    la meilleure. Décoche pour régler à la main.</p>
 
     <div class="ligne" style="margin-top:10px"><span>Zoom de la CAMÉRA</span>
       <span id="val-zoom-cam">—</span></div>
@@ -271,7 +287,7 @@ function conseil(m) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 1.4";
+const VERSION = "essai 1.5";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -303,6 +319,10 @@ $("fichier").onchange = (e) => {
     c.getContext("2d").drawImage(img, 0, 0, TAILLE, TAILLE);
     const px = c.getContext("2d").getImageData(0, 0, TAILLE, TAILLE).data;
     refContours = contours(reduire(px, TAILLE, TAILLE));
+    /* Gardée pour recalculer ses contours à d'autres échelles. */
+    imageRefChargee = img;
+    contoursParEchelle = { 100: refContours };
+    echelleRetenue = null;
 
     const d = densiteContours(refContours);
     const utilisable = d.part > 0.02;
@@ -378,7 +398,12 @@ $("btn-camera").onclick = async () => {
       $("zoom-cam").disabled = false;
       $("zoom-cam").min = Math.round(cap.zoom.min * 100);
       $("zoom-cam").max = Math.round(cap.zoom.max * 100);
-      $("zoom-cam").value = Math.round((p0.getSettings().zoom || 1) * 100);
+      /* 1,30 × par défaut : valeur relevée le 28/08/2026, elle rapproche le
+         champ du flux de celui de l'appareil natif. */
+      const vise = Math.min(Math.max(130, cap.zoom.min * 100), cap.zoom.max * 100);
+      $("zoom-cam").value = Math.round(vise);
+      try { await p0.applyConstraints({ advanced: [{ zoom: vise / 100 }] }); }
+      catch (_) { /* refusé : on garde ce que l'appareil propose */ }
       $("val-zoom-cam").textContent = (Number($("zoom-cam").value) / 100).toFixed(2) + " ×";
       $("etat-zoom-cam").textContent = "Réglable de " + cap.zoom.min.toFixed(2) +
         " × à " + cap.zoom.max.toFixed(2) + " ×.";
@@ -417,6 +442,96 @@ function eteindre() {
 }
 $("btn-eteindre").onclick = eteindre;
 
+/* ---- Recherche automatique de l'échelle --------------------------------
+
+   L'appareil natif et Safari ne cadrent pas pareil : la référence paraît
+   plus grande ou plus petite que le flux, et aucun placement ne les fait
+   coïncider. Plutôt que de demander à l'opérateur de chercher la bonne
+   valeur, on la cherche.
+
+   DEUX TEMPS. Un balayage large au premier passage — 50 à 150 % par pas
+   de 10, puis affinage par pas de 2 autour du meilleur. Ensuite on reste
+   au voisinage de l'échelle trouvée : trois essais par image suffisent,
+   la distance de l'opérateur ne varie pas brutalement.
+
+   Les contours de la référence sont calculés UNE FOIS par échelle et
+   gardés : c'est ce qui rend la recherche tenable dix fois par seconde. */
+var echelleRetenue = null;        // en pourcent
+var contoursParEchelle = {};      // mémoire des contours calculés
+var imageRefChargee = null;
+
+function contoursAEchelle(pc) {
+  if (contoursParEchelle[pc]) return contoursParEchelle[pc];
+  if (!imageRefChargee) return null;
+  const c = document.createElement("canvas");
+  c.width = TAILLE; c.height = TAILLE;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  /* Agrandir la référence revient à n'en garder que le centre : à 150 %,
+     on n'en voit que les deux tiers. */
+  const z = pc / 100;
+  const iw = imageRefChargee.naturalWidth, ih = imageRefChargee.naturalHeight;
+  const sw = iw / z, sh = ih / z;
+  ctx.drawImage(imageRefChargee, (iw - sw) / 2, (ih - sh) / 2, sw, sh,
+                0, 0, TAILLE, TAILLE);
+  const d = ctx.getImageData(0, 0, TAILLE, TAILLE).data;
+  contoursParEchelle[pc] = contours(reduire(d, TAILLE, TAILLE));
+  return contoursParEchelle[pc];
+}
+
+function chercherAvecEchelle(fluxC) {
+  const auto = $("echelle-auto").checked;
+  if (!auto) {
+    const pc = Number($("zoom-ref").value);
+    const c = contoursAEchelle(pc);
+    const m = c ? chercher(c, fluxC) : { score: 0, dx: 0, dy: 0, e: 1 };
+    m.echelle = pc;
+    return m;
+  }
+
+  /* Voisinage de l'échelle retenue, ou balayage complet au premier coup. */
+  let candidats;
+  if (echelleRetenue === null) {
+    candidats = [];
+    for (let p = 50; p <= 150; p += 10) candidats.push(p);
+  } else {
+    /* TROIS échelles seulement en régime établi : cinq faisaient tomber la
+       cadence à huit analyses par seconde, mesuré. L'opérateur ne change
+       pas de distance brutalement — le pas de 3 suit ses déplacements. */
+    candidats = [echelleRetenue - 3, echelleRetenue, echelleRetenue + 3]
+      .filter(p => p >= 50 && p <= 150);
+  }
+
+  let meilleur = { score: -1 };
+  candidats.forEach(pc => {
+    const c = contoursAEchelle(pc);
+    if (!c) return;
+    const m = chercher(c, fluxC);
+    if (m.score > meilleur.score) { meilleur = m; meilleur.echelle = pc; }
+  });
+
+  /* Affinage au premier passage : le pas de 10 est trop grossier pour
+     s'arrêter là. */
+  if (echelleRetenue === null && meilleur.echelle) {
+    const base = meilleur.echelle;
+    [base - 6, base - 4, base - 2, base + 2, base + 4, base + 6]
+      .filter(p => p >= 50 && p <= 150)
+      .forEach(pc => {
+        const c = contoursAEchelle(pc);
+        if (!c) return;
+        const m = chercher(c, fluxC);
+        if (m.score > meilleur.score) { meilleur = m; meilleur.echelle = pc; }
+      });
+  }
+
+  if (meilleur.echelle) {
+    echelleRetenue = meilleur.echelle;
+    $("zoom-ref").value = meilleur.echelle;
+    $("val-zoom-ref").textContent = meilleur.echelle + " % (trouvé)";
+    $("calque").style.transform = "scale(" + (meilleur.echelle / 100) + ")";
+  }
+  return meilleur;
+}
+
 /* ---- Analyse en continu ---- */
 const travail = document.createElement("canvas");
 travail.width = TAILLE; travail.height = TAILLE;
@@ -440,22 +555,23 @@ function analyser() {
   let cl = v.videoWidth, ch = Math.round(v.videoWidth / rapport);
   if (ch > v.videoHeight) { ch = v.videoHeight; cl = Math.round(v.videoHeight * rapport); }
   const dx = Math.round((v.videoWidth - cl) / 2), dy = Math.round((v.videoHeight - ch) / 2);
-  /* Le zoom appliqué à la référence doit se retrouver ici, sinon le score
-     compare deux échelles différentes. On rogne le flux d'autant. */
-  const zr = Number($("zoom-ref").value) / 100;
-  const al = Math.round(cl / zr), ah = Math.round(ch / zr);
-  const ax = dx + Math.round((cl - al) / 2), ay = dy + Math.round((ch - ah) / 2);
-  ctxT.drawImage(v, ax, ay, al, ah, 0, 0, TAILLE, TAILLE);
+  /* LE FLUX EST PRIS TEL QUEL. C'est la RÉFÉRENCE qu'on met à l'échelle,
+     puisque c'est elle qu'on agrandit à l'écran. L'ancienne version rognait
+     le flux dans le même sens que le zoom de la référence : les deux
+     effets s'ajoutaient au lieu de se compenser, et le score s'effondrait
+     à mesure que la superposition s'améliorait. */
+  ctxT.drawImage(v, dx, dy, cl, ch, 0, 0, TAILLE, TAILLE);
   const px = ctxT.getImageData(0, 0, TAILLE, TAILLE).data;
   const fluxC = contours(reduire(px, TAILLE, TAILLE));
 
-  const m = chercher(refContours, fluxC);
+  const m = chercherAvecEchelle(fluxC);
   const pourcent = Math.max(0, Math.round(m.score * 100));
   dernierScore = pourcent;
 
   const seuil = Number($("seuil").value);
   const bon = pourcent >= seuil;
-  $("verdict").textContent = pourcent + " % — " + (bon ? "aligné" : conseil(m));
+  $("verdict").textContent = pourcent + " % — " + (bon ? "aligné" : conseil(m)) +
+    (m.echelle ? "  ·  échelle " + m.echelle + " %" : "");
   $("jauge").style.width = pourcent + "%";
   $("jauge").style.background = bon ? "#2f7d63" : pourcent > seuil * 0.7 ? "#c8891f" : "#c9403a";
   $("cible").style.borderColor = bon ? "#2f7d63" : "transparent";
@@ -495,6 +611,16 @@ $("zoom-ref").oninput = () => {
   const z = Number($("zoom-ref").value);
   $("calque").style.transform = "scale(" + (z / 100) + ")";
   $("val-zoom-ref").textContent = z + " %";
+  /* Toucher le curseur reprend la main : la recherche automatique repartira
+     de cette valeur si on la réactive. */
+  echelleRetenue = z;
+};
+
+$("echelle-auto").onchange = () => {
+  echelleRetenue = $("echelle-auto").checked ? null : Number($("zoom-ref").value);
+  noter($("echelle-auto").checked
+    ? "Recherche automatique de l'échelle activée."
+    : "Échelle réglée à la main.", "ok");
 };
 
 /* ZOOM DE LA CAMÉRA — la voie propre quand l'appareil l'accepte : c'est
