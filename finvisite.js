@@ -220,7 +220,7 @@ function corpsCourriel(V, lien) {
       : "Aucune observation ni réserve n'a été consignée avant validation.",
     "",
     "Le rapport signé ainsi que les éléments techniques associés à sa validation " +
-      "et à sa transmission sont conservés afin de permettre, en cas de contestation, " +
+      "et à sa transmission sont conservés afin de permettre " +
       "de vérifier le contenu du rapport, son intégrité, la date de sa validation et " +
       "les circonstances de sa transmission, dans le respect des dispositions légales " +
       "applicables.",
