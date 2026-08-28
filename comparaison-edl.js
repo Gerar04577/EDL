@@ -147,6 +147,46 @@ function horodatageDuNom(nom) {
    On tente d'abord une grande taille, utile à la superposition ; la
    vignette « large » sert de repli, et le fichier d'origine en dernier
    ressort pour les formats que Safari sait déjà lire. */
+/* Aperçu rapatrié EN LOCAL, sous forme de blob.
+
+   INDISPENSABLE POUR LA VISÉE GUIDÉE. Une image servie par un autre
+   domaine — et Microsoft en est un — ne peut pas voir ses pixels lus par
+   la page : le navigateur l'interdit, et l'analyse des contours échoue
+   avant même que la caméra ne s'allume. C'est ce qui bloquait le bouton.
+
+   On passe donc par appelGraph, qui est authentifié et dont les réponses
+   sont autorisées, puis on fabrique une adresse locale. L'image devient
+   alors lisible comme si elle venait de l'appareil.
+
+   Réservé à la visée : pour les vignettes, l'adresse directe suffit et
+   coûte moins. */
+async function apercuBlobEntree(photo, grand) {
+  const base = photo.drive_id
+    ? `/drives/${photo.drive_id}/items/${photo.onedrive_item_id}`
+    : `/me/drive/items/${photo.onedrive_item_id}`;
+  const tailles = grand ? ["c1600x1600", "large", "medium"] : ["large", "medium"];
+
+  for (const t of tailles) {
+    try {
+      const res = await appelGraph(`${base}/thumbnails/0/${t}/content`);
+      if (!res.ok) continue;
+      const blob = await res.blob();
+      if (blob && blob.size) return URL.createObjectURL(blob);
+    } catch (_) { /* taille suivante */ }
+  }
+
+  /* Aucun aperçu : on rapatrie le fichier lui-même, si Safari sait le
+     lire. Le HEIC, lui, resterait invisible — d'où l'échec annoncé. */
+  if (/\.(jpe?g|png|webp)$/i.test(photo.nom_fichier || "")) {
+    const res = await appelGraph(`${base}/content`);
+    if (res.ok) {
+      const blob = await res.blob();
+      if (blob && blob.size) return URL.createObjectURL(blob);
+    }
+  }
+  throw new Error("Aperçu indisponible pour " + photo.nom_fichier);
+}
+
 async function apercuPhotoEntree(photo, grand) {
   const base = photo.drive_id
     ? `/drives/${photo.drive_id}/items/${photo.onedrive_item_id}`

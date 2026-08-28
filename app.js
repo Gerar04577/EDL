@@ -2931,8 +2931,11 @@ async function ecranViseeGuidee(itemEntree) {
      aperçu en grande taille pour la visée. Toujours du JPEG, quel que soit
      le format d'origine — les anciens états des lieux sont en HEIC. */
   let lien;
-  try { lien = await apercuPhotoEntree(ref, true); }
-  catch (err) {
+  try {
+    /* Rapatrié en local : une image d'un autre domaine ne peut pas voir
+       ses pixels lus, et l'analyse des contours échouerait. */
+    lien = noterApercu(await apercuBlobEntree(ref, true));
+  } catch (err) {
     return dessinerPiece("Aperçu impossible pour cette photographie : " + err.message);
   }
 
