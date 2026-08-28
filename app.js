@@ -2534,6 +2534,10 @@ async function deposerPdf(visite, nom, donnees) {
 // --- Écran d'une pièce ---------------------------------------------------
 
 async function ecranPiece(pieceId) {
+  /* Filet : quitter la visée sans passer par son bouton — retour arrière,
+     navigation — laisserait la caméra allumée et la boucle d'analyse en
+     marche. */
+  if (E.visee) arreterVisee();
   E.ecran = "piece";
   E.piece = pieceId;
   E.brouillons = {}; E.etat = undefined; E.proprete = undefined;
@@ -2890,6 +2894,283 @@ async function chargerLiensVisibles() {
   }
 }
 
+/* ---- Visée guidée -------------------------------------------------------
+
+   Julien touche une photographie d'entrée : la caméra s'ouvre avec cette
+   vue en transparence, et un score lui dit à quel point il retrouve le
+   cadrage. À 60 %, la photographie peut se prendre seule.
+
+   Deux images cadrées pareil se comparent ; deux images prises au hasard,
+   non. C'est tout l'intérêt de ce détour.
+
+   Le noyau de calcul vit dans recalage.js, éprouvé sur le terrain avant
+   d'être intégré ici. */
+
+var SEUIL_ALIGNEMENT = 60;     // validé le 28/08/2026
+var QUALITE_VISEE = 0.96;      // le flux vidéo est moins détaillé qu'un cliché natif
+
+async function ecranViseeGuidee(itemEntree) {
+  const e = E.photosEntree;
+  const ref = e && e.photos.find(p => p.onedrive_item_id === itemEntree);
+  if (!ref) return dessinerPiece("Photographie d'entrée introuvable.");
+
+  const lien = E.liensEntree[itemEntree];
+  if (!lien) return dessinerPiece("Cette photographie n'est pas encore chargée.");
+
+  E.ecran = "visee";
+  E.visee = { ref, lien, score: 0, auto: false, camera: null, boucle: null,
+              contoursRef: null, refL: 0, refH: 0 };
+  const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
+  titre("Refaire le cadrage", piece ? piece.libelle : "");
+  dessinerVisee();
+}
+
+function dessinerVisee(message) {
+  const V = E.visee;
+  vue(`
+    ${message ? `<div class="succes">${echapper(message)}</div>` : ""}
+    <div class="bloc"><h2>Photographie ${echapper(V.ref.numero || "?")} de l'entrée</h2>
+      <div id="scene-visee">
+        <video id="visee-flux" playsinline muted autoplay></video>
+        <img id="visee-calque" src="${echapper(V.lien)}" alt="">
+        <div id="visee-cadre"></div>
+        <div id="visee-verdict">Allume la caméra</div>
+        <div id="visee-jauge"></div>
+        <div id="visee-flash">PHOTO PRISE</div>
+      </div>
+
+      <button id="visee-allumer">Allumer la caméra</button>
+
+      <div id="visee-reglages" class="cache">
+        <div class="ligne"><span>Transparence de la référence</span>
+          <span id="visee-val-opacite">35 %</span></div>
+        <input type="range" id="visee-opacite" min="0" max="100" value="35">
+        <button class="mini secondaire" id="visee-auto">Activer le déclenchement automatique</button>
+        <p class="note" id="visee-etat-auto">Automatique arrêté.</p>
+        <button id="visee-prendre">Prendre la photo</button>
+      </div>
+
+      <p class="note" id="visee-diag"></p>
+    </div>
+    <button class="secondaire" id="visee-retour">Retour à la pièce</button>
+  `, true);
+  brancherVisee();
+}
+
+function brancherVisee() {
+  const V = E.visee;
+
+  $("visee-retour").onclick = () => { arreterVisee(); ecranPiece(E.piece); };
+  $("visee-allumer").onclick = allumerVisee;
+
+  const o = $("visee-opacite");
+  if (o) o.oninput = () => {
+    $("visee-calque").style.opacity = o.value / 100;
+    $("visee-val-opacite").textContent = o.value + " %";
+  };
+  if ($("visee-calque")) $("visee-calque").style.opacity = 0.35;
+
+  if ($("visee-auto")) $("visee-auto").onclick = () => {
+    V.auto = !V.auto; majAutoVisee();
+  };
+  if ($("visee-prendre")) $("visee-prendre").onclick = prendreVisee;
+}
+
+function majAutoVisee() {
+  const V = E.visee;
+  const b = $("visee-auto");
+  if (!b) return;
+  b.textContent = V.auto
+    ? "Désactiver le déclenchement automatique"
+    : "Activer le déclenchement automatique";
+  b.className = V.auto ? "mini" : "mini secondaire";
+  $("visee-etat-auto").textContent = V.auto
+    ? "Automatique ACTIF — la photo partira seule à " + SEUIL_ALIGNEMENT + " %."
+    : "Automatique arrêté.";
+  $("visee-etat-auto").className = V.auto ? "note ok" : "note";
+}
+
+async function allumerVisee() {
+  const V = E.visee;
+  const b = $("visee-allumer");
+  b.disabled = true; b.textContent = "Ouverture de la caméra…";
+
+  /* La référence est réduite une fois pour toutes : c'est sur ses contours
+     que porteront toutes les comparaisons. */
+  try {
+    const img = await chargerImage(V.lien);
+    V.refL = img.naturalWidth; V.refH = img.naturalHeight;
+    $("scene-visee").style.aspectRatio = V.refL + " / " + V.refH;
+
+    const c = document.createElement("canvas");
+    c.width = TAILLE; c.height = TAILLE;
+    c.getContext("2d").drawImage(img, 0, 0, TAILLE, TAILLE);
+    const px = c.getContext("2d").getImageData(0, 0, TAILLE, TAILLE).data;
+    V.contoursRef = contours(reduire(px, TAILLE, TAILLE));
+
+    const d = densiteContours(V.contoursRef);
+    $("visee-diag").textContent = d.part > 0.02
+      ? "Référence analysable — " + (d.part * 100).toFixed(1) + " % de contours."
+      : "Surface très unie (" + (d.part * 100).toFixed(1) + " % de contours) : " +
+        "le score sera peu fiable, fie-toi à la superposition.";
+    $("visee-diag").className = d.part > 0.02 ? "note ok" : "note attention";
+  } catch (err) {
+    b.disabled = false; b.textContent = "Allumer la caméra";
+    return dessinerVisee("Référence illisible : " + err.message);
+  }
+
+  try {
+    V.camera = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" },
+               width: { ideal: 4032 }, height: { ideal: 3024 } },
+      audio: false,
+    });
+    $("visee-flux").srcObject = V.camera;
+    await $("visee-flux").play();
+    $("visee-allumer").classList.add("cache");
+    $("visee-reglages").classList.remove("cache");
+    majAutoVisee();
+    V.boucle = setInterval(analyserVisee, 100);
+    await journaliser("visee_ouverte", { entree: V.ref.nom_fichier });
+  } catch (err) {
+    b.disabled = false; b.textContent = "Allumer la caméra";
+    dessinerVisee("Caméra refusée : " + err.name +
+      ". Vérifie l'autorisation dans les réglages de Safari.");
+  }
+}
+
+function chargerImage(url) {
+  return new Promise((ok, ko) => {
+    const i = new Image();
+    i.onload = () => ok(i);
+    i.onerror = () => ko(new Error("chargement impossible"));
+    i.src = url;
+  });
+}
+
+/* Dix analyses par seconde : assez pour guider un geste, assez peu pour
+   laisser respirer l'appareil. Le calcul porte sur du 96 × 96, donc la
+   résolution du flux ne le ralentit pas — mesuré sur le terrain. */
+function analyserVisee() {
+  const V = E.visee;
+  if (!V || !V.contoursRef) return;
+  const v = $("visee-flux");
+  if (!v || !v.videoWidth) return;
+
+  const f = fenetreVisee(v, V);
+  const t = canevasTravail();
+  t.ctx.drawImage(v, f.dx, f.dy, f.l, f.h, 0, 0, TAILLE, TAILLE);
+  const px = t.ctx.getImageData(0, 0, TAILLE, TAILLE).data;
+
+  const m = chercher(V.contoursRef, contours(reduire(px, TAILLE, TAILLE)));
+  const p = Math.max(0, Math.round(m.score * 100));
+  V.score = p;
+
+  const bon = p >= SEUIL_ALIGNEMENT;
+  $("visee-verdict").textContent = p + " % — " + (bon ? "aligné" : conseil(m));
+  $("visee-jauge").style.width = p + "%";
+  $("visee-jauge").style.background =
+    bon ? "#2f7d63" : p > SEUIL_ALIGNEMENT * 0.7 ? "#c8891f" : "#c9403a";
+  $("visee-cadre").style.borderColor = bon ? "#2f7d63" : "transparent";
+
+  if (V.auto && bon) { V.auto = false; majAutoVisee(); prendreVisee(); }
+}
+
+/* Fenêtre centrale du flux, au format de la référence : ce que Julien voit
+   à l'écran est exactement ce qu'il capturera. */
+function fenetreVisee(v, V) {
+  const rapport = (V.refL && V.refH) ? V.refL / V.refH : v.videoWidth / v.videoHeight;
+  let l = v.videoWidth, h = Math.round(v.videoWidth / rapport);
+  if (h > v.videoHeight) { h = v.videoHeight; l = Math.round(v.videoHeight * rapport); }
+  return { l, h, dx: Math.round((v.videoWidth - l) / 2),
+           dy: Math.round((v.videoHeight - h) / 2) };
+}
+
+var _canevasVisee = null;
+function canevasTravail() {
+  if (!_canevasVisee) {
+    const c = document.createElement("canvas");
+    c.width = TAILLE; c.height = TAILLE;
+    _canevasVisee = { c, ctx: c.getContext("2d", { willReadFrequently: true }) };
+  }
+  return _canevasVisee;
+}
+
+async function prendreVisee() {
+  const V = E.visee;
+  const v = $("visee-flux");
+  if (!v || !v.videoWidth) return;
+
+  const f = fenetreVisee(v, V);
+  const r = Math.min(1, CONFIG.photo.cote_max_px / Math.max(f.l, f.h));
+  const fin = document.createElement("canvas");
+  fin.width = Math.round(f.l * r); fin.height = Math.round(f.h * r);
+  fin.getContext("2d").drawImage(v, f.dx, f.dy, f.l, f.h, 0, 0, fin.width, fin.height);
+
+  const blob = await new Promise(ok =>
+    fin.toBlob(ok, "image/jpeg", QUALITE_VISEE));
+  if (!blob) return dessinerVisee("Capture impossible.");
+
+  confirmerVisee(V.score);
+
+  try {
+    /* La photographie suit le chemin habituel : compression déjà faite,
+       empreinte, file d'attente, sous-dossier Photos. Deux champs de plus
+       la rattachent à sa référence. */
+    await ajouterPhoto(VISITE, E.piece, blob, {
+      photo_entree_id: V.ref.onedrive_item_id,
+      photo_entree_nom: V.ref.nom_fichier,
+      score_alignement: V.score,
+    }, true);   /* déjà compressée par le canevas */
+  } catch (err) {
+    return dessinerVisee("Enregistrement impossible : " + err.message);
+  }
+
+  await journaliser("visee_photo_prise",
+    { entree: V.ref.nom_fichier, score: V.score });
+
+  /* On revient à la pièce : la photographie est prise, il n'y a plus rien
+     à viser. Julien touchera une autre vignette pour la suivante. */
+  arreterVisee();
+  await ecranPiece(E.piece);
+  dessinerPiece("Photographie reprise à " + V.score + " % d'alignement");
+}
+
+/* iOS coupe la caméra dès que la page passe en arrière-plan. Sans ce
+   contrôle, Julien revient sur un écran figé qui ne mesure plus rien. */
+document.addEventListener("visibilitychange", () => {
+  const V = E.visee;
+  if (!V || !V.camera || document.hidden) return;
+  const piste = V.camera.getVideoTracks()[0];
+  if (!piste || piste.readyState !== "live") {
+    arreterVisee();
+    if (E.ecran === "visee") {
+      E.visee = { ref: null };   // évité : dessinerVisee lirait un état vide
+      ecranPiece(E.piece).then(() =>
+        dessinerPiece("La caméra a été coupée par iOS. Touche à nouveau la photographie."));
+    }
+  }
+});
+
+var _minuterieVisee = null;
+function confirmerVisee(score) {
+  const f = $("visee-flash");
+  if (!f) return;
+  f.textContent = "PHOTO PRISE\n" + score + " %";
+  f.classList.add("visible");
+  if (navigator.vibrate) { try { navigator.vibrate(60); } catch (_) {} }
+  if (_minuterieVisee) clearTimeout(_minuterieVisee);
+  _minuterieVisee = setTimeout(() => f.classList.remove("visible"), 1400);
+}
+
+function arreterVisee() {
+  const V = E.visee;
+  if (!V) return;
+  if (V.boucle) clearInterval(V.boucle);
+  if (V.camera) V.camera.getTracks().forEach(t => t.stop());
+  E.visee = null;
+}
+
 function numeroDansNom(nom) {
   const m = String(nom || "").match(/_(\d{3})_/);
   return m ? m[1] : "?";
@@ -2947,6 +3228,10 @@ function brancherGroupe(piece, photos) {
     E.triEntree = "toutes"; E.vignettesAffichees = TRANCHE_VIGNETTES;
     dessinerPiece(); chargerLiensVisibles();
   };
+  $("vue").querySelectorAll("[data-entree]").forEach(f => f.onclick = () => {
+    ecranViseeGuidee(f.getAttribute("data-entree"));
+  });
+
   if ($("btn-plus-vignettes")) $("btn-plus-vignettes").onclick = () => {
     E.vignettesAffichees = (E.vignettesAffichees || TRANCHE_VIGNETTES) + TRANCHE_VIGNETTES;
     dessinerPiece(); chargerLiensVisibles();

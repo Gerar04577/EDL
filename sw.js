@@ -15,7 +15,7 @@
    copie et les corrections ne sont jamais visibles. C'est le seul piège de
    ce mécanisme, et il est silencieux. */
 
-const VERSION = "2.13.1";
+const VERSION = "2.14.0";
 const CACHE = "edl-" + VERSION;
 
 const FICHIERS = [
@@ -35,6 +35,7 @@ const FICHIERS = [
   "./finvisite.js",
   "./aide.js",
   "./comparaison.js",
+  "./recalage.js",
   "./photos.js",
   "./app.js",
   "./jspdf.umd.min.js",

@@ -64,15 +64,25 @@ function nomFichierPhoto(visite, rattachement, numero) {
 
 /* Ajout d'une photo : identifiant local, compression, enregistrement,
    PUIS seulement tentative d'envoi. L'ordre n'est pas négociable. */
-async function ajouterPhoto(visite, rattachement, fichier) {
+/* `extra` porte les champs propres à certaines prises — aujourd'hui la
+   visée guidée, qui rattache la photographie à celle de l'entrée et
+   conserve son score d'alignement. Absent partout ailleurs : les appels
+   existants ne changent pas.
+
+   `dejaCompressee` évite de recomprimer une image déjà produite par
+   l'application : la visée guidée sort du canevas au bon format et à la
+   bonne qualité, la repasser à la moulinette ne ferait que dégrader. */
+async function ajouterPhoto(visite, rattachement, fichier, extra, dejaCompressee) {
   const photoId = nouvelIdentifiant("ph");
   let blob = fichier, largeur = null, hauteur = null;
-  try {
-    const c = await compresserImage(fichier);
-    if (c.blob) { blob = c.blob; largeur = c.largeur; hauteur = c.hauteur; }
-    else await journaliser("compression_echouee", "résultat vide, envoi de l'original");
-  } catch (e) {
-    await journaliser("compression_echouee", String(e && e.message));
+  if (!dejaCompressee) {
+    try {
+      const c = await compresserImage(fichier);
+      if (c.blob) { blob = c.blob; largeur = c.largeur; hauteur = c.hauteur; }
+      else await journaliser("compression_echouee", "résultat vide, envoi de l'original");
+    } catch (e) {
+      await journaliser("compression_echouee", String(e && e.message));
+    }
   }
 
   /* Numérotation ATOMIQUE : le calcul du numéro et l'ajout à la visite
@@ -94,6 +104,7 @@ async function ajouterPhoto(visite, rattachement, fichier) {
     horodatage: new Date().toISOString(),
     description: "", description_source: null,
   };
+  if (extra) Object.assign(entree, extra);
   /* La numérotation ne doit JAMAIS revenir en arrière : compter les photos
      présentes réutiliserait le numéro d'une photo retirée, et le nouveau
      fichier écraserait un fichier existant dans OneDrive. On conserve donc
