@@ -166,6 +166,8 @@
     <div class="ligne"><span>Zoom de la RÉFÉRENCE</span>
       <span id="val-zoom-ref">100 %</span></div>
     <input type="range" id="zoom-ref" min="50" max="150" step="2" value="100">
+    <button class="mini secondaire" id="btn-relancer"
+      style="width:100%;margin:0 0 4px">Relancer la recherche d'échelle</button>
 
     <div id="declencheur">
       <button id="btn-obturateur" aria-label="Prendre la photo"></button>
@@ -327,7 +329,7 @@ function conseil(m) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 1.9";
+const VERSION = "essai 1.10";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -816,10 +818,15 @@ $("zoom-ref").oninput = () => {
 };
 
 $("echelle-auto").onchange = () => {
-  echelleRetenue = $("echelle-auto").checked ? null : Number($("zoom-ref").value);
-  noter($("echelle-auto").checked
-    ? "Recherche automatique de l'échelle activée."
-    : "Échelle réglée à la main.", "ok");
+  const auto = $("echelle-auto").checked;
+  /* L'ÉCHELLE FIGÉE DOIT ÊTRE LIBÉRÉE. Sans cela, cocher la case ne
+     relançait rien : la valeur arrêtée au tour précédent restait en place
+     et la recherche ne repartait jamais. */
+  echelleFigee = null;
+  echecs = 0;
+  echelleRetenue = auto ? null : Number($("zoom-ref").value);
+  noter(auto ? "Recherche automatique relancée."
+             : "Échelle réglée à la main.", "ok");
 };
 
 /* ZOOM DE LA CAMÉRA — la voie propre quand l'appareil l'accepte : c'est
@@ -862,6 +869,12 @@ $("btn-auto").onclick = () => {
 /* ---- Prise de vue ---- */
 $("btn-prendre").onclick = prendre;
 $("btn-obturateur").onclick = prendre;
+
+$("btn-relancer").onclick = () => {
+  echelleFigee = null; echelleRetenue = null; echecs = 0;
+  $("echelle-auto").checked = true;
+  noter("Recherche d'échelle relancée depuis le début.", "ok");
+};
 
 function prendre() {
   const v = $("flux");
@@ -913,6 +926,13 @@ function confirmerPrise(score) {
 }
 
 $("btn-recommencer").onclick = () => {
+  /* Nouvelle prise : l'échelle repart de zéro. On ne garde pas celle du
+     cliché précédent, qui valait pour un autre cadrage. */
+  if ($("echelle-auto").checked) {
+    echelleFigee = null; echelleRetenue = null; echecs = 0;
+    noter("Nouvelle prise : recherche d'échelle relancée.");
+  }
+  stableDepuis = 0;
   $("bloc-resultat").classList.add("cache");
   window.scrollTo(0, 0);
 };
