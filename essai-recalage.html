@@ -356,7 +356,7 @@ function conseil(m) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 1.12";
+const VERSION = "essai 1.13";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -609,9 +609,9 @@ function chercherAvecEchelle(fluxPour) {
     const m = c ? chercher(c, fluxPour(echelleFigee)) : { score: 0, dx: 0, dy: 0, e: 1 };
     m.echelle = echelleFigee;
     /* Si l'alignement s'effondre durablement, on rouvre la recherche. */
-    if (m.score < 0.20) {
+    if (m.score < 0.35) {
       echecs++;
-      if (echecs >= 30) {
+      if (echecs >= 15) {
         echelleFigee = null; echelleRetenue = null; echecs = 0;
         noter("Alignement perdu : nouvelle recherche d'échelle.", "attention");
       }
@@ -622,21 +622,32 @@ function chercherAvecEchelle(fluxPour) {
   /* Voisinage de l'échelle retenue, ou balayage complet au premier coup. */
   let candidats;
   if (echelleRetenue === null) {
+    /* Pas de 8 plutôt que 10 : treize essais au lieu de onze, pour ne pas
+       passer à côté d'une bonne échelle au premier balayage. */
     candidats = [];
-    for (let p = 50; p <= 150; p += 10) candidats.push(p);
+    for (let p = 50; p <= 150; p += 8) candidats.push(p);
   } else {
-    /* TROIS échelles seulement en régime établi : cinq faisaient tomber la
-       cadence à huit analyses par seconde, mesuré. L'opérateur ne change
-       pas de distance brutalement — le pas de 3 suit ses déplacements. */
-    candidats = [echelleRetenue - 3, echelleRetenue, echelleRetenue + 3]
-      .filter(p => p >= 50 && p <= 150);
+    /* VOISINAGE VARIABLE. Trois échelles au pas de 3 suffisent quand
+       l'alignement est bon : l'opérateur ne change pas de distance
+       brutalement. Mais tant que le score reste faible, c'est le signe que
+       la valeur retenue est mauvaise — on élargit alors à sept échelles au
+       pas de 5, quitte à ralentir : mieux vaut chercher plus lentement au
+       bon endroit que vite au mauvais. */
+    const large = dernierScore < 45;
+    const pas = large ? 5 : 3;
+    const n = large ? 3 : 1;
+    candidats = [];
+    for (let k = -n; k <= n; k++) candidats.push(echelleRetenue + k * pas);
+    candidats = candidats.filter(p => p >= 50 && p <= 150);
 
     /* SE DÉPRENDRE D'UN MAUVAIS CHOIX. La première recherche se fait au
        moment où l'opérateur n'est pas encore placé : elle peut retenir une
        échelle absurde, et le voisinage de trois pas ne permet plus d'en
        sortir. Après une série de scores faibles, on rouvre donc le
        balayage complet. */
-    if (echecs >= 25) { echelleRetenue = null; echecs = 0;
+    /* Vingt analyses au lieu de vingt-cinq : deux secondes suffisent pour
+       constater qu'on cherche au mauvais endroit. */
+    if (echecs >= 20) { echelleRetenue = null; echecs = 0;
       candidats = [];
       for (let p = 50; p <= 150; p += 10) candidats.push(p);
       noter("Échelle peu convaincante : nouvelle recherche complète.", "attention");
@@ -667,7 +678,10 @@ function chercherAvecEchelle(fluxPour) {
 
   /* Un score durablement bas signifie soit un mauvais cadrage, soit une
      mauvaise échelle. On compte, et au bout d'un moment on rouvre. */
-  echecs = (meilleur.score < 0.25) ? echecs + 1 : 0;
+  /* Le compteur monte tant que l'alignement n'est pas franchement bon —
+     0,40 et non 0,25 : à un quart de ressemblance, on ne cherche
+     manifestement pas au bon endroit. */
+  echecs = (meilleur.score < 0.40) ? echecs + 1 : 0;
 
   /* L'ÉCHELLE SE FIGE UNE FOIS CONVAINCANTE.
 
@@ -679,7 +693,10 @@ function chercherAvecEchelle(fluxPour) {
 
      Au-delà de 45 %, l'échelle est tenue pour bonne et ne bouge plus : le
      score redevient une mesure honnête de l'alignement. */
-  if (!echelleFigee && meilleur.score >= 0.45 && meilleur.echelle) {
+  /* SEUIL DE FIGEAGE À 65 %. À 45 %, l'alignement est encore médiocre :
+     figer là dessus enfermait l'application dans un réglage approximatif
+     dont elle ne pouvait plus sortir. */
+  if (!echelleFigee && meilleur.score >= 0.65 && meilleur.echelle) {
     echelleFigee = meilleur.echelle;
     noter("Échelle figée à " + meilleur.echelle + " % — le score mesure " +
       "désormais le seul alignement.", "ok");
