@@ -366,13 +366,22 @@ function conseil(m) {
 const PHI = (Math.sqrt(5) - 1) / 2;
 const L_MIN = Math.log(50), L_MAX = Math.log(150);
 
-function sectionDoree(evaluer, precision, nAmorce) {
+function sectionDoree(evaluer, precision, nAmorce, autour) {
   /* Amorce : quelques points régulièrement espacés en logarithme, pour
      encadrer le maximum. La section dorée l'exige — elle ne converge que
      si le point du milieu bat ses deux voisins. */
+  /* AUTOUR DE LA VALEUR PRÉCÉDENTE quand on en a une. Repartir de zéro à
+     chaque image faisait atterrir la recherche un peu ailleurs à chaque
+     fois : le zoom sautait et la superposition avec. */
+  let lo = L_MIN, hi = L_MAX;
+  if (autour) {
+    const la = Math.log(autour);
+    lo = Math.max(L_MIN, la - Math.log(1.18));
+    hi = Math.min(L_MAX, la + Math.log(1.18));
+  }
   const pts = [];
   for (let i = 0; i < nAmorce; i++) {
-    const l = L_MIN + (L_MAX - L_MIN) * i / (nAmorce - 1);
+    const l = lo + (hi - lo) * i / (nAmorce - 1);
     pts.push({ l, v: evaluer(Math.exp(l)) });
   }
   let k = 0;
@@ -402,7 +411,7 @@ function sectionDoree(evaluer, precision, nAmorce) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 2.0";
+const VERSION = "essai 2.1";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -577,6 +586,25 @@ $("btn-eteindre").onclick = eteindre;
    Deux images du même lieu, prises par deux objectifs différents, ne
    coïncident qu'à une échelle près. On la cherche, au petit format, par
    section dorée. */
+/* DÉCLARATIONS RÉTABLIES. La réécriture du noyau en version 2.0 les avait
+   emportées : DELAI_STABILITE valait « undefined », la comparaison du
+   décompte échouait, et le déclenchement automatique ne pouvait jamais
+   aboutir. C'est la cause du défaut signalé. */
+var stableDepuis = 0;             // début de la période d'immobilité
+var sousSeuil = 0;                // images consécutives sous le seuil
+var DELAI_STABILITE = 1200;       // ms d'immobilité avant la prise
+
+/* Demande un point sur la scène au moment où le cadrage devient bon : la
+   mise au point continue est déjà active, mais ce rappel évite de
+   photographier pendant que l'objectif cherche encore. */
+async function demanderPoint() {
+  if (!fluxCamera) return;
+  const piste = fluxCamera.getVideoTracks()[0];
+  if (!piste) return;
+  try { await piste.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); }
+  catch (_) { /* refusé : on garde la mise au point du flux */ }
+}
+
 var echelleRetenue = null;        // en pourcent
 var echelleFigee = null;          // arrêtée dès qu'elle est convaincante
 var echecs = 0;
@@ -634,9 +662,15 @@ function chercherEchelle(v, dx, dy, cl, ch) {
 
   /* Amorce large quand on part de rien, resserrée autour de la valeur
      précédente sinon — l'opérateur ne saute pas d'une distance à l'autre. */
-  const res = sectionDoree(evaluer, 0.02, echelleRetenue === null ? 5 : 4);
-  echelleRetenue = Math.round(res.echelle);
-  return echelleRetenue;
+  const res = sectionDoree(evaluer, 0.02,
+                           echelleRetenue === null ? 5 : 4, echelleRetenue);
+
+  /* LISSAGE : on ne retient qu'une part du déplacement — assez pour suivre
+     un vrai changement de distance, trop peu pour trembler sur place. */
+  if (echelleRetenue === null) echelleRetenue = res.echelle;
+  else echelleRetenue = echelleRetenue * 0.75 + res.echelle * 0.25;
+
+  return Math.round(echelleRetenue * 10) / 10;
 }
 
 /* ---- Analyse en continu ---- */
@@ -737,12 +771,20 @@ function analyser() {
      geste s'arrête et que l'appareil se cale. Un mouvement remet le
      décompte à zéro. */
   const cacherCompte = () => {
-    stableDepuis = 0;
+    stableDepuis = 0; sousSeuil = 0;
     $("cible").classList.remove("pret");
     $("compte-a-rebours").classList.remove("visible");
   };
   if (!auto) { cacherCompte(); return; }
-  if (!bon) { cacherCompte(); return; }
+
+  /* UNE CHUTE BRÈVE N'ANNULE PAS LE DÉCOMPTE. Le score varie de quelques
+     points d'une image à l'autre ; exiger qu'il reste au-dessus du seuil à
+     chaque instant faisait repartir le compte sans cesse. On tolère quatre
+     images sous le seuil — moins d'un cinquième de seconde. */
+  if (!bon) {
+    if (!stableDepuis) { cacherCompte(); return; }
+    if (++sousSeuil > 4) { cacherCompte(); return; }
+  } else sousSeuil = 0;
 
   const maintenant = Date.now();
   if (!stableDepuis) {
