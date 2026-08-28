@@ -1624,6 +1624,9 @@ function ecranIA(message) {
       <p class="note">L'échantillon groupé porte cinq photographies. Si tu comptes
       en cocher davantage, refais-le avec le nombre maximum que tu utiliseras :
       Make n'affiche que les champs qu'il a vus passer.</p>
+      <p class="note">La comparaison réutilise la branche du groupe : deux
+      adresses au lieu de cinq. Ajoute seulement une condition OU sur cette
+      route, pour <code>action = comparer_photos</code>.</p>
     </div>
 
     <div class="bloc"><h2>2. Essai réel</h2>
@@ -1692,6 +1695,8 @@ function ecranIA(message) {
               (u) => envoyerEchantillonGroupe(u, 5));
   echantillon("btn-ech-reformulation", "Envoyer un échantillon de reformulation",
               (u) => envoyerEchantillonReformulation(u));
+  echantillon("btn-ech-comparaison", "Envoyer un échantillon de comparaison",
+              (u) => envoyerEchantillonComparaison(u));
 
   $("btn-essai").onclick = async () => {
     const url = $("url-ia").value.trim();
@@ -3273,6 +3278,26 @@ async function garderVisee() {
   await ecranPiece(E.piece);
   dessinerPiece("Photographie reprise à " + p.score + " % d'alignement");
 }
+
+/* iOS COUPE LA CAMÉRA dès que la page passe en arrière-plan — une
+   notification, un appel suffisent. Sans ce contrôle, on revient sur un
+   écran figé qui ne mesure plus rien, sans qu'aucun message ne le dise.
+
+   Ce bloc avait disparu lors de la réécriture de la prise de vue : le
+   cinquième contrôle du 28/08/2026 l'a rattrapé. */
+document.addEventListener("visibilitychange", () => {
+  const V = E.visee;
+  if (!V || !V.camera || document.hidden) return;
+  const piste = V.camera.getVideoTracks()[0];
+  if (piste && piste.readyState === "live") return;
+
+  arreterVisee();
+  if (E.ecran === "visee") {
+    ecranPiece(E.piece).then(() => dessinerPiece(
+      "La caméra a été coupée par iOS. Touche à nouveau la photographie " +
+      "pour reprendre la visée."));
+  }
+});
 
 var _minuterieVisee = null;
 function confirmerVisee(score) {

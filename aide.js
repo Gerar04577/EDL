@@ -122,6 +122,16 @@ var AIDE = [
       "ensuite.",
       "RELIRE — le texte arrive dans un cadre que tu peux corriger au clavier ou au " +
       "micro. Le texte final est le tien.",
+      "COMPARER AVEC L'ENTRÉE. Sous une photographie prise en visée guidée, un " +
+      "bouton « Comparer avec l'entrée » envoie les DEUX vues à l'IA. Elle " +
+      "constate l'écart : l'élément, la nature, la localisation, l'ampleur, et " +
+      "si la salissure paraît nettoyable ou incrustée.",
+      "Elle ne classe RIEN. Ni nouveau, ni aggravé, ni imputable, ni un montant : " +
+      "c'est ton travail, et c'est ce qui protège le document. Une application " +
+      "qui qualifierait à ta place affaiblirait le procès-verbal.",
+      "Elle peut refuser. Si les cadrages sont trop différents ou l'éclairage " +
+      "incomparable, elle répond « COMPARAISON IMPOSSIBLE » avec sa raison. " +
+      "C'est voulu : mieux vaut un refus qu'un écart inventé.",
       "CORRIGER UNE SEULE PHOTOGRAPHIE. Sous la description, le bouton « Corriger » " +
       "ouvre un écran dédié : le texte, un champ pour dire ce qu'il faut changer, et " +
       "les mêmes deux boutons que pour un groupe. « Garder ce texte » le renvoie dans " +

@@ -23,7 +23,7 @@ var IA_DELAI_MS = 90000;
 /* Version des consignes, transmise à chaque appel. Permet de savoir, six
    mois plus tard, quelle rédaction a produit un texte donné. À incrémenter
    dès qu'une consigne change. */
-var IA_PROMPT_VERSION = "2026-08-26-v10";
+var IA_PROMPT_VERSION = "2026-08-28-v11";
 var CLE_WEBHOOK_IA = "edl_webhook_ia";
 
 /* L'adresse est conservée SUR L'APPAREIL. Le fichier de configuration
@@ -857,6 +857,161 @@ function consigneReformulation(piece, type, texteActuel, instruction, historique
    11 Mo : on reste sous la limite, mais on ne va pas plus loin. Au-delà,
    le constat d'ensemble se dilue de toute façon. */
 var GROUPE_MAX_PHOTOS = 10;
+
+/* ---- Comparaison de deux photographies ---------------------------------
+
+   L'IA CONSTATE, ELLE NE QUALIFIE PAS. Elle décrit l'écart entre la vue
+   d'entrée et celle de sortie. Elle ne dit ni « nouveau », ni « aggravé »,
+   ni « imputable », ni « usure normale », ni un montant : ces
+   qualifications appartiennent au bailleur et au juge de paix, et une
+   application qui les produirait affaiblirait le document au lieu de le
+   renforcer.
+
+   ELLE DOIT POUVOIR DIRE NON. Devant deux images qu'elle ne peut pas
+   rapprocher — cadrages trop différents, éclairage incomparable — elle
+   voudra répondre quand même et inventera un écart. On lui demande donc
+   de trancher d'abord si la comparaison est possible. */
+function consigneComparaison(piece, scoreAlignement) {
+  const morceaux = [
+    "Tu reçois DEUX photographies du même logement en Région wallonne : la " +
+      "PREMIÈRE a été prise à l'entrée du locataire, la SECONDE à sa sortie, " +
+      "plusieurs mois ou années plus tard.",
+    "Pièce concernée : " + (piece || "non précisée") + ".",
+
+    scoreAlignement
+      ? "Les deux vues ont été cadrées avec une correspondance mesurée à " +
+        scoreAlignement + " %."
+      : "Le cadrage des deux vues n'a pas été mesuré.",
+
+    /* La question préalable. Sans elle, le modèle répond toujours quelque
+       chose, et une différence d'éclairage devient une auréole. */
+    "AVANT TOUTE CHOSE, TRANCHE : reconnais-tu le MÊME élément sur les deux " +
+      "photographies ? Si les cadrages sont trop différents, si l'éclairage " +
+      "empêche toute comparaison, ou si tu n'es pas certain de regarder la " +
+      "même surface, réponds EXACTEMENT : COMPARAISON IMPOSSIBLE, suivi de la " +
+      "raison en une phrase. N'invente jamais un écart pour avoir quelque " +
+      "chose à dire : une comparaison impossible se dit, elle ne se devine pas.",
+
+    "SI LA COMPARAISON EST POSSIBLE, décris CE QUI A CHANGÉ entre la première " +
+      "et la seconde. Pour chaque écart : l'élément atteint, son matériau, la " +
+      "nature exacte du désordre, sa localisation précise, son ampleur " +
+      "chiffrée, et son caractère superficiel et d'allure nettoyable ou " +
+      "incrusté dans le matériau.",
+
+    "SI RIEN N'A CHANGÉ, écris-le en une phrase, en nommant les éléments que " +
+      "tu as comparés. Ne meuble pas.",
+
+    "NE DÉCRIS PAS CE QUI EST IDENTIQUE. La description de l'état initial a " +
+      "déjà été faite à l'entrée ; ici, seul l'écart compte.",
+
+    "MÉFIE-TOI DE L'ÉCLAIRAGE. Une ombre, un reflet, une lampe allumée d'un " +
+      "côté et pas de l'autre ne sont pas des désordres. Ne signale un écart " +
+      "que si la MATIÈRE a changé.",
+
+    "MÉFIE-TOI DU MOBILIER. Un meuble déplacé, un objet retiré découvre une " +
+      "surface qu'on ne voyait pas : dis alors que la zone n'était pas " +
+      "visible à l'entrée, plutôt que d'annoncer un désordre nouveau.",
+
+    "MESURE OBLIGATOIRE. Tout écart porte son ampleur : environ 5 cm, sur " +
+      "2 dm², sur une trentaine de centimètres. Sans ampleur, il ne pourra " +
+      "pas être retenu.",
+
+    "VOCABULAIRE. Emploie les termes du métier : impact, enfoncement, " +
+      "fissure, lézarde, écaillement, pelade, décollement, épaufrure, " +
+      "écornure, éclat, entartrage, cerne, auréole, moisissure, griffure, " +
+      "poinçonnement, frottement.",
+
+    "FORMULES CREUSES INTERDITES : sans remarque particulière, rien à " +
+      "signaler, RAS, conforme, en bon état, aucune différence notable. " +
+      "AUCUN EUPHÉMISME : ni un peu, ni quelques traces, ni légèrement, ni " +
+      "correct, ni acceptable.",
+
+    /* Les interdits juridiques, rappelés en fin de consigne — la position
+       que le modèle pondère le plus. */
+    "INTERDITS ABSOLUS. N'écris JAMAIS que l'état relève de l'usure normale " +
+      "ou de la vétusté : cette qualification appartient au juge de paix. " +
+      "N'impute JAMAIS un désordre au locataire, au bailleur ou à un tiers. " +
+      "N'évalue JAMAIS un coût ni une réparation. Ne classe pas l'écart : " +
+      "n'écris ni nouveau, ni aggravé, ni déjà présent, ni imputable. Tu " +
+      "constates, tu ne juges pas.",
+
+    "FORMAT. Rends le constat de l'écart et RIEN d'autre : pas " +
+      "d'introduction, pas de conclusion, pas de titre, pas de liste, pas de " +
+      "guillemets. Trois phrases au plus.",
+  ];
+  return morceaux.join(" ").replace(/[\r\n\t]+/g, " ")
+    .replace(/["\\]/g, "").replace(/\s+/g, " ").trim();
+}
+
+/* Envoie les DEUX adresses à Make, dans l'ordre entrée puis sortie.
+   La branche « groupe » du scénario les traite sans rien changer : elle
+   découpe urls_photos, télécharge, assemble et appelle Gemini. Deux images
+   au lieu de cinq, c'est tout. */
+async function comparerPhotographies(visite, photoSortie, urlEntree) {
+  if (!photoSortie.onedrive_item_id)
+    throw new Error("La photographie de sortie n'est pas encore enregistrée " +
+      "dans OneDrive. Envoie-la d'abord.");
+  if (!urlEntree)
+    throw new Error("Adresse de la photographie d'entrée introuvable.");
+
+  const piece = (visite.pieces.find(p => p.piece_id === photoSortie.rattachement) || {}).libelle;
+  const urlSortie = await lienTelechargement(visite, photoSortie);
+
+  const champs = {
+    action: "comparer_photos",
+    nombre_photos: "2",
+    drive_id: visite.bien.dossier_cible_drive_id || "",
+    modele: CONFIG.ia.modele,
+    piece: piece || "",
+    type: visite.type,
+    consigne: consigneComparaison(piece, photoSortie.score_alignement),
+    prompt_version: IA_PROMPT_VERSION,
+    visit_id: visite.visit_id,
+    photo_ids: photoSortie.photo_id,
+    /* L'ORDRE COMPTE : la consigne parle de la première et de la seconde. */
+    urls_photos: [urlEntree, urlSortie].join("|"),
+    url_photo_1: urlEntree,
+    url_photo_2: urlSortie,
+    url_photo: urlEntree,
+    item_id: photoSortie.onedrive_item_id,
+    photo_entree_nom: photoSortie.photo_entree_nom || "",
+    score_alignement: String(photoSortie.score_alignement || ""),
+  };
+
+  const texte = await appelerRelaisIA(champs);
+  const propre = nettoyerReponseIA(texte);
+  if (!propre) throw new Error("Le relais a répondu, mais sans texte exploitable.");
+  await journaliser("ia_comparaison",
+    { photo: photoSortie.photo_id, score: photoSortie.score_alignement,
+      impossible: /COMPARAISON IMPOSSIBLE/i.test(propre) });
+  return propre;
+}
+
+/* Échantillon pour faire connaître les champs de comparaison à Make. */
+async function envoyerEchantillonComparaison(adresse) {
+  const champs = {
+    action: "comparer_photos",
+    nombre_photos: "2",
+    drive_id: "", modele: CONFIG.ia.modele,
+    piece: "Séjour", type: "EDLS",
+    consigne: consigneComparaison("Séjour", 63),
+    prompt_version: IA_PROMPT_VERSION,
+    visit_id: "v_echantillon", photo_ids: "ph_echantillon",
+    urls_photos: "https://exemple/entree.jpg|https://exemple/sortie.jpg",
+    url_photo_1: "https://exemple/entree.jpg",
+    url_photo_2: "https://exemple/sortie.jpg",
+    url_photo: "https://exemple/entree.jpg",
+    item_id: "item_echantillon",
+    photo_entree_nom: "20260827_230720115_iOS.heic",
+    score_alignement: "63",
+  };
+  const res = await fetch(adresse, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(champs).toString(),
+  });
+  return { statut: res.status, champs: Object.keys(champs).length };
+}
 
 async function decrireGroupe(visite, photos, instruction) {
   if (photos.length > GROUPE_MAX_PHOTOS)
