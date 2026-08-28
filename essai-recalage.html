@@ -249,17 +249,25 @@
 
 <script>
 /* ================= NOYAU DE RECALAGE ================= */
-const TAILLE = 96;   // côté de l'image de travail
+/* Deux tailles de travail : une petite pour CHERCHER l'échelle, une plus
+   grande pour MESURER l'alignement une fois l'échelle connue. C'est la
+   pyramide décrite dans la littérature du recalage d'images — on estime
+   au grossier, on mesure au fin.
 
-/* Réduit une image (tableau RGBA) en niveaux de gris à TAILLE×TAILLE. */
-function reduire(rgba, L, H) {
-  const g = new Float32Array(TAILLE * TAILLE);
-  for (let y = 0; y < TAILLE; y++) {
-    const sy = Math.floor(y * H / TAILLE);
-    for (let x = 0; x < TAILLE; x++) {
-      const sx = Math.floor(x * L / TAILLE);
+   Mesuré : un essai coûte 22 ms à 96 pixels, 1,3 ms à 48. Chercher
+   l'échelle au petit format rend la recherche quasi gratuite. */
+const TAILLE = 96;          // mesure de l'alignement
+const TAILLE_ECH = 48;      // recherche de l'échelle
+
+/* Réduit une image (tableau RGBA) en niveaux de gris à T×T. */
+function reduireT(rgba, L, H, T) {
+  const g = new Float32Array(T * T);
+  for (let y = 0; y < T; y++) {
+    const sy = Math.floor(y * H / T);
+    for (let x = 0; x < T; x++) {
+      const sx = Math.floor(x * L / T);
       const i = (sy * L + sx) * 4;
-      g[y * TAILLE + x] = 0.299 * rgba[i] + 0.587 * rgba[i+1] + 0.114 * rgba[i+2];
+      g[y * T + x] = 0.299 * rgba[i] + 0.587 * rgba[i+1] + 0.114 * rgba[i+2];
     }
   }
   return g;
@@ -267,64 +275,54 @@ function reduire(rgba, L, H) {
 
 /* Amplitude du gradient (Sobel). On compare des CONTOURS, pas des teintes :
    l'éclairage change entre l'entrée et la sortie, les arêtes non. */
-function contours(g) {
-  const c = new Float32Array(TAILLE * TAILLE);
-  for (let y = 1; y < TAILLE - 1; y++) {
-    for (let x = 1; x < TAILLE - 1; x++) {
-      const i = y * TAILLE + x;
-      const gx = -g[i-TAILLE-1] - 2*g[i-1] - g[i+TAILLE-1]
-                 + g[i-TAILLE+1] + 2*g[i+1] + g[i+TAILLE+1];
-      const gy = -g[i-TAILLE-1] - 2*g[i-TAILLE] - g[i-TAILLE+1]
-                 + g[i+TAILLE-1] + 2*g[i+TAILLE] + g[i+TAILLE+1];
+function contoursT(g, T) {
+  const c = new Float32Array(T * T);
+  for (let y = 1; y < T - 1; y++) {
+    for (let x = 1; x < T - 1; x++) {
+      const i = y * T + x;
+      const gx = -g[i-T-1] - 2*g[i-1] - g[i+T-1] + g[i-T+1] + 2*g[i+1] + g[i+T+1];
+      const gy = -g[i-T-1] - 2*g[i-T] - g[i-T+1] + g[i+T-1] + 2*g[i+T] + g[i+T+1];
       c[i] = Math.sqrt(gx*gx + gy*gy);
     }
   }
   return c;
 }
 
-/* Densité de contours : dit si l'image offre de quoi s'accrocher.
-   Un mur beige uniforme donne une valeur très basse — et le score
-   d'alignement n'y voudra rien dire. */
-function densiteContours(c) {
+function densiteContoursT(c, T) {
   let n = 0, somme = 0;
   for (let i = 0; i < c.length; i++) { somme += c[i]; if (c[i] > 40) n++; }
   return { part: n / c.length, moyenne: somme / c.length };
 }
 
-/* Corrélation croisée normalisée entre deux cartes de contours, la
-   seconde décalée de (dx, dy) et mise à l'échelle e. */
-function correlation(a, b, dx, dy, e) {
+function correlationT(a, b, dx, dy, e, T) {
   let sa = 0, sb = 0, sab = 0, saa = 0, sbb = 0, n = 0;
-  const centre = TAILLE / 2;
-  for (let y = 4; y < TAILLE - 4; y += 2) {
-    for (let x = 4; x < TAILLE - 4; x += 2) {
+  const centre = T / 2;
+  for (let y = 4; y < T - 4; y += 2) {
+    for (let x = 4; x < T - 4; x += 2) {
       const bx = Math.round(centre + (x - centre) / e + dx);
       const by = Math.round(centre + (y - centre) / e + dy);
-      if (bx < 0 || by < 0 || bx >= TAILLE || by >= TAILLE) continue;
-      const va = a[y * TAILLE + x], vb = b[by * TAILLE + bx];
+      if (bx < 0 || by < 0 || bx >= T || by >= T) continue;
+      const va = a[y * T + x], vb = b[by * T + bx];
       sa += va; sb += vb; sab += va * vb; saa += va * va; sbb += vb * vb; n++;
     }
   }
-  if (n < 100) return 0;
+  if (n < 40) return 0;
   const num = sab - sa * sb / n;
   const den = Math.sqrt((saa - sa*sa/n) * (sbb - sb*sb/n));
   return den > 0 ? num / den : 0;
 }
 
-/* Cherche le meilleur alignement dans une plage volontairement étroite :
-   on guide un geste, on ne recale pas un scanner. */
-function chercher(refC, fluxC) {
+function chercherT(refC, fluxC, T) {
   let meilleur = { score: -1, brut: -1, dx: 0, dy: 0, e: 1 };
+  const lim = Math.round(T / 7);
   const echelles = [0.85, 0.93, 1, 1.08, 1.18];
   for (const e of echelles) {
-    for (let dy = -14; dy <= 14; dy += 2) {
-      for (let dx = -14; dx <= 14; dx += 2) {
-        const brut = correlation(refC, fluxC, dx, dy, e);
-        /* PÉNALITÉ DE COMPLEXITÉ. Sans elle, plusieurs transformations
-           très différentes obtiennent des scores voisins, et le bruit
-           décide : un décalage vertical se voyait annoncé comme « avance,
-           pivote à droite ». On préfère donc, à score égal, la
-           transformation la plus simple — celle qui bouge le moins. */
+    for (let dy = -lim; dy <= lim; dy += 2) {
+      for (let dx = -lim; dx <= lim; dx += 2) {
+        const brut = correlationT(refC, fluxC, dx, dy, e, T);
+        /* Pénalité de complexité : à score égal, la transformation la plus
+           simple gagne. Sans elle, le bruit décide entre plusieurs
+           optima voisins et les consignes deviennent absurdes. */
         const cout = (Math.abs(dx) + Math.abs(dy)) * 0.004
                    + Math.abs(Math.log(e)) * 0.15;
         const s = brut - cout;
@@ -332,14 +330,17 @@ function chercher(refC, fluxC) {
       }
     }
   }
-  /* Le score rendu est la corrélation réelle, pas la valeur pénalisée. */
   meilleur.score = meilleur.brut;
   return meilleur;
 }
 
+/* Les appels historiques, à la taille de mesure. */
+const reduire = (rgba, L, H) => reduireT(rgba, L, H, TAILLE);
+const contours = (g) => contoursT(g, TAILLE);
+const densiteContours = (c) => densiteContoursT(c, TAILLE);
+const chercher = (a, b) => chercherT(a, b, TAILLE);
+
 /* Traduit le décalage en consigne compréhensible. */
-/* Les seuils sont en pixels de l'image de travail (96 de côté) : deux
-   pixels y valent une vingtaine sur la photographie finale. */
 function conseil(m) {
   const t = [];
   if (m.e < 0.96) t.push("avance");
@@ -351,12 +352,57 @@ function conseil(m) {
   return t.length ? t.join(", ") : "alignement correct";
 }
 
+/* ---- RECHERCHE DE L'ÉCHELLE PAR SECTION DORÉE -------------------------
+
+   L'ancienne méthode balayait un pas fixe puis se contentait d'un
+   voisinage : elle ne convergeait jamais et restait prisonnière d'un
+   mauvais réglage. La section dorée, elle, réduit l'intervalle d'un
+   facteur 0,618 à chaque tour et converge en une douzaine d'essais,
+   quelle que soit la valeur cherchée.
+
+   L'ÉCHELLE SE PARCOURT EN LOGARITHME. Un pas fixe de 8 % vaut 16 %
+   d'écart relatif à 50 et 5,6 % à 142 : on chercherait finement là où ça
+   ne sert à rien. En logarithme, un pas vaut le même rapport partout. */
+const PHI = (Math.sqrt(5) - 1) / 2;
+const L_MIN = Math.log(50), L_MAX = Math.log(150);
+
+function sectionDoree(evaluer, precision, nAmorce) {
+  /* Amorce : quelques points régulièrement espacés en logarithme, pour
+     encadrer le maximum. La section dorée l'exige — elle ne converge que
+     si le point du milieu bat ses deux voisins. */
+  const pts = [];
+  for (let i = 0; i < nAmorce; i++) {
+    const l = L_MIN + (L_MAX - L_MIN) * i / (nAmorce - 1);
+    pts.push({ l, v: evaluer(Math.exp(l)) });
+  }
+  let k = 0;
+  for (let i = 1; i < pts.length; i++) if (pts[i].v > pts[k].v) k = i;
+  let a = pts[Math.max(0, k - 1)];
+  let b = pts[k];
+  let c = pts[Math.min(pts.length - 1, k + 1)];
+  let essais = nAmorce;
+
+  const cible = Math.log(1 + precision);
+  while (c.l - a.l > cible && essais < 30) {
+    let x;
+    if (c.l - b.l > b.l - a.l) {
+      x = { l: b.l + (1 - PHI) * (c.l - b.l) };
+      x.v = evaluer(Math.exp(x.l)); essais++;
+      if (x.v > b.v) { a = b; b = x; } else { c = x; }
+    } else {
+      x = { l: b.l - (1 - PHI) * (b.l - a.l) };
+      x.v = evaluer(Math.exp(x.l)); essais++;
+      if (x.v > b.v) { c = b; b = x; } else { a = x; }
+    }
+  }
+  return { echelle: Math.exp(b.l), score: b.v, essais };
+}
 
 /* ================= FIN DU NOYAU ================= */
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 1.13";
+const VERSION = "essai 2.0";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -382,7 +428,7 @@ $("fichier").onchange = (e) => {
        appartiennent à la photographie précédente : les garder revenait à
        comparer la nouvelle vue à l'ancienne image, et aucun zoom n'y
        changeait rien. */
-    contoursParEchelle = {};
+    reserve = {};
     echelleRetenue = null;
     echelleFigee = null;
     echecs = 0;
@@ -399,7 +445,7 @@ $("fichier").onchange = (e) => {
     refContours = contours(reduire(px, TAILLE, TAILLE));
     /* Gardée pour recalculer ses contours à d'autres échelles. */
     imageRefChargee = img;
-    contoursParEchelle = { 100: refContours };
+    reserve = {};
     echelleRetenue = null;
 
     const d = densiteContours(refContours);
@@ -528,191 +574,69 @@ $("btn-eteindre").onclick = eteindre;
 
 /* ---- Recherche automatique de l'échelle --------------------------------
 
-   L'appareil natif et Safari ne cadrent pas pareil : la référence paraît
-   plus grande ou plus petite que le flux, et aucun placement ne les fait
-   coïncider. Plutôt que de demander à l'opérateur de chercher la bonne
-   valeur, on la cherche.
-
-   DEUX TEMPS. Un balayage large au premier passage — 50 à 150 % par pas
-   de 10, puis affinage par pas de 2 autour du meilleur. Ensuite on reste
-   au voisinage de l'échelle trouvée : trois essais par image suffisent,
-   la distance de l'opérateur ne varie pas brutalement.
-
-   Les contours de la référence sont calculés UNE FOIS par échelle et
-   gardés : c'est ce qui rend la recherche tenable dix fois par seconde. */
+   Deux images du même lieu, prises par deux objectifs différents, ne
+   coïncident qu'à une échelle près. On la cherche, au petit format, par
+   section dorée. */
 var echelleRetenue = null;        // en pourcent
-var echecs = 0;                   // analyses de suite sous 25 %
 var echelleFigee = null;          // arrêtée dès qu'elle est convaincante
-var stableDepuis = 0;             // début de la période d'immobilité
-var DELAI_STABILITE = 1200;       // ms — le temps d'un point et d'un geste arrêté
-
-/* Demande un point sur la scène. La mise au point continue est déjà
-   active, mais un rappel au moment décisif évite de photographier
-   pendant que l'objectif cherche encore. */
-async function demanderPoint() {
-  if (!fluxCamera) return;
-  const piste = fluxCamera.getVideoTracks()[0];
-  if (!piste) return;
-  try {
-    await piste.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
-  } catch (_) { /* l'appareil refuse : la mise au point reste celle du flux */ }
-}
-var contoursParEchelle = {};      // mémoire des contours calculés
+var echecs = 0;
 var imageRefChargee = null;
 
-function contoursAEchelle(pc) {
-  if (contoursParEchelle[pc]) return contoursParEchelle[pc];
+/* Contours de la référence à une échelle donnée, mis en réserve. */
+var reserve = {};                 // clé : taille + "|" + pourcent
+function contoursRef(pc, T) {
+  const cle = T + "|" + Math.round(pc * 10);
+  if (reserve[cle]) return reserve[cle];
   if (!imageRefChargee) return null;
   const c = document.createElement("canvas");
-  c.width = TAILLE; c.height = TAILLE;
+  c.width = T; c.height = T;
   const ctx = c.getContext("2d", { willReadFrequently: true });
-  /* Agrandir la référence revient à n'en garder que le centre : à 150 %,
-     on n'en voit que les deux tiers. */
-  /* Même règle qu'à l'affichage : au-dessus de 100 % on rogne la
-     référence en son centre ; en dessous, on la prend entière — c'est le
-     FLUX qui sera rogné, dans analyser(). */
+  /* Au-dessus de 100 %, on rogne la référence en son centre ; en dessous,
+     on la prend entière — c'est alors le FLUX qui sera rogné. */
   const z = Math.max(1, pc / 100);
   const iw = imageRefChargee.naturalWidth, ih = imageRefChargee.naturalHeight;
   const sw = iw / z, sh = ih / z;
-  ctx.drawImage(imageRefChargee, (iw - sw) / 2, (ih - sh) / 2, sw, sh,
-                0, 0, TAILLE, TAILLE);
-  const d = ctx.getImageData(0, 0, TAILLE, TAILLE).data;
-  contoursParEchelle[pc] = contours(reduire(d, TAILLE, TAILLE));
-  return contoursParEchelle[pc];
+  ctx.drawImage(imageRefChargee, (iw - sw) / 2, (ih - sh) / 2, sw, sh, 0, 0, T, T);
+  const d = ctx.getImageData(0, 0, T, T).data;
+  const r = contoursT(reduireT(d, T, T, T), T);
+  reserve[cle] = r;
+  return r;
 }
 
-/* Contours du flux, rognés selon l'échelle : sous 100 %, on n'en garde
-   que le centre — l'équivalent d'un pas en arrière de la référence. */
-function contoursFlux(v, dx, dy, cl, ch, pc) {
+/* Contours du flux, rognés en miroir de la référence. */
+var _cvEch = null;
+function contoursFluxT(v, dx, dy, cl, ch, pc, T) {
+  if (!_cvEch || _cvEch.width !== T) {
+    _cvEch = document.createElement("canvas");
+    _cvEch.width = T; _cvEch.height = T;
+    _cvEch.ctx = _cvEch.getContext("2d", { willReadFrequently: true });
+  }
   const z = Math.max(1, 100 / pc);
   const fl = Math.round(cl / z), fh = Math.round(ch / z);
   const fx = dx + Math.round((cl - fl) / 2), fy = dy + Math.round((ch - fh) / 2);
-  ctxT.drawImage(v, fx, fy, fl, fh, 0, 0, TAILLE, TAILLE);
-  const px = ctxT.getImageData(0, 0, TAILLE, TAILLE).data;
-  return contours(reduire(px, TAILLE, TAILLE));
+  _cvEch.ctx.drawImage(v, fx, fy, fl, fh, 0, 0, T, T);
+  const px = _cvEch.ctx.getImageData(0, 0, T, T).data;
+  return contoursT(reduireT(px, T, T, T), T);
 }
 
-/* fluxPour(pc) rend les contours du flux pour une échelle donnée. */
-function chercherAvecEchelle(fluxPour) {
-  const auto = $("echelle-auto").checked;
-  if (!auto) {
-    const pc = Number($("zoom-ref").value);
-    const c = contoursAEchelle(pc);
-    const m = c ? chercher(c, fluxPour(pc)) : { score: 0, dx: 0, dy: 0, e: 1 };
-    m.echelle = pc;
-    return m;
-  }
+/* Cherche l'échelle au PETIT format, puis mesure l'alignement au GRAND.
+   C'est la pyramide : estimation au grossier, mesure au fin. */
+function chercherEchelle(v, dx, dy, cl, ch) {
+  if (!$("echelle-auto").checked) return Number($("zoom-ref").value);
+  if (echelleFigee) return echelleFigee;
 
-  /* Échelle figée : un seul essai, et le score dit la vérité. */
-  if (echelleFigee) {
-    const c = contoursAEchelle(echelleFigee);
-    const m = c ? chercher(c, fluxPour(echelleFigee)) : { score: 0, dx: 0, dy: 0, e: 1 };
-    m.echelle = echelleFigee;
-    /* Si l'alignement s'effondre durablement, on rouvre la recherche. */
-    if (m.score < 0.35) {
-      echecs++;
-      if (echecs >= 15) {
-        echelleFigee = null; echelleRetenue = null; echecs = 0;
-        noter("Alignement perdu : nouvelle recherche d'échelle.", "attention");
-      }
-    } else echecs = 0;
-    return m;
-  }
+  const evaluer = (pc) => {
+    const r = contoursRef(pc, TAILLE_ECH);
+    if (!r) return 0;
+    return chercherT(r, contoursFluxT(v, dx, dy, cl, ch, pc, TAILLE_ECH),
+                     TAILLE_ECH).score;
+  };
 
-  /* Voisinage de l'échelle retenue, ou balayage complet au premier coup. */
-  let candidats;
-  if (echelleRetenue === null) {
-    /* Pas de 8 plutôt que 10 : treize essais au lieu de onze, pour ne pas
-       passer à côté d'une bonne échelle au premier balayage. */
-    candidats = [];
-    for (let p = 50; p <= 150; p += 8) candidats.push(p);
-  } else {
-    /* VOISINAGE VARIABLE. Trois échelles au pas de 3 suffisent quand
-       l'alignement est bon : l'opérateur ne change pas de distance
-       brutalement. Mais tant que le score reste faible, c'est le signe que
-       la valeur retenue est mauvaise — on élargit alors à sept échelles au
-       pas de 5, quitte à ralentir : mieux vaut chercher plus lentement au
-       bon endroit que vite au mauvais. */
-    const large = dernierScore < 45;
-    const pas = large ? 5 : 3;
-    const n = large ? 3 : 1;
-    candidats = [];
-    for (let k = -n; k <= n; k++) candidats.push(echelleRetenue + k * pas);
-    candidats = candidats.filter(p => p >= 50 && p <= 150);
-
-    /* SE DÉPRENDRE D'UN MAUVAIS CHOIX. La première recherche se fait au
-       moment où l'opérateur n'est pas encore placé : elle peut retenir une
-       échelle absurde, et le voisinage de trois pas ne permet plus d'en
-       sortir. Après une série de scores faibles, on rouvre donc le
-       balayage complet. */
-    /* Vingt analyses au lieu de vingt-cinq : deux secondes suffisent pour
-       constater qu'on cherche au mauvais endroit. */
-    if (echecs >= 20) { echelleRetenue = null; echecs = 0;
-      candidats = [];
-      for (let p = 50; p <= 150; p += 10) candidats.push(p);
-      noter("Échelle peu convaincante : nouvelle recherche complète.", "attention");
-    }
-  }
-
-  let meilleur = { score: -1 };
-  candidats.forEach(pc => {
-    const c = contoursAEchelle(pc);
-    if (!c) return;
-    const m = chercher(c, fluxPour(pc));
-    if (m.score > meilleur.score) { meilleur = m; meilleur.echelle = pc; }
-  });
-
-  /* Affinage au premier passage : le pas de 10 est trop grossier pour
-     s'arrêter là. */
-  if (echelleRetenue === null && meilleur.echelle) {
-    const base = meilleur.echelle;
-    [base - 6, base - 4, base - 2, base + 2, base + 4, base + 6]
-      .filter(p => p >= 50 && p <= 150)
-      .forEach(pc => {
-        const c = contoursAEchelle(pc);
-        if (!c) return;
-        const m = chercher(c, fluxPour(pc));
-        if (m.score > meilleur.score) { meilleur = m; meilleur.echelle = pc; }
-      });
-  }
-
-  /* Un score durablement bas signifie soit un mauvais cadrage, soit une
-     mauvaise échelle. On compte, et au bout d'un moment on rouvre. */
-  /* Le compteur monte tant que l'alignement n'est pas franchement bon —
-     0,40 et non 0,25 : à un quart de ressemblance, on ne cherche
-     manifestement pas au bon endroit. */
-  echecs = (meilleur.score < 0.40) ? echecs + 1 : 0;
-
-  /* L'ÉCHELLE SE FIGE UNE FOIS CONVAINCANTE.
-
-     Chercher à chaque image gonflait le score : on retenait le meilleur de
-     trois essais, donc toujours plus flatteur qu'un seul. Mesuré : jusqu'à
-     treize points de trop sur un cadrage très décalé. Le déclenchement ne
-     portait plus sur la ressemblance des deux vues, mais sur la meilleure
-     échelle qu'on ait pu leur trouver.
-
-     Au-delà de 45 %, l'échelle est tenue pour bonne et ne bouge plus : le
-     score redevient une mesure honnête de l'alignement. */
-  /* SEUIL DE FIGEAGE À 65 %. À 45 %, l'alignement est encore médiocre :
-     figer là dessus enfermait l'application dans un réglage approximatif
-     dont elle ne pouvait plus sortir. */
-  if (!echelleFigee && meilleur.score >= 0.65 && meilleur.echelle) {
-    echelleFigee = meilleur.echelle;
-    noter("Échelle figée à " + meilleur.echelle + " % — le score mesure " +
-      "désormais le seul alignement.", "ok");
-  }
-
-  if (meilleur.echelle) {
-    echelleRetenue = meilleur.echelle;
-    $("zoom-ref").value = meilleur.echelle;
-    /* « Trouvé » s'affichait quel que soit le score : à 5 % d'alignement,
-       l'application annonçait une échelle trouvée. On ne le dit que
-       lorsque le résultat le mérite. */
-    $("val-zoom-ref").textContent = meilleur.echelle + " % " +
-      (meilleur.score >= 0.45 ? "(trouvé)" : "(en recherche)");
-    poserEchelleCalque(meilleur.echelle);
-  }
-  return meilleur;
+  /* Amorce large quand on part de rien, resserrée autour de la valeur
+     précédente sinon — l'opérateur ne saute pas d'une distance à l'autre. */
+  const res = sectionDoree(evaluer, 0.02, echelleRetenue === null ? 5 : 4);
+  echelleRetenue = Math.round(res.echelle);
+  return echelleRetenue;
 }
 
 /* ---- Analyse en continu ---- */
@@ -746,8 +670,37 @@ function analyser() {
   /* Le flux est rogné en miroir de la référence : au-dessus de 100 %,
      c'est la référence qu'on rogne ; en dessous, c'est lui. Les deux
      images restent ainsi à la même échelle, et couvrent le cadre. */
-  const fluxC = contoursFlux(v, dx, dy, cl, ch, 100);
-  const m = chercherAvecEchelle((pc) => contoursFlux(v, dx, dy, cl, ch, pc));
+  /* PYRAMIDE : l'échelle se cherche au petit format — douze essais y
+     coûtent 16 ms au lieu de 268 — puis l'alignement se mesure une seule
+     fois au grand. */
+  const pc = chercherEchelle(v, dx, dy, cl, ch);
+  const refC = contoursRef(pc, TAILLE);
+  const m = refC
+    ? chercherT(refC, contoursFluxT(v, dx, dy, cl, ch, pc, TAILLE), TAILLE)
+    : { score: 0, dx: 0, dy: 0, e: 1 };
+  m.echelle = pc;
+
+  /* Le curseur et la superposition suivent l'échelle trouvée. */
+  if ($("echelle-auto").checked) {
+    $("zoom-ref").value = pc;
+    $("val-zoom-ref").textContent = pc + " % " +
+      (m.score >= 0.45 ? "(trouvé)" : "(en recherche)");
+    poserEchelleCalque(pc);
+  }
+
+  /* L'échelle se fige quand elle est convaincante : la recherche cesse
+     alors de flatter le score, qui redevient une mesure de l'alignement
+     seul. Elle se libère si l'alignement s'effondre durablement. */
+  if (!echelleFigee && m.score >= 0.65) {
+    echelleFigee = pc;
+    noter("Échelle figée à " + pc + " % — le score mesure désormais le " +
+      "seul alignement.", "ok");
+  }
+  echecs = (m.score < 0.35) ? echecs + 1 : 0;
+  if (echelleFigee && echecs >= 15) {
+    echelleFigee = null; echelleRetenue = null; echecs = 0;
+    noter("Alignement perdu : nouvelle recherche d'échelle.", "attention");
+  }
   const pourcent = Math.max(0, Math.round(m.score * 100));
   dernierScore = pourcent;
 
