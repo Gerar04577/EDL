@@ -3108,17 +3108,28 @@ function brancherVisee() {
     if (V.camera) { $("visee-flux").srcObject = V.camera; $("visee-flux").play(); }
   };
 
+  /* ATTENTION : le gestionnaire lisait « e.target.value » alors que « e »
+     EST déjà l'élément — il n'a pas de propriété target. La valeur lue
+     était donc invalide et le chiffre affiché ne bougeait pas. */
   const regle = (id, cle, lib, conv) => {
-    const e = $(id);
-    if (!e) return;
-    e.oninput = () => {
-      const v = conv ? conv(Number(e.target.value)) : Number(e.target.value);
+    const champ = $(id);
+    const valeur = $(lib);
+    if (!champ) return;
+    const appliquer = () => {
+      const brut = Number(champ.value);
+      if (!isFinite(brut)) return;
+      const v = conv ? conv(brut) : brut;
       enregistrerReglagesVisee({ [cle]: v });
-      $(lib).textContent = cle === "stabilite" ? (v / 1000).toFixed(1) + " s"
-        : cle === "qualite" ? String(v).replace(".", ",")
+      if (valeur) valeur.textContent =
+        cle === "stabilite" ? (v / 1000).toFixed(1) + " s"
+        : cle === "qualite" ? v.toFixed(2).replace(".", ",")
         : v + " %";
       if (cle !== "qualite") majAutoVisee();
     };
+    /* input pendant le glissement, change au relâchement : sur iOS, l'un
+       des deux manque selon les versions. */
+    champ.oninput = appliquer;
+    champ.onchange = appliquer;
   };
   regle("visee-seuil", "seuil", "visee-val-seuil");
   regle("visee-stab", "stabilite", "visee-val-stab");
