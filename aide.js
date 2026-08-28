@@ -178,6 +178,9 @@ var AIDE = [
       "l'application, il n'y a pas de fichier de données : seul « Toutes » " +
       "fonctionne.",
 
+      "LE NOM DU PRENEUR VIENT DU DOSSIER ONEDRIVE que tu choisis, jamais de " +
+      "Gestion Loyers — les noms y changent au fil des baux. La mention " +
+      "« probable » ne sert qu'à repérer le bon dossier plus vite.",
       "TOUCHE UNE VIGNETTE pour ouvrir la visée. La photographie d'entrée " +
       "apparaît en transparence par-dessus la caméra, et un score te dit à quel " +
       "point tu retrouves le cadrage. Le curseur règle la transparence : le " +
@@ -188,10 +191,14 @@ var AIDE = [
       "verdit à 60 %, valeur éprouvée sur le terrain. En dessous, une consigne " +
       "s'affiche — recule, pivote à gauche, relève.",
 
-      "DÉCLENCHEMENT AUTOMATIQUE. Un bouton l'active : la photographie part " +
-      "seule dès 60 % atteints, avec un bandeau vert et une vibration. Elle ne " +
-      "part qu'UNE fois : l'automatique se remet à l'arrêt aussitôt, sans quoi " +
-      "la photo se reprendrait dix fois par seconde.",
+      "DÉCLENCHEMENT AUTOMATIQUE. Un bouton l'active. Une fois les 60 % " +
+      "atteints, le cadre passe à l'orange et un décompte s'affiche : NE BOUGE " +
+      "PLUS pendant une seconde. C'est ce temps qui permet à l'appareil de faire " +
+      "sa mise au point — sans lui, la photographie partait pendant le geste et " +
+      "sortait floue. Si tu bouges, le décompte repart de zéro.",
+      "Puis elle part seule, avec un bandeau vert et une vibration. Elle ne part " +
+      "qu'UNE fois : l'automatique se remet à l'arrêt aussitôt, sans quoi la " +
+      "photo se reprendrait dix fois par seconde.",
 
       "TU VOIS TOUJOURS LE RÉSULTAT. Après la prise, les deux images " +
       "s'affichent côte à côte avec le score, la définition et le poids. Rien " +

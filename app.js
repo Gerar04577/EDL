@@ -515,6 +515,23 @@ async function verifierCible(locataire) {
 
   E.brouillon.dossier_locataire = locataire.nom;
   E.brouillon.ref_cible = c.ref;
+
+  /* LE DOSSIER ONEDRIVE FAIT FOI, TOUJOURS.
+
+     Gestion Loyers change le nom des locataires au fil des baux ; le
+     dossier OneDrive, lui, est celui que l'opérateur a choisi sur place,
+     en connaissance de cause. Prendre le nom de Gestion Loyers faisait
+     porter au procès-verbal le nom d'une AUTRE personne que celle qui
+     signe — le défaut constaté le 28/08/2026 sur le dossier Gobert.
+
+     Gestion Loyers ne sert donc qu'à repérer le bon dossier, par la
+     mention « probable » à l'écran précédent. Le nom retenu vient
+     du dossier, sans exception. */
+  const attendus = (E.brouillon.preneurs || []).join(" & ");
+  E.brouillon.preneurs = decouperPreneurs(locataire.nom);
+  E.brouillon.preneurs_liste = attendus || null;
+  E.brouillon.preneurs_corriges =
+    attendus && scoreNom(locataire.nom, [attendus]) === 0;
   E.brouillon.dossier_photos_item_id = prep.id;
   E.brouillon.lien_photos = prep.lien;
 
@@ -2976,6 +2993,10 @@ async function chargerLiensVisibles() {
    d'être intégré ici. */
 
 var SEUIL_ALIGNEMENT = 60;     // validé le 28/08/2026
+/* Durée pendant laquelle l'alignement doit se maintenir avant que la
+   photographie ne parte seule. Assez pour que le geste s'arrête et que la
+   mise au point se fasse, assez peu pour ne pas lasser. */
+var DELAI_STABILITE_MS = 900;
 var QUALITE_VISEE = 0.96;      // le flux vidéo est moins détaillé qu'un cliché natif
 
 async function ecranViseeGuidee(itemEntree) {
@@ -2997,7 +3018,7 @@ async function ecranViseeGuidee(itemEntree) {
 
   E.ecran = "visee";
   E.visee = { ref, lien, score: 0, auto: false, camera: null, boucle: null,
-              contoursRef: null, refL: 0, refH: 0 };
+              contoursRef: null, refL: 0, refH: 0, stableDepuis: 0 };
   const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
   titre("Refaire le cadrage", piece ? piece.libelle : "");
   dessinerVisee();
@@ -3049,7 +3070,7 @@ function brancherVisee() {
   if ($("visee-calque")) $("visee-calque").style.opacity = 0.35;
 
   if ($("visee-auto")) $("visee-auto").onclick = () => {
-    V.auto = !V.auto; majAutoVisee();
+    V.auto = !V.auto; V.stableDepuis = 0; majAutoVisee();
   };
   if ($("visee-prendre")) $("visee-prendre").onclick = prendreVisee;
 }
@@ -3063,7 +3084,8 @@ function majAutoVisee() {
     : "Activer le déclenchement automatique";
   b.className = V.auto ? "mini" : "mini secondaire";
   $("visee-etat-auto").textContent = V.auto
-    ? "Automatique ACTIF — la photo partira seule à " + SEUIL_ALIGNEMENT + " %."
+    ? "Automatique ACTIF — la photo partira seule après " +
+      (DELAI_STABILITE_MS / 1000) + " s d'immobilité à " + SEUIL_ALIGNEMENT + " %."
     : "Automatique arrêté.";
   $("visee-etat-auto").className = V.auto ? "note ok" : "note";
 }
@@ -3100,7 +3122,12 @@ async function allumerVisee() {
   try {
     V.camera = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: "environment" },
-               width: { ideal: 4032 }, height: { ideal: 3024 } },
+               width: { ideal: 4032 }, height: { ideal: 3024 },
+               /* Mise au point continue : sans elle, le flux reste réglé
+                  sur la première distance vue, et une photographie prise
+                  après un déplacement sort floue. Tous les appareils ne
+                  l'acceptent pas — d'où « ideal », qui n'échoue jamais. */
+               focusMode: { ideal: "continuous" } },
       audio: false,
     });
     $("visee-flux").srcObject = V.camera;
@@ -3151,7 +3178,33 @@ function analyserVisee() {
     bon ? "#2f7d63" : p > SEUIL_ALIGNEMENT * 0.7 ? "#c8891f" : "#c9403a";
   $("visee-cadre").style.borderColor = bon ? "#2f7d63" : "transparent";
 
-  if (V.auto && bon) { V.auto = false; majAutoVisee(); prendreVisee(); }
+  /* STABILITÉ AVANT DÉCLENCHEMENT.
+
+     Partir dès 60 % atteints, c'est photographier PENDANT le mouvement :
+     l'appareil n'a pas fini sa mise au point, et l'image sort floue.
+     C'était la cause des photographies floues du 28/08/2026.
+
+     On exige donc que l'alignement se maintienne un peu avant de
+     déclencher — le temps que le geste s'arrête et que la mise au point
+     se fasse. */
+  if (!V.auto) { V.stableDepuis = 0; return; }
+  if (!bon) { V.stableDepuis = 0; $("visee-cadre").classList.remove("pret"); return; }
+
+  const maintenant = Date.now();
+  if (!V.stableDepuis) V.stableDepuis = maintenant;
+  const tenu = maintenant - V.stableDepuis;
+
+  if (tenu < DELAI_STABILITE_MS) {
+    $("visee-cadre").classList.add("pret");
+    $("visee-verdict").textContent = p + " % — ne bouge plus… " +
+      Math.ceil((DELAI_STABILITE_MS - tenu) / 100) / 10 + " s";
+    return;
+  }
+
+  V.auto = false; V.stableDepuis = 0;
+  $("visee-cadre").classList.remove("pret");
+  majAutoVisee();
+  prendreVisee();
 }
 
 /* Fenêtre centrale du flux, au format de la référence : ce que Julien voit
