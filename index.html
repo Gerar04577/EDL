@@ -146,6 +146,15 @@
   .decrire { width:100%; margin-top:9px; padding:13px; font-size:15px; font-weight:600;
     background:#d8e6fb; color:#12447d; border:1px solid #8fb6e6; border-radius:10px; }
   .decrire:disabled { opacity:.6; }
+
+  /* Comparer avec l'entrée : c'est l'action qui produit la valeur du
+     procès-verbal de sortie. Elle doit se voir — pleine largeur et teinte
+     franche, distincte des bleus de la description. */
+  .comparer { width:100%; margin-top:10px; padding:15px; font-size:16px;
+    font-weight:700; letter-spacing:.01em; border-radius:10px;
+    background:#8a3fb0; color:#fff; border:1px solid #6f2f92; }
+  .comparer:active { filter:brightness(.92); }
+  .comparer:disabled { opacity:.45; }
   .voile { position:fixed; inset:0; background:rgba(20,20,20,.45); z-index:50;
     display:flex; align-items:center; justify-content:center;
     padding:24px calc(18px + env(safe-area-inset-left)); }

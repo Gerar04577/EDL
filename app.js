@@ -3655,10 +3655,10 @@ function dessinerPiece(message) {
               <button class="mini secondaire" data-corriger="${echapper(p.photo_id)}"${
                 brouillon.trim() ? "" : " disabled"}>Corriger</button>
             </div>
-            ${p.photo_entree_id ? `<button class="mini secondaire"
+            ${p.photo_entree_id ? `<button class="comparer"
               data-comparer="${echapper(p.photo_id)}"${
               p.onedrive_item_id ? "" : " disabled"}>Comparer avec l'entrée${
-              p.score_alignement ? " — " + p.score_alignement + " %" : ""}</button>` : ""}
+              p.score_alignement ? " — alignement " + p.score_alignement + " %" : ""}</button>` : ""}
             ${dejaConstat
               ? `<p class="note ok">Une constatation est rattachée à cette photo.</p>` : ""}
           ` : `<p class="note gris">En attente d'envoi</p>`}

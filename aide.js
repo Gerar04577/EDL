@@ -122,16 +122,6 @@ var AIDE = [
       "ensuite.",
       "RELIRE — le texte arrive dans un cadre que tu peux corriger au clavier ou au " +
       "micro. Le texte final est le tien.",
-      "COMPARER AVEC L'ENTRÉE. Sous une photographie prise en visée guidée, un " +
-      "bouton « Comparer avec l'entrée » envoie les DEUX vues à l'IA. Elle " +
-      "constate l'écart : l'élément, la nature, la localisation, l'ampleur, et " +
-      "si la salissure paraît nettoyable ou incrustée.",
-      "Elle ne classe RIEN. Ni nouveau, ni aggravé, ni imputable, ni un montant : " +
-      "c'est ton travail, et c'est ce qui protège le document. Une application " +
-      "qui qualifierait à ta place affaiblirait le procès-verbal.",
-      "Elle peut refuser. Si les cadrages sont trop différents ou l'éclairage " +
-      "incomparable, elle répond « COMPARAISON IMPOSSIBLE » avec sa raison. " +
-      "C'est voulu : mieux vaut un refus qu'un écart inventé.",
       "CORRIGER UNE SEULE PHOTOGRAPHIE. Sous la description, le bouton « Corriger » " +
       "ouvre un écran dédié : le texte, un champ pour dire ce qu'il faut changer, et " +
       "les mêmes deux boutons que pour un groupe. « Garder ce texte » le renvoie dans " +
@@ -174,6 +164,57 @@ var AIDE = [
     ],
   },
   {
+    titre: "5 bis. Refaire les mêmes cadrages qu'à l'entrée (sortie)",
+    corps: [
+      "À la SORTIE seulement. Dans une pièce, le bouton « Photos de l'entrée » " +
+      "ouvre les photographies de l'état des lieux d'entrée, lues dans le dossier " +
+      "EDLE voisin. Les textes de l'entrée, eux, restent fermés : ton constat de " +
+      "sortie se rédige à l'aveugle, et c'est ce qui lui donne sa valeur.",
+
+      "DEUX TRIS. « Avec constat » ne montre que les photographies rattachées à " +
+      "une constatation de l'entrée — souvent une vingtaine sur deux cents, ce " +
+      "sont celles qui documentent quelque chose. « Toutes » les affiche par " +
+      "tranches de cinquante. Sur un état des lieux d'entrée fait avant " +
+      "l'application, il n'y a pas de fichier de données : seul « Toutes » " +
+      "fonctionne.",
+
+      "TOUCHE UNE VIGNETTE pour ouvrir la visée. La photographie d'entrée " +
+      "apparaît en transparence par-dessus la caméra, et un score te dit à quel " +
+      "point tu retrouves le cadrage. Le curseur règle la transparence : le " +
+      "va-et-vient entre 0 et 100 % est souvent le plus efficace.",
+
+      "LE SCORE. Il compare les CONTOURS, pas les couleurs : un changement " +
+      "d'éclairage entre l'entrée et la sortie ne le fait pas varier. Le cadre " +
+      "verdit à 60 %, valeur éprouvée sur le terrain. En dessous, une consigne " +
+      "s'affiche — recule, pivote à gauche, relève.",
+
+      "DÉCLENCHEMENT AUTOMATIQUE. Un bouton l'active : la photographie part " +
+      "seule dès 60 % atteints, avec un bandeau vert et une vibration. Elle ne " +
+      "part qu'UNE fois : l'automatique se remet à l'arrêt aussitôt, sans quoi " +
+      "la photo se reprendrait dix fois par seconde.",
+
+      "TU VOIS TOUJOURS LE RÉSULTAT. Après la prise, les deux images " +
+      "s'affichent côte à côte avec le score, la définition et le poids. Rien " +
+      "n'est enregistré ni envoyé dans OneDrive tant que tu n'as pas appuyé sur " +
+      "« Garder ». « Refaire » relance la visée, « Abandonner » revient à la " +
+      "pièce.",
+
+      "CE QUI EST CONSERVÉ. La photographie gardée porte le lien vers sa vue " +
+      "d'entrée et le score obtenu. Ce score figurera au procès-verbal : il dit " +
+      "objectivement à quel point les deux vues sont comparables.",
+
+      "SURFACE TROP UNIE. Si la photographie d'entrée n'offre presque aucun " +
+      "contour — un pan de mur nu, sans plinthe ni angle — l'écran te prévient : " +
+      "le score sera peu fiable, fie-toi alors à la superposition. En pratique " +
+      "c'est rare : un mur porte presque toujours une plinthe, un angle, une " +
+      "prise.",
+    ],
+    attention: "La caméra s'éteint dès que tu quittes l'application, même deux " +
+      "secondes : iOS l'impose. L'écran te le dit et te ramène à la pièce ; " +
+      "touche à nouveau la vignette pour reprendre.",
+  },
+
+  {
     titre: "6. Comparer avec l'entrée (sortie seulement)",
     corps: [
       "Rédige d'abord tes constats sans regarder l'entrée : c'est volontaire. Un constat " +
@@ -184,6 +225,27 @@ var AIDE = [
       "Seuls « aggravé » et « nouveau » portent un montant.",
       "Une suggestion s'affiche quand elle est évidente, mais rien n'est classé " +
       "automatiquement : le jugement t'appartient.",
+
+      "DEUX COMPARAISONS, À NE PAS CONFONDRE. Cet écran rapproche les TEXTES, " +
+      "pièce par pièce, et sert à classer et chiffrer. Le bouton violet " +
+      "« Comparer avec l'entrée », lui, se trouve sous une photographie prise en " +
+      "visée guidée : il rapproche les IMAGES et fait constater l'écart par l'IA.",
+
+      "Le bouton violet n'apparaît que sur une photographie reprise depuis une " +
+      "vue d'entrée, et une fois qu'elle est enregistrée dans OneDrive. L'IA " +
+      "reçoit les deux images et décrit ce qui a changé : l'élément, la nature, " +
+      "la localisation, l'ampleur, et si la salissure paraît nettoyable ou " +
+      "incrustée dans le matériau.",
+
+      "ELLE NE CLASSE RIEN. Ni nouveau, ni aggravé, ni imputable, ni un montant. " +
+      "C'est ton travail, et c'est ce qui protège le document : une application " +
+      "qui qualifierait à ta place affaiblirait le procès-verbal au lieu de le " +
+      "renforcer.",
+
+      "ELLE PEUT REFUSER. Si les cadrages sont trop différents ou l'éclairage " +
+      "incomparable, elle répond « COMPARAISON IMPOSSIBLE » avec sa raison. " +
+      "C'est voulu : mieux vaut un refus qu'un écart inventé. Le texte revient " +
+      "dans le cadre de la photographie, corrigeable comme les autres.",
     ],
   },
   {
