@@ -102,7 +102,14 @@
      était trop bas pour être atteint au pouce sans lâcher la visée des
      yeux. Reprend l'allure de l'obturateur d'Apple — cercle blanc, anneau
      autour — pour être reconnu sans y penser. */
-  #declencheur { display:flex; justify-content:center; margin:-4px 0 12px; }
+  /* Sous l'image : ce qu'on touche en visant. Le reste des réglages vit
+     plus bas, hors du geste. */
+  #sous-image { background:#fff; border:1px solid #e3e0da; border-radius:12px;
+    padding:10px 14px 14px; margin:-4px 0 12px; }
+  .bascule { display:flex; align-items:center; gap:10px; padding:4px 0 8px;
+    font-size:15px; font-weight:500; }
+  .bascule input { width:30px; height:30px; margin:0; flex:none; }
+  #declencheur { display:flex; justify-content:center; margin:6px 0 0; }
   #btn-obturateur { width:74px; height:74px; padding:0; margin:0;
     border-radius:50%; background:#fff; border:4px solid #1a1a1a;
     box-shadow:0 0 0 3px #fff inset, 0 2px 8px rgba(0,0,0,.25); }
@@ -150,8 +157,19 @@
     <div id="flash">PHOTO PRISE</div>
   </div>
 
-  <div id="declencheur" class="cache">
-    <button id="btn-obturateur" aria-label="Prendre la photo"></button>
+  <div id="sous-image" class="cache">
+    <label class="bascule">
+      <input type="checkbox" id="echelle-auto" checked>
+      <span>Échelle automatique</span>
+    </label>
+
+    <div class="ligne"><span>Zoom de la RÉFÉRENCE</span>
+      <span id="val-zoom-ref">100 %</span></div>
+    <input type="range" id="zoom-ref" min="50" max="150" step="2" value="100">
+
+    <div id="declencheur">
+      <button id="btn-obturateur" aria-label="Prendre la photo"></button>
+    </div>
   </div>
 
   <div id="reglages" class="cache">
@@ -165,16 +183,8 @@
       <span id="val-stab">1.2 s</span></div>
     <input type="range" id="stab" min="0" max="3000" step="100" value="1200">
 
-    <label class="ligne" style="margin-top:10px">
-      <span>Chercher l'échelle automatiquement</span>
-      <input type="checkbox" id="echelle-auto" checked
-        style="width:28px;height:28px"></label>
-
-    <div class="ligne"><span>Zoom de la RÉFÉRENCE</span>
-      <span id="val-zoom-ref">100 %</span></div>
-    <input type="range" id="zoom-ref" min="50" max="150" step="2" value="100">
-    <p class="note">L'application essaie les échelles de 50 à 150 % et retient
-    la meilleure. Décoche pour régler à la main.</p>
+    <p class="note">Le zoom de la référence et l'échelle automatique se
+    règlent juste sous l'image, à portée de pouce.</p>
 
     <div class="ligne" style="margin-top:10px"><span>Zoom de la CAMÉRA</span>
       <span id="val-zoom-cam">—</span></div>
@@ -317,7 +327,7 @@ function conseil(m) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 1.8";
+const VERSION = "essai 1.9";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -462,7 +472,7 @@ $("btn-camera").onclick = async () => {
     }
 
     $("scene").classList.remove("cache");
-    $("declencheur").classList.remove("cache");
+    $("sous-image").classList.remove("cache");
     $("reglages").classList.remove("cache");
     $("btn-camera").classList.add("cache");
     noter("Caméra allumée — demandé " + dem.l + ", obtenu " + obtenu + ".",
@@ -481,7 +491,7 @@ function eteindre() {
   if (fluxCamera) fluxCamera.getTracks().forEach(t => t.stop());
   fluxCamera = null;
   $("scene").classList.add("cache"); $("reglages").classList.add("cache");
-  $("declencheur").classList.add("cache");
+  $("sous-image").classList.add("cache");
   $("btn-camera").classList.remove("cache"); $("btn-camera").disabled = false;
   $("etat-camera").textContent = "Caméra éteinte."; $("etat-camera").className = "note";
 }
