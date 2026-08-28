@@ -77,6 +77,8 @@
      petite. La mise à l'échelle vient du FORMAT DE LA SCÈNE, posé sur les
      dimensions réelles de la référence — et il doit être reposé à chaque
      redessin, sans quoi il retombe sur le 3/4 par défaut. */
+  /* LES DEUX COUVRENT LE CADRE. La mise à l'échelle se fait en agrandissant
+     l'un ou l'autre — jamais en réduisant, ce qui découvrirait du vide. */
   #visee-flux, #visee-calque { position:absolute; inset:0; width:100%;
     height:100%; object-fit:cover; }
   #visee-calque { pointer-events:none; }

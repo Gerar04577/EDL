@@ -3061,6 +3061,11 @@ function dessinerVisee(message) {
       <button id="visee-allumer">Allumer la caméra</button>
 
       <div id="visee-reglages" class="cache">
+        <div class="ligne"><span>Échelle de la référence</span>
+          <span id="visee-echelle">100 %</span></div>
+        <button class="mini secondaire" id="visee-echelle-auto">Régler l'échelle à la main</button>
+        <input type="range" id="visee-zoom" min="50" max="150" step="1" value="100" class="cache">
+
           <div class="ligne"><span>Transparence de la référence</span>
           <span id="visee-val-opacite">35 %</span></div>
         <input type="range" id="visee-opacite" min="0" max="100" value="35">
@@ -3100,6 +3105,19 @@ function brancherVisee() {
     $("visee-reglages").classList.remove("cache");
     majAutoVisee();
   }
+
+  if ($("visee-echelle-auto")) $("visee-echelle-auto").onclick = () => {
+    V.echelleAuto = !V.echelleAuto;
+    $("visee-echelle-auto").textContent = V.echelleAuto
+      ? "Régler l'échelle à la main" : "Chercher l'échelle automatiquement";
+    $("visee-zoom").classList.toggle("cache", V.echelleAuto);
+    if (V.echelleAuto) { echelleFigee = null; echelleRetenue = null; echecs = 0; }
+    else $("visee-zoom").value = Math.round(V.echelle || 100);
+  };
+  if ($("visee-zoom")) $("visee-zoom").oninput = () => {
+    V.echelle = Number($("visee-zoom").value);
+    poserEchelleVisee(V.echelle);
+  };
 
   if ($("visee-plus")) $("visee-plus").onclick = () => {
     E.viseeReglagesOuverts = !E.viseeReglagesOuverts;
@@ -3206,13 +3224,20 @@ async function allumerVisee() {
     const scene = $("scene-visee");
     if (scene) scene.style.aspectRatio = V.refL + " / " + V.refH;
 
-    const c = document.createElement("canvas");
-    c.width = TAILLE; c.height = TAILLE;
-    c.getContext("2d").drawImage(img, 0, 0, TAILLE, TAILLE);
-    const px = c.getContext("2d").getImageData(0, 0, TAILLE, TAILLE).data;
-    V.contoursRef = contours(reduire(px, TAILLE, TAILLE));
+    /* La référence est confiée au noyau de recalage, qui recalculera ses
+       contours à chaque échelle essayée. La réserve est vidée : elle
+       contiendrait ceux de la photographie précédente. */
+    V.image = img;
+    imageRefChargee = img;
+    reserve = {};
+    echelleRetenue = null;
+    echelleFigee = null;
+    echecs = 0;
+    V.echelleAuto = true;
+    V.echelle = 100;
 
-    const d = densiteContours(V.contoursRef);
+    const contoursRefInitial = contoursRef(100, TAILLE);
+    const d = densiteContoursT(contoursRefInitial, TAILLE);
     $("visee-diag").textContent = d.part > 0.02
       ? "Référence analysable — " + (d.part * 100).toFixed(1) + " % de contours."
       : "Surface très unie (" + (d.part * 100).toFixed(1) + " % de contours) : " +
@@ -3262,20 +3287,43 @@ function chargerImage(url) {
    résolution du flux ne le ralentit pas — mesuré sur le terrain. */
 function analyserVisee() {
   const V = E.visee;
-  if (!V || !V.contoursRef) return;
+  if (!V || !V.image) return;
   const v = $("visee-flux");
   if (!v || !v.videoWidth) return;
+  const R = reglagesVisee();
 
   const f = fenetreVisee(v, V);
-  const t = canevasTravail();
-  t.ctx.drawImage(v, f.dx, f.dy, f.l, f.h, 0, 0, TAILLE, TAILLE);
-  const px = t.ctx.getImageData(0, 0, TAILLE, TAILLE).data;
 
-  const m = chercher(V.contoursRef, contours(reduire(px, TAILLE, TAILLE)));
+  /* PYRAMIDE. L'échelle se cherche sur une image de 48 pixels — douze
+     essais y coûtent 16 ms au lieu de 268 — puis l'alignement se mesure
+     une seule fois à 96. Les deux photographies ne coïncident qu'à une
+     échelle près : l'appareil natif et Safari n'ont pas le même champ. */
+  const pc = chercherEchelle(v, f.dx, f.dy, f.l, f.h, V.echelleAuto, V.echelle);
+  const refC = contoursRef(pc, TAILLE);
+  const m = refC
+    ? chercherT(refC, contoursFluxT(v, f.dx, f.dy, f.l, f.h, pc, TAILLE), TAILLE)
+    : { score: 0, dx: 0, dy: 0, e: 1 };
+
   const p = Math.max(0, Math.round(m.score * 100));
   V.score = p;
+  V.echelle = pc;
 
-  const R = reglagesVisee();
+  /* La superposition suit l'échelle trouvée. */
+  poserEchelleVisee(pc);
+  if ($("visee-echelle")) {
+    $("visee-echelle").textContent = pc + " %" +
+      (V.echelleAuto ? (m.score >= 0.45 ? " · trouvée" : " · en recherche") : " · manuelle");
+  }
+
+  /* L'échelle se fige quand elle est convaincante : la recherche cesse
+     alors de flatter le score, qui redevient une mesure de l'alignement
+     seul. Elle se libère si l'alignement s'effondre durablement. */
+  if (!echelleFigee && m.score >= 0.65) echelleFigee = pc;
+  echecs = (m.score < 0.35) ? echecs + 1 : 0;
+  if (echelleFigee && echecs >= 15) {
+    echelleFigee = null; echelleRetenue = null; echecs = 0;
+  }
+
   const bon = p >= R.seuil;
   $("visee-verdict").textContent = p + " % — " + (bon ? "aligné" : conseil(m));
   $("visee-jauge").style.width = p + "%";
@@ -3312,6 +3360,30 @@ function analyserVisee() {
   prendreVisee();
 }
 
+/* ON N'AGRANDIT JAMAIS QU'UNE SEULE DES DEUX IMAGES.
+
+   Réduire la référence sous 100 % découvrirait du vide autour : une
+   photographie n'a pas de bords au-delà de ses bords. Quand elle doit
+   paraître plus petite, on agrandit donc le FLUX à la place — ce qui
+   revient au même pour l'oeil, et laisse les deux couvrir le cadre. */
+function poserEchelleVisee(pc) {
+  const zoomer = (el, facteur) => {
+    if (!el) return;
+    const t = 100 * facteur;
+    el.style.width = t + "%";
+    el.style.height = t + "%";
+    el.style.left = (-(t - 100) / 2) + "%";
+    el.style.top = (-(t - 100) / 2) + "%";
+  };
+  if (pc >= 100) {
+    zoomer($("visee-calque"), pc / 100);
+    zoomer($("visee-flux"), 1);
+  } else {
+    zoomer($("visee-calque"), 1);
+    zoomer($("visee-flux"), 100 / pc);
+  }
+}
+
 /* Fenêtre centrale du flux, au format de la référence : ce que Julien voit
    à l'écran est exactement ce qu'il capturera. */
 function fenetreVisee(v, V) {
@@ -3322,35 +3394,27 @@ function fenetreVisee(v, V) {
            dy: Math.round((v.videoHeight - h) / 2) };
 }
 
-var _canevasVisee = null;
-function canevasTravail() {
-  if (!_canevasVisee) {
-    const c = document.createElement("canvas");
-    c.width = TAILLE; c.height = TAILLE;
-    _canevasVisee = { c, ctx: c.getContext("2d", { willReadFrequently: true }) };
-  }
-  return _canevasVisee;
-}
+/* NON REPRIS : le canevas de travail. Le noyau de recalage tient le sien,
+   à deux tailles — une pour chercher l'échelle, une pour mesurer. */
 
-/* La photographie n'est PAS enregistrée à la prise.
-
-   Avant, elle partait aussitôt dans la file d'attente et l'écran revenait
-   à la pièce : on prenait sans jamais voir. Un déclenchement automatique
-   au mauvais moment déposait une mauvaise image dans OneDrive, qu'il
-   fallait ensuite aller retirer.
-
-   Elle est donc mise de côté, montrée à côté de sa référence, et
-   n'est enregistrée qu'après « Garder ». */
 async function prendreVisee() {
   const V = E.visee;
   const v = $("visee-flux");
   if (!v || !v.videoWidth) return;
 
   const f = fenetreVisee(v, V);
-  const r = Math.min(1, CONFIG.photo.cote_max_px / Math.max(f.l, f.h));
+
+  /* Même rognage qu'à l'analyse : la photographie prise doit cadrer comme
+     la référence à l'échelle retenue, pas comme le flux brut. */
+  const z = Math.max(1, 100 / (V.echelle || 100));
+  const pl = Math.round(f.l / z), ph = Math.round(f.h / z);
+  const ox = f.dx + Math.round((f.l - pl) / 2);
+  const oy = f.dy + Math.round((f.h - ph) / 2);
+
+  const r = Math.min(1, CONFIG.photo.cote_max_px / Math.max(pl, ph));
   const fin = document.createElement("canvas");
-  fin.width = Math.round(f.l * r); fin.height = Math.round(f.h * r);
-  fin.getContext("2d").drawImage(v, f.dx, f.dy, f.l, f.h, 0, 0, fin.width, fin.height);
+  fin.width = Math.round(pl * r); fin.height = Math.round(ph * r);
+  fin.getContext("2d").drawImage(v, ox, oy, pl, ph, 0, 0, fin.width, fin.height);
 
   const blob = await new Promise(ok =>
     fin.toBlob(ok, "image/jpeg", reglagesVisee().qualite));
