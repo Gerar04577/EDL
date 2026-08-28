@@ -2992,12 +2992,31 @@ async function chargerLiensVisibles() {
    Le noyau de calcul vit dans recalage.js, éprouvé sur le terrain avant
    d'être intégré ici. */
 
-var SEUIL_ALIGNEMENT = 60;     // validé le 28/08/2026
-/* Durée pendant laquelle l'alignement doit se maintenir avant que la
-   photographie ne parte seule. Assez pour que le geste s'arrête et que la
-   mise au point se fasse, assez peu pour ne pas lasser. */
-var DELAI_STABILITE_MS = 900;
-var QUALITE_VISEE = 0.96;      // le flux vidéo est moins détaillé qu'un cliché natif
+/* RÉGLAGES DE LA VISÉE, ajustables sur place et conservés d'une visite à
+   l'autre. Les valeurs par défaut viennent des essais du 28/08/2026 ;
+   elles conviennent à la plupart des pièces, mais un local sombre ou une
+   surface peu texturée peut demander autre chose. */
+var REGLAGES_VISEE_DEFAUT = {
+  seuil: 60,        // % d'alignement exigé pour le déclenchement
+  stabilite: 900,   // ms d'immobilité avant la prise
+  qualite: 0.96,    // compression JPEG
+};
+
+function reglagesVisee() {
+  if (E.reglagesVisee) return E.reglagesVisee;
+  let v = null;
+  try { v = JSON.parse(localStorage.getItem("edl_reglages_visee") || "null"); }
+  catch (_) { /* réglages illisibles : on repart des valeurs d'usine */ }
+  E.reglagesVisee = Object.assign({}, REGLAGES_VISEE_DEFAUT, v || {});
+  return E.reglagesVisee;
+}
+
+function enregistrerReglagesVisee(modif) {
+  const r = Object.assign(reglagesVisee(), modif);
+  try { localStorage.setItem("edl_reglages_visee", JSON.stringify(r)); }
+  catch (_) { /* stockage plein ou refusé : les réglages valent pour la session */ }
+  return r;
+}
 
 async function ecranViseeGuidee(itemEntree) {
   const e = E.photosEntree;
@@ -3041,9 +3060,13 @@ function dessinerVisee(message) {
       <button id="visee-allumer">Allumer la caméra</button>
 
       <div id="visee-reglages" class="cache">
-        <div class="ligne"><span>Transparence de la référence</span>
+          <div class="ligne"><span>Transparence de la référence</span>
           <span id="visee-val-opacite">35 %</span></div>
         <input type="range" id="visee-opacite" min="0" max="100" value="35">
+
+        <button class="mini secondaire" id="visee-plus">${
+          E.viseeReglagesOuverts ? "Masquer les réglages" : "Réglages"}</button>
+        ${E.viseeReglagesOuverts ? blocReglagesVisee() : ""}
         <button class="mini secondaire" id="visee-auto">Activer le déclenchement automatique</button>
         <p class="note" id="visee-etat-auto">Automatique arrêté.</p>
         <button id="visee-prendre">Prendre la photo</button>
@@ -3069,10 +3092,74 @@ function brancherVisee() {
   };
   if ($("visee-calque")) $("visee-calque").style.opacity = 0.35;
 
+  /* Le redessin recrée les éléments : si la caméra tourne déjà, il faut
+     lui rendre son affichage et remettre l'écran en mode visée. */
+  if (V.camera && $("visee-allumer")) {
+    $("visee-allumer").classList.add("cache");
+    $("visee-reglages").classList.remove("cache");
+    majAutoVisee();
+  }
+
+  if ($("visee-plus")) $("visee-plus").onclick = () => {
+    E.viseeReglagesOuverts = !E.viseeReglagesOuverts;
+    dessinerVisee();
+    /* Le redessin efface le flux : on le rebranche sans rallumer la
+       caméra, qui tourne toujours. */
+    if (V.camera) { $("visee-flux").srcObject = V.camera; $("visee-flux").play(); }
+  };
+
+  const regle = (id, cle, lib, conv) => {
+    const e = $(id);
+    if (!e) return;
+    e.oninput = () => {
+      const v = conv ? conv(Number(e.target.value)) : Number(e.target.value);
+      enregistrerReglagesVisee({ [cle]: v });
+      $(lib).textContent = cle === "stabilite" ? (v / 1000).toFixed(1) + " s"
+        : cle === "qualite" ? String(v).replace(".", ",")
+        : v + " %";
+      if (cle !== "qualite") majAutoVisee();
+    };
+  };
+  regle("visee-seuil", "seuil", "visee-val-seuil");
+  regle("visee-stab", "stabilite", "visee-val-stab");
+  regle("visee-qualite", "qualite", "visee-val-qualite", (n) => n / 100);
+
+  if ($("visee-defaut")) $("visee-defaut").onclick = () => {
+    E.reglagesVisee = null;
+    try { localStorage.removeItem("edl_reglages_visee"); } catch (_) {}
+    dessinerVisee("Réglages revenus aux valeurs d'usine.");
+    if (V.camera) { $("visee-flux").srcObject = V.camera; $("visee-flux").play(); }
+  };
+
   if ($("visee-auto")) $("visee-auto").onclick = () => {
     V.auto = !V.auto; V.stableDepuis = 0; majAutoVisee();
   };
   if ($("visee-prendre")) $("visee-prendre").onclick = prendreVisee;
+}
+
+/* Les trois réglages qui comptent, dépliables : ils encombreraient
+   l'écran de visée s'ils étaient toujours là, mais un local sombre ou une
+   surface peu texturée demande parfois de les toucher. */
+function blocReglagesVisee() {
+  const R = reglagesVisee();
+  return `
+    <div class="ligne" style="margin-top:10px"><span>Seuil d'alignement</span>
+      <span id="visee-val-seuil">${R.seuil} %</span></div>
+    <input type="range" id="visee-seuil" min="35" max="90" step="5" value="${R.seuil}">
+
+    <div class="ligne"><span>Immobilité avant la prise</span>
+      <span id="visee-val-stab">${(R.stabilite / 1000).toFixed(1)} s</span></div>
+    <input type="range" id="visee-stab" min="0" max="3000" step="100" value="${R.stabilite}">
+
+    <div class="ligne"><span>Qualité de l'image</span>
+      <span id="visee-val-qualite">${String(R.qualite).replace(".", ",")}</span></div>
+    <input type="range" id="visee-qualite" min="80" max="100" step="2" value="${
+      Math.round(R.qualite * 100)}">
+
+    <p class="note">Un seuil bas déclenche vite mais cadre moins bien. Une
+    immobilité nulle rend les photographies floues. Ces réglages sont
+    conservés pour les prochaines visites.</p>
+    <button class="mini secondaire" id="visee-defaut">Revenir aux valeurs d'usine</button>`;
 }
 
 function majAutoVisee() {
@@ -3085,7 +3172,8 @@ function majAutoVisee() {
   b.className = V.auto ? "mini" : "mini secondaire";
   $("visee-etat-auto").textContent = V.auto
     ? "Automatique ACTIF — la photo partira seule après " +
-      (DELAI_STABILITE_MS / 1000) + " s d'immobilité à " + SEUIL_ALIGNEMENT + " %."
+      (reglagesVisee().stabilite / 1000) + " s d'immobilité à " +
+      reglagesVisee().seuil + " %."
     : "Automatique arrêté.";
   $("visee-etat-auto").className = V.auto ? "note ok" : "note";
 }
@@ -3171,11 +3259,12 @@ function analyserVisee() {
   const p = Math.max(0, Math.round(m.score * 100));
   V.score = p;
 
-  const bon = p >= SEUIL_ALIGNEMENT;
+  const R = reglagesVisee();
+  const bon = p >= R.seuil;
   $("visee-verdict").textContent = p + " % — " + (bon ? "aligné" : conseil(m));
   $("visee-jauge").style.width = p + "%";
   $("visee-jauge").style.background =
-    bon ? "#2f7d63" : p > SEUIL_ALIGNEMENT * 0.7 ? "#c8891f" : "#c9403a";
+    bon ? "#2f7d63" : p > R.seuil * 0.7 ? "#c8891f" : "#c9403a";
   $("visee-cadre").style.borderColor = bon ? "#2f7d63" : "transparent";
 
   /* STABILITÉ AVANT DÉCLENCHEMENT.
@@ -3194,10 +3283,10 @@ function analyserVisee() {
   if (!V.stableDepuis) V.stableDepuis = maintenant;
   const tenu = maintenant - V.stableDepuis;
 
-  if (tenu < DELAI_STABILITE_MS) {
+  if (tenu < R.stabilite) {
     $("visee-cadre").classList.add("pret");
-    $("visee-verdict").textContent = p + " % — ne bouge plus… " +
-      Math.ceil((DELAI_STABILITE_MS - tenu) / 100) / 10 + " s";
+    $("visee-verdict").textContent = p + " % — NE BOUGE PLUS… " +
+      Math.ceil((R.stabilite - tenu) / 100) / 10 + " s";
     return;
   }
 
@@ -3248,7 +3337,7 @@ async function prendreVisee() {
   fin.getContext("2d").drawImage(v, f.dx, f.dy, f.l, f.h, 0, 0, fin.width, fin.height);
 
   const blob = await new Promise(ok =>
-    fin.toBlob(ok, "image/jpeg", QUALITE_VISEE));
+    fin.toBlob(ok, "image/jpeg", reglagesVisee().qualite));
   if (!blob) return dessinerVisee("Capture impossible.");
 
   confirmerVisee(V.score);

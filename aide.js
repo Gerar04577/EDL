@@ -210,6 +210,12 @@ var AIDE = [
       "d'entrée et le score obtenu. Ce score figurera au procès-verbal : il dit " +
       "objectivement à quel point les deux vues sont comparables.",
 
+      "TROIS RÉGLAGES, sous le bouton « Réglages » de l'écran de visée. Le SEUIL " +
+      "d'alignement — bas, il déclenche vite mais cadre moins bien ; haut, il " +
+      "exige une précision parfois impossible. L'IMMOBILITÉ avant la prise — la " +
+      "mettre à zéro rend les photographies floues. La QUALITÉ de l'image, entre " +
+      "0,80 et 1,00. Ils sont conservés pour les visites suivantes, et un bouton " +
+      "les ramène aux valeurs d'usine.",
       "SURFACE TROP UNIE. Si la photographie d'entrée n'offre presque aucun " +
       "contour — un pan de mur nu, sans plinthe ni angle — l'écran te prévient : " +
       "le score sera peu fiable, fie-toi alors à la superposition. En pratique " +
