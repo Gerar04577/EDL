@@ -2785,7 +2785,9 @@ function blocPhotosEntree() {
   if (e.statut !== "ok") {
     const raisons = {
       dossier_introuvable: "Dossier EDLE introuvable à côté de celui-ci.",
-      aucune: "Aucune photographie dans l'état des lieux d'entrée.",
+      aucune: "Aucune photographie trouvée dans le dossier EDLE" +
+        (e.sous_dossier ? ", ni dans son sous-dossier Photos" : "") + "." +
+        (e.vu ? " Ce dossier contient : " + e.vu : ""),
       erreur: "Lecture impossible : " + (e.message || ""),
       sans_objet: "Sans objet pour un état des lieux d'entrée.",
     };

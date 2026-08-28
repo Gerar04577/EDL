@@ -37,29 +37,63 @@ async function chargerPhotosEntree(visite) {
 
     /* Les visites récentes rangent leurs images dans un sous-dossier
        Photos ; celles d'avant la 2.5.0 les laissent au niveau du dessus.
-       On regarde aux deux endroits. */
+       On regarde aux DEUX endroits et on réunit le résultat : choisir l'un
+       OU l'autre échouait dès que le sous-dossier existait mais restait
+       vide, ou l'inverse.
+
+       ATTENTION AU DOSSIER PARTAGÉ. Un dossier venu d'un partage — le cas
+       de cette arborescence, ouverte à plusieurs — n'arrive pas avec la
+       propriété « folder » mais « remoteItem ». Ne tester que « folder »
+       faisait manquer le sous-dossier Photos, chercher au niveau du dessus,
+       et conclure qu'il n'y avait aucune photographie. */
     const contenu = await enfantsDeRef(parent);
-    let dossier = parent;
+    const trouvees = [];
+    const vus = new Set();
+
+    const ramasser = (liste, ref) => {
+      liste.filter(e => (e.file || (e.remoteItem && e.remoteItem.file)) &&
+                        /\.jpe?g$/i.test(e.name || ""))
+        .forEach(e => {
+          const r = refDe(e, ref.driveId);
+          if (vus.has(r.id)) return;
+          vus.add(r.id);
+          trouvees.push({
+            nom_fichier: e.name,
+            onedrive_item_id: r.id,
+            drive_id: r.driveId,
+            numero: numeroDuNom(e.name),
+            piece: pieceDuNom(e.name),
+            prise_le: e.lastModifiedDateTime || null,
+          });
+        });
+    };
+
+    ramasser(contenu, parent);
+
     const sousDossier = contenu.find(e =>
-      e.folder && String(e.name || "").toLowerCase() === "photos");
-    if (sousDossier) dossier = refDe(sousDossier, parent.driveId);
+      (e.folder || e.remoteItem) &&
+      String(e.name || "").toLowerCase() === "photos");
+    if (sousDossier) {
+      const ref = refDe(sousDossier, parent.driveId);
+      try { ramasser(await enfantsDeRef(ref), ref); }
+      catch (err) {
+        await journaliser("photos_entree_sous_dossier_illisible",
+          String(err && err.message));
+      }
+    }
 
-    const fichiers = (sousDossier ? await enfantsDeRef(dossier) : contenu)
-      .filter(e => e.file && /\.jpe?g$/i.test(e.name || ""));
+    if (!trouvees.length) {
+      /* Dire CE QU'ON A VU : sans cela, « aucune photographie » ne permet
+         pas de distinguer un dossier vide d'une lecture qui a échoué. */
+      const noms = contenu.slice(0, 12).map(e => e.name).join(", ");
+      await journaliser("photos_entree_aucune",
+        { sous_dossier: !!sousDossier, contenu: noms });
+      return { statut: "aucune", photos: [],
+               vu: noms, sous_dossier: !!sousDossier };
+    }
 
-    if (!fichiers.length) return { statut: "aucune", photos: [] };
-
-    const photos = fichiers.map(e => {
-      const r = refDe(e, dossier.driveId);
-      return {
-        nom_fichier: e.name,
-        onedrive_item_id: r.id,
-        drive_id: r.driveId,
-        numero: numeroDuNom(e.name),
-        piece: pieceDuNom(e.name),
-        prise_le: e.lastModifiedDateTime || null,
-      };
-    }).sort((a, b) => String(a.nom_fichier).localeCompare(String(b.nom_fichier)));
+    const photos = trouvees.sort((a, b) =>
+      String(a.nom_fichier).localeCompare(String(b.nom_fichier)));
 
     await journaliser("photos_entree_lues",
       { nombre: photos.length, sous_dossier: !!sousDossier });
