@@ -42,7 +42,10 @@
     border-radius:12px; overflow:hidden; margin-bottom:10px;
     max-height:58vh; margin-left:auto; margin-right:auto; }
   #flux, #calque { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-  #calque { pointer-events:none; }
+  /* La référence peut être agrandie : l'appareil natif emploie le
+     grand-angle, Safari un objectif plus resserré. Même position, champ
+     différent — d'où l'écart d'échelle que le cadrage ne corrige pas. */
+  #calque { pointer-events:none; transform-origin:50% 50%; }
 
   /* Le verdict, en surimpression : lisible d'un coup d'oeil, bras tendu. */
   #verdict { position:absolute; left:0; right:0; top:0; padding:10px 12px;
@@ -120,6 +123,17 @@
     <input type="range" id="opacite" min="0" max="100" value="35">
     <div class="ligne"><span>Seuil de déclenchement</span><span id="val-seuil">60 %</span></div>
     <input type="range" id="seuil" min="30" max="95" value="60">
+
+    <div class="ligne" style="margin-top:10px"><span>Zoom de la RÉFÉRENCE</span>
+      <span id="val-zoom-ref">100 %</span></div>
+    <input type="range" id="zoom-ref" min="60" max="220" step="2" value="100">
+    <p class="note">Agrandis la référence jusqu'à ce qu'elle coïncide avec ce
+    que tu vois. L'écart est fixe : une fois trouvé, il vaut partout.</p>
+
+    <div class="ligne" style="margin-top:10px"><span>Zoom de la CAMÉRA</span>
+      <span id="val-zoom-cam">—</span></div>
+    <input type="range" id="zoom-cam" min="100" max="300" step="5" value="100" disabled>
+    <p class="note" id="etat-zoom-cam">À tester une fois la caméra allumée.</p>
     <button id="btn-auto">Activer le déclenchement automatique</button>
     <p class="note" id="etat-auto">Automatique arrêté.</p>
     <button id="btn-prendre" class="principal">Prendre la photo</button>
@@ -257,7 +271,7 @@ function conseil(m) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 1.3";
+const VERSION = "essai 1.4";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -356,6 +370,29 @@ $("btn-camera").onclick = async () => {
     $("etat-camera").className = "note ok";
     $("flux-reel").textContent = obtenu + (tenu ? "" : " — moins que demandé");
     $("flux-reel").className = tenu ? "ok" : "attention";
+    /* L'appareil accepte-t-il un réglage de zoom ? Tous ne le proposent
+       pas, et Safari moins que les autres. */
+    const p0 = fluxCamera.getVideoTracks()[0];
+    const cap = p0.getCapabilities ? p0.getCapabilities() : {};
+    if (cap && cap.zoom) {
+      $("zoom-cam").disabled = false;
+      $("zoom-cam").min = Math.round(cap.zoom.min * 100);
+      $("zoom-cam").max = Math.round(cap.zoom.max * 100);
+      $("zoom-cam").value = Math.round((p0.getSettings().zoom || 1) * 100);
+      $("val-zoom-cam").textContent = (Number($("zoom-cam").value) / 100).toFixed(2) + " ×";
+      $("etat-zoom-cam").textContent = "Réglable de " + cap.zoom.min.toFixed(2) +
+        " × à " + cap.zoom.max.toFixed(2) + " ×.";
+      $("etat-zoom-cam").className = "note ok";
+      noter("Zoom caméra disponible : " + cap.zoom.min.toFixed(2) + " à " +
+        cap.zoom.max.toFixed(2) + " ×.", "ok");
+    } else {
+      $("val-zoom-cam").textContent = "indisponible";
+      $("etat-zoom-cam").textContent = "Cet appareil ne permet pas de régler le " +
+        "zoom depuis le navigateur. Emploie le zoom de la RÉFÉRENCE.";
+      $("etat-zoom-cam").className = "note attention";
+      noter("Zoom caméra indisponible sur cet appareil.", "attention");
+    }
+
     $("scene").classList.remove("cache");
     $("reglages").classList.remove("cache");
     $("btn-camera").classList.add("cache");
@@ -403,7 +440,12 @@ function analyser() {
   let cl = v.videoWidth, ch = Math.round(v.videoWidth / rapport);
   if (ch > v.videoHeight) { ch = v.videoHeight; cl = Math.round(v.videoHeight * rapport); }
   const dx = Math.round((v.videoWidth - cl) / 2), dy = Math.round((v.videoHeight - ch) / 2);
-  ctxT.drawImage(v, dx, dy, cl, ch, 0, 0, TAILLE, TAILLE);
+  /* Le zoom appliqué à la référence doit se retrouver ici, sinon le score
+     compare deux échelles différentes. On rogne le flux d'autant. */
+  const zr = Number($("zoom-ref").value) / 100;
+  const al = Math.round(cl / zr), ah = Math.round(ch / zr);
+  const ax = dx + Math.round((cl - al) / 2), ay = dy + Math.round((ch - ah) / 2);
+  ctxT.drawImage(v, ax, ay, al, ah, 0, 0, TAILLE, TAILLE);
   const px = ctxT.getImageData(0, 0, TAILLE, TAILLE).data;
   const fluxC = contours(reduire(px, TAILLE, TAILLE));
 
@@ -448,6 +490,29 @@ $("opacite").oninput = (e) => {
 $("calque").style.opacity = 0.35;
 $("seuil").oninput = (e) => { $("val-seuil").textContent = e.target.value + " %"; };
 
+/* ZOOM DE LA RÉFÉRENCE — la voie sûre, elle marche partout. */
+$("zoom-ref").oninput = () => {
+  const z = Number($("zoom-ref").value);
+  $("calque").style.transform = "scale(" + (z / 100) + ")";
+  $("val-zoom-ref").textContent = z + " %";
+};
+
+/* ZOOM DE LA CAMÉRA — la voie propre quand l'appareil l'accepte : c'est
+   le champ du flux qu'on élargit, donc la cause qu'on corrige. */
+$("zoom-cam").oninput = async () => {
+  if (!fluxCamera) return;
+  const z = Number($("zoom-cam").value) / 100;
+  const piste = fluxCamera.getVideoTracks()[0];
+  try {
+    await piste.applyConstraints({ advanced: [{ zoom: z }] });
+    $("val-zoom-cam").textContent = z.toFixed(2) + " ×";
+    noter("Zoom caméra à " + z.toFixed(2) + " ×.", "ok");
+  } catch (err) {
+    $("val-zoom-cam").textContent = "refusé";
+    noter("Zoom caméra refusé : " + err.name, "ko");
+  }
+};
+
 /* Le libellé disait l'ÉTAT — « automatique : NON » — ce qui se lit comme
    une action et laisse croire que le bouton est mort quand on le presse.
    Il dit désormais ce qu'un appui VA FAIRE, et l'état s'affiche en
@@ -475,10 +540,16 @@ function prendre() {
   if (ch > v.videoHeight) { ch = v.videoHeight; cl = Math.round(v.videoHeight * rapport); }
   const dx = Math.round((v.videoWidth - cl) / 2), dy = Math.round((v.videoHeight - ch) / 2);
 
-  const f = Math.min(1, 1600 / Math.max(cl, ch));
+  /* Même rognage qu'à l'analyse : la photographie prise doit cadrer comme
+     la référence zoomée, pas comme le flux brut. */
+  const zc = Number($("zoom-ref").value) / 100;
+  const pl = Math.round(cl / zc), ph = Math.round(ch / zc);
+  const ox = dx + Math.round((cl - pl) / 2), oy = dy + Math.round((ch - ph) / 2);
+
+  const f = Math.min(1, 1600 / Math.max(pl, ph));
   const fin = document.createElement("canvas");
-  fin.width = Math.round(cl * f); fin.height = Math.round(ch * f);
-  fin.getContext("2d").drawImage(v, dx, dy, cl, ch, 0, 0, fin.width, fin.height);
+  fin.width = Math.round(pl * f); fin.height = Math.round(ph * f);
+  fin.getContext("2d").drawImage(v, ox, oy, pl, ph, 0, 0, fin.width, fin.height);
 
   fin.toBlob((blob) => {
     if (!blob) return noter("Capture impossible.", "ko");
