@@ -100,13 +100,35 @@ async function lienPhotoEntree(photo) {
 
 /* Rapproche les photographies d'entrée de la pièce en cours. Le nom de
    fichier porte la pièce ; à défaut on rend tout, à charge de Julien de
-   choisir. */
+   choisir.
+
+   Dans un studio d'étudiant — l'essentiel du parc — la pièce principale
+   porte presque toutes les photographies : ce filtre n'allège donc guère,
+   d'où le tri par constat ci-dessous. */
 function photosEntreePourPiece(photosEntree, libellePiece) {
   const cible = nettoyerLibelle(libellePiece || "");
   if (!cible) return photosEntree;
   const exactes = photosEntree.filter(p =>
     p.piece && nettoyerLibelle(p.piece) === cible);
   return exactes.length ? exactes : photosEntree;
+}
+
+/* Photographies rattachées à une constatation de l'entrée.
+
+   Deux cents vues dans un studio, mais vingt seulement documentent
+   quelque chose ; les autres sont des vues d'ambiance qu'il est inutile
+   de refaire. Rendre null quand le fichier de données manque — entrée
+   antérieure à l'application — pour que l'écran désactive le choix
+   plutôt que d'afficher une liste vide trompeuse. */
+function photosAvecConstat(photosEntree, edle) {
+  if (!edle || !edle.pieces) return null;
+  const cites = new Set();
+  edle.pieces.forEach(p => (p.constatations || []).forEach(c => {
+    if (c.photo_nom) cites.add(c.photo_nom);
+    (c.photo_noms || []).forEach(n => cites.add(n));
+  }));
+  if (!cites.size) return [];
+  return photosEntree.filter(p => cites.has(p.nom_fichier));
 }
 
 async function chargerEtatDesLieuxEntree(visite) {

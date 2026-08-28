@@ -2765,6 +2765,12 @@ function brancherCorrection() {
    Rien du TEXTE de l'entrée n'est montré ici. Voir une image ne conduit
    pas à recopier des mots ; le constat de sortie se rédige à l'aveugle,
    et les textes ne s'ouvrent qu'à l'écran de comparaison. */
+/* Nombre de vignettes par tranche. Un studio d'étudiant peut porter deux
+   cents photographies : les charger toutes fige l'écran plusieurs
+   dizaines de secondes, pour une liste que personne ne parcourt en
+   entier. */
+var TRANCHE_VIGNETTES = 50;
+
 function blocPhotosEntree() {
   const e = E.photosEntree;
   if (!e) {
@@ -2784,28 +2790,58 @@ function blocPhotosEntree() {
       <button class="mini secondaire" id="btn-photos-entree">Réessayer</button></div>`;
   }
 
-  const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
-  const lot = photosEntreePourPiece(e.photos, piece && piece.libelle);
-  const reprises = (VISITE.photos || [])
-    .map(p => p.photo_entree_id).filter(Boolean);
+  const lot = lotAffiche();
+  const visibles = lot.slice(0, E.vignettesAffichees || TRANCHE_VIGNETTES);
+  const reste = lot.length - visibles.length;
+  const reprises = (VISITE.photos || []).map(p => p.photo_entree_id).filter(Boolean);
+  const avecConstat = photosAvecConstat(e.photos, e.edle);
 
-  return `<div class="bloc"><h2>Photos de l'entrée — ${lot.length}</h2>
-    ${lot.length === e.photos.length && e.photos.length > 1
-      ? `<p class="note">Aucune ne porte le nom de cette pièce : toutes sont
-         affichées.</p>` : ""}
+  return `<div class="bloc"><h2>Photos de l'entrée</h2>
+    <div class="duo">
+      <button class="seg${E.triEntree === "constat" ? " actif" : ""}"
+        id="tri-constat"${avecConstat ? "" : " disabled"}>Avec constat${
+        avecConstat ? " — " + avecConstat.length : ""}</button>
+      <button class="seg${E.triEntree !== "constat" ? " actif" : ""}"
+        id="tri-toutes">Toutes — ${e.photos.length}</button>
+    </div>
+    ${avecConstat ? "" : `<p class="note">L'entrée n'a pas de fichier de
+      données : le tri par constat n'est pas possible.</p>`}
+
+    <p class="note">${visibles.length} sur ${lot.length} affichée(s)${
+      reprises.length ? " · " + reprises.length + " déjà reprise(s)" : ""}</p>
+
     <div class="vignettes">
-      ${lot.map(p => {
+      ${visibles.map(p => {
         const prise = reprises.includes(p.onedrive_item_id);
+        const lien = E.liensEntree[p.onedrive_item_id];
         return `<figure class="vignette${prise ? " reprise" : ""}"
             data-entree="${echapper(p.onedrive_item_id)}">
-          <img src="${echapper(E.liensEntree[p.onedrive_item_id] || "")}" alt="" loading="lazy">
+          ${lien
+            ? `<img src="${echapper(lien)}" alt="" loading="lazy">`
+            : `<div class="vignette-vide"></div>`}
           <figcaption>${echapper(p.numero || "?")}${prise ? " ✓" : ""}</figcaption>
         </figure>`;
       }).join("")}
     </div>
-    <p class="note">Touche une photographie pour refaire le même cadrage.
-    ${reprises.length ? reprises.length + " déjà reprise(s)." : ""}</p>
+
+    ${reste > 0
+      ? `<button class="mini secondaire" id="btn-plus-vignettes">${
+          Math.min(TRANCHE_VIGNETTES, reste)} suivantes</button>` : ""}
+    <p class="note">Touche une photographie pour refaire le même cadrage.</p>
   </div>`;
+}
+
+/* La liste selon le tri choisi. Le tri par constat prime sur le filtre par
+   pièce : un constat désigne déjà l'endroit. */
+function lotAffiche() {
+  const e = E.photosEntree;
+  if (!e || e.statut !== "ok") return [];
+  if (E.triEntree === "constat") {
+    const avec = photosAvecConstat(e.photos, e.edle);
+    if (avec) return avec;
+  }
+  const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
+  return photosEntreePourPiece(e.photos, piece && piece.libelle);
 }
 
 async function ouvrirPhotosEntree() {
@@ -2814,18 +2850,44 @@ async function ouvrirPhotosEntree() {
   let e;
   try { e = await chargerPhotosEntree(VISITE); }
   catch (err) { e = { statut: "erreur", message: err.message, photos: [] }; }
-  E.photosEntree = e;
 
-  /* Un lien par photographie : c'est le coût réel de cet écran, un appel
-     Graph par image. Sur une vingtaine de vues, quelques secondes en wifi. */
-  E.liensEntree = E.liensEntree || {};
+  /* Le fichier de données de l'entrée sert au tri par constat. Son absence
+     n'empêche rien : le tri est simplement désactivé. */
   if (e.statut === "ok") {
-    for (const p of e.photos) {
-      try { E.liensEntree[p.onedrive_item_id] = await lienPhotoEntree(p); }
-      catch (_) { /* une photographie illisible n'empêche pas les autres */ }
-    }
+    try {
+      const edle = await chargerEtatDesLieuxEntree(VISITE);
+      if (edle && edle.statut === "complet") e.edle = edle.edle;
+    } catch (_) { /* sans conséquence */ }
   }
+
+  E.photosEntree = e;
+  E.liensEntree = E.liensEntree || {};
+  E.vignettesAffichees = TRANCHE_VIGNETTES;
+  E.triEntree = photosAvecConstat(e.photos, e.edle) ? "constat" : "toutes";
   dessinerPiece();
+  chargerLiensVisibles();
+}
+
+/* Un appel Graph par image, et seulement pour les vignettes AFFICHÉES.
+   Chaque lien obtenu remplit sa vignette aussitôt : l'écran se garnit
+   sous les yeux au lieu d'attendre la dernière. */
+async function chargerLiensVisibles() {
+  const e = E.photosEntree;
+  if (!e || e.statut !== "ok") return;
+  const lot = lotAffiche().slice(0, E.vignettesAffichees || TRANCHE_VIGNETTES);
+  for (const p of lot) {
+    if (E.liensEntree[p.onedrive_item_id]) continue;
+    if (E.ecran !== "piece") return;   // Julien a quitté l'écran
+    try {
+      const lien = await lienPhotoEntree(p);
+      E.liensEntree[p.onedrive_item_id] = lien;
+      const fig = $("vue").querySelector(
+        '[data-entree="' + p.onedrive_item_id + '"]');
+      if (fig) fig.innerHTML =
+        `<img src="${echapper(lien)}" alt="" loading="lazy">` +
+        `<figcaption>${echapper(p.numero || "?")}</figcaption>`;
+    } catch (_) { /* une image illisible n'empêche pas les autres */ }
+  }
 }
 
 function numeroDansNom(nom) {
@@ -2876,6 +2938,19 @@ function memoriserGroupe() {
 
 function brancherGroupe(piece, photos) {
   if ($("btn-photos-entree")) $("btn-photos-entree").onclick = ouvrirPhotosEntree;
+
+  if ($("tri-constat")) $("tri-constat").onclick = () => {
+    E.triEntree = "constat"; E.vignettesAffichees = TRANCHE_VIGNETTES;
+    dessinerPiece(); chargerLiensVisibles();
+  };
+  if ($("tri-toutes")) $("tri-toutes").onclick = () => {
+    E.triEntree = "toutes"; E.vignettesAffichees = TRANCHE_VIGNETTES;
+    dessinerPiece(); chargerLiensVisibles();
+  };
+  if ($("btn-plus-vignettes")) $("btn-plus-vignettes").onclick = () => {
+    E.vignettesAffichees = (E.vignettesAffichees || TRANCHE_VIGNETTES) + TRANCHE_VIGNETTES;
+    dessinerPiece(); chargerLiensVisibles();
+  };
 
   $("vue").querySelectorAll("[data-corriger]").forEach(b => b.onclick = () => {
     memoriserGroupe();
