@@ -2825,7 +2825,7 @@ function blocPhotosEntree() {
           ${lien
             ? `<img src="${echapper(lien)}" alt="" loading="lazy">`
             : `<div class="vignette-vide"></div>`}
-          <figcaption>${echapper(p.numero || "?")}${prise ? " ✓" : ""}</figcaption>
+          <figcaption>${echapper(libelleVignette(p))}${prise ? " ✓" : ""}</figcaption>
         </figure>`;
       }).join("")}
     </div>
@@ -2835,6 +2835,15 @@ function blocPhotosEntree() {
           Math.min(TRANCHE_VIGNETTES, reste)} suivantes</button>` : ""}
     <p class="note">Touche une photographie pour refaire le même cadrage.</p>
   </div>`;
+}
+
+/* Les photographies produites par l'application portent un numéro ; celles
+   des anciens états des lieux, prises à l'iPhone et déposées à la main,
+   n'ont que l'heure de leur nom de fichier. */
+function libelleVignette(p) {
+  if (p.numero) return p.numero;
+  if (p.horodatage) return p.horodatage.heure;
+  return "—";
 }
 
 /* La liste selon le tri choisi. Le tri par constat prime sur le filtre par
@@ -2885,13 +2894,15 @@ async function chargerLiensVisibles() {
     if (E.liensEntree[p.onedrive_item_id]) continue;
     if (E.ecran !== "piece") return;   // Julien a quitté l'écran
     try {
-      const lien = await lienPhotoEntree(p);
+      /* Aperçu et non fichier d'origine : les anciens états des lieux sont
+         en HEIC, que Safari n'affiche pas dans une page. */
+      const lien = await apercuPhotoEntree(p, false);
       E.liensEntree[p.onedrive_item_id] = lien;
       const fig = $("vue").querySelector(
         '[data-entree="' + p.onedrive_item_id + '"]');
       if (fig) fig.innerHTML =
         `<img src="${echapper(lien)}" alt="" loading="lazy">` +
-        `<figcaption>${echapper(p.numero || "?")}</figcaption>`;
+        `<figcaption>${echapper(libelleVignette(p))}</figcaption>`;
     } catch (_) { /* une image illisible n'empêche pas les autres */ }
   }
 }
@@ -2916,8 +2927,14 @@ async function ecranViseeGuidee(itemEntree) {
   const ref = e && e.photos.find(p => p.onedrive_item_id === itemEntree);
   if (!ref) return dessinerPiece("Photographie d'entrée introuvable.");
 
-  const lien = E.liensEntree[itemEntree];
-  if (!lien) return dessinerPiece("Cette photographie n'est pas encore chargée.");
+  /* La vignette suffit à choisir, pas à se superposer : on redemande un
+     aperçu en grande taille pour la visée. Toujours du JPEG, quel que soit
+     le format d'origine — les anciens états des lieux sont en HEIC. */
+  let lien;
+  try { lien = await apercuPhotoEntree(ref, true); }
+  catch (err) {
+    return dessinerPiece("Aperçu impossible pour cette photographie : " + err.message);
+  }
 
   E.ecran = "visee";
   E.visee = { ref, lien, score: 0, auto: false, camera: null, boucle: null,
@@ -2931,7 +2948,7 @@ function dessinerVisee(message) {
   const V = E.visee;
   vue(`
     ${message ? `<div class="succes">${echapper(message)}</div>` : ""}
-    <div class="bloc"><h2>Photographie ${echapper(V.ref.numero || "?")} de l'entrée</h2>
+    <div class="bloc"><h2>Photographie ${echapper(libelleVignette(V.ref))} de l'entrée</h2>
       <div id="scene-visee">
         <video id="visee-flux" playsinline muted autoplay></video>
         <img id="visee-calque" src="${echapper(V.lien)}" alt="">

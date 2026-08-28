@@ -52,17 +52,20 @@ async function chargerPhotosEntree(visite) {
 
     const ramasser = (liste, ref) => {
       liste.filter(e => (e.file || (e.remoteItem && e.remoteItem.file)) &&
-                        /\.jpe?g$/i.test(e.name || ""))
+                        /\.(jpe?g|png|heic|heif|webp)$/i.test(e.name || ""))
         .forEach(e => {
           const r = refDe(e, ref.driveId);
           if (vus.has(r.id)) return;
           vus.add(r.id);
+          const h = horodatageDuNom(e.name);
           trouvees.push({
             nom_fichier: e.name,
             onedrive_item_id: r.id,
             drive_id: r.driveId,
             numero: numeroDuNom(e.name),
             piece: pieceDuNom(e.name),
+            horodatage: h,
+            heic: /\.(heic|heif)$/i.test(e.name || ""),
             prise_le: e.lastModifiedDateTime || null,
           });
         });
@@ -92,8 +95,13 @@ async function chargerPhotosEntree(visite) {
                vu: noms, sous_dossier: !!sousDossier };
     }
 
-    const photos = trouvees.sort((a, b) =>
-      String(a.nom_fichier).localeCompare(String(b.nom_fichier)));
+    /* Tri par horodatage quand il existe — c'est l'ordre de la visite —
+       et par nom sinon. */
+    const photos = trouvees.sort((a, b) => {
+      const ta = (a.horodatage && a.horodatage.tri) || a.nom_fichier;
+      const tb = (b.horodatage && b.horodatage.tri) || b.nom_fichier;
+      return String(ta).localeCompare(String(tb));
+    });
 
     await journaliser("photos_entree_lues",
       { nombre: photos.length, sous_dossier: !!sousDossier });
@@ -115,6 +123,51 @@ function numeroDuNom(nom) {
 function pieceDuNom(nom) {
   const m = String(nom || "").match(/^[A-Z]+_\d{4}-\d{2}-\d{2}_(.+?)_\d{3}_/);
   return m ? m[1].replace(/-/g, " ") : null;
+}
+
+/* Les états des lieux antérieurs à l'application ont été photographiés
+   avec l'appareil de l'iPhone et déposés à la main dans OneDrive : leurs
+   noms suivent le gabarit d'iOS — 20260827_230720115_iOS.heic — sans
+   numéro ni pièce. On en tire au moins l'heure, pour donner un repère à
+   l'écran et un ordre de tri fidèle à la visite. */
+function horodatageDuNom(nom) {
+  const m = String(nom || "").match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
+  if (!m) return null;
+  return { jour: m[3] + "/" + m[2], heure: m[4] + "h" + m[5],
+           tri: m[1] + m[2] + m[3] + m[4] + m[5] + m[6] };
+}
+
+/* Aperçu JPEG produit par Microsoft.
+
+   INDISPENSABLE POUR LE HEIC : Safari n'affiche pas ce format dans une
+   page web, et Gemini reçoit dans nos appels un type déclaré image/jpeg.
+   Demander un aperçu règle les deux d'un coup — Microsoft convertit, on
+   ne manipule que du JPEG.
+
+   On tente d'abord une grande taille, utile à la superposition ; la
+   vignette « large » sert de repli, et le fichier d'origine en dernier
+   ressort pour les formats que Safari sait déjà lire. */
+async function apercuPhotoEntree(photo, grand) {
+  const base = photo.drive_id
+    ? `/drives/${photo.drive_id}/items/${photo.onedrive_item_id}`
+    : `/me/drive/items/${photo.onedrive_item_id}`;
+  const tailles = grand ? ["c1600x1600", "large", "medium"] : ["large", "medium", "small"];
+
+  for (const t of tailles) {
+    try {
+      const res = await appelGraph(`${base}/thumbnails/0/${t}`);
+      if (!res.ok) continue;
+      const v = await res.json();
+      if (v && v.url) return v.url;
+    } catch (_) { /* on essaie la taille suivante */ }
+  }
+
+  /* Aucun aperçu : Microsoft n'en produit pas pour tous les fichiers.
+     Le fichier d'origine convient si Safari sait l'afficher. */
+  if (/\.(jpe?g|png|webp)$/i.test(photo.nom_fichier || "")) {
+    return await lienPhotoEntree(photo);
+  }
+  throw new Error("Aperçu indisponible pour " + photo.nom_fichier);
 }
 
 /* Lien de téléchargement d'une photographie d'entrée. Même mécanisme que
