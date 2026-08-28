@@ -91,7 +91,17 @@
 </div>
 
 <div class="bloc">
-  <h2>2. Visée</h2>
+  <h2>2. Réglages de prise de vue</h2>
+  <p class="note">À changer AVANT d'allumer la caméra. Surveille le temps
+  par analyse : au-delà de 60 ms, la visée devient saccadée.</p>
+  <div class="ligne"><span>Largeur du flux</span><span id="lib-flux">1920 — sûr</span></div>
+  <input type="range" id="reg-flux" min="0" max="2" value="0" step="1">
+  <div class="ligne" style="margin-top:8px"><span>Qualité JPEG</span><span id="lib-qualite">0,82 — actuelle</span></div>
+  <input type="range" id="reg-qualite" min="0" max="3" value="0" step="1">
+</div>
+
+<div class="bloc">
+  <h2>3. Visée</h2>
   <button id="btn-camera" class="principal">Allumer la caméra</button>
   <p class="note" id="etat-camera">Caméra éteinte.</p>
 
@@ -105,6 +115,7 @@
   </div>
 
   <div id="reglages" class="cache">
+    <div class="ligne"><span>Flux obtenu</span><span id="flux-reel">—</span></div>
     <div class="ligne"><span>Opacité de la référence</span><span id="val-opacite">35 %</span></div>
     <input type="range" id="opacite" min="0" max="100" value="35">
     <div class="ligne"><span>Seuil de déclenchement</span><span id="val-seuil">60 %</span></div>
@@ -119,7 +130,7 @@
 </div>
 
 <div class="bloc cache" id="bloc-resultat">
-  <h2>3. Comparaison</h2>
+  <h2>4. Comparaison</h2>
   <div class="cote-a-cote">
     <figure><img id="vue-ref" alt=""><figcaption>Référence</figcaption></figure>
     <figure><img id="vue-prise" alt=""><figcaption>Prise</figcaption></figure>
@@ -133,7 +144,7 @@
 </div>
 
 <div class="bloc">
-  <h2>4. Journal</h2>
+  <h2>5. Journal</h2>
   <p class="note" id="journal">En attente.</p>
 </div>
 
@@ -246,7 +257,7 @@ function conseil(m) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 1.2";
+const VERSION = "essai 1.3";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -294,23 +305,62 @@ $("fichier").onchange = (e) => {
   img.src = url;
 };
 
+/* ---- Réglages de prise de vue ---------------------------------------
+
+   Le flux d'aperçu et la capture partagent la même source : un flux plus
+   large donne une meilleure photographie, mais alourdit tout. L'analyse,
+   elle, travaille sur du 96 × 96 quelle que soit la source — c'est la
+   réduction vers 96 qui coûte, et le navigateur la fait avec son
+   accélération graphique.
+
+   D'où ce réglage : mesurer plutôt que supposer. */
+const FLUX = [
+  { l: 1920, h: 1440, lib: "1920 — sûr" },
+  { l: 2560, h: 1920, lib: "2560 — intermédiaire" },
+  { l: 4032, h: 3024, lib: "4032 — pleine résolution" },
+];
+const QUALITES = [
+  { q: 0.82, lib: "0,82 — actuelle" },
+  { q: 0.88, lib: "0,88" },
+  { q: 0.92, lib: "0,92 — recommandée" },
+  { q: 0.96, lib: "0,96 — lourde" },
+];
+
+$("reg-flux").oninput = (e) => {
+  $("lib-flux").textContent = FLUX[Number(e.target.value)].lib;
+  if (fluxCamera) noter("Éteins et rallume la caméra pour appliquer.", "attention");
+};
+$("reg-qualite").oninput = (e) => {
+  $("lib-qualite").textContent = QUALITES[Number(e.target.value)].lib;
+};
+
+const fluxChoisi = () => FLUX[Number($("reg-flux").value)];
+const qualiteChoisie = () => QUALITES[Number($("reg-qualite").value)].q;
+
 /* ---- Caméra ---- */
 $("btn-camera").onclick = async () => {
   if (!refContours) return noter("Charge d'abord une référence.", "ko");
   $("btn-camera").disabled = true;
   try {
+    const dem = fluxChoisi();
     fluxCamera = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode:{ideal:"environment"}, width:{ideal:1920}, height:{ideal:1440} },
+      video: { facingMode:{ideal:"environment"},
+               width:{ideal:dem.l}, height:{ideal:dem.h} },
       audio: false });
     $("flux").srcObject = fluxCamera;
     await $("flux").play();
     const r = fluxCamera.getVideoTracks()[0].getSettings();
-    $("etat-camera").textContent = "Caméra allumée — " + (r.width||"?") + "×" + (r.height||"?");
+    const obtenu = (r.width||0) + "×" + (r.height||0);
+    const tenu = (r.width||0) >= dem.l * 0.9;
+    $("etat-camera").textContent = "Caméra allumée — " + obtenu;
     $("etat-camera").className = "note ok";
+    $("flux-reel").textContent = obtenu + (tenu ? "" : " — moins que demandé");
+    $("flux-reel").className = tenu ? "ok" : "attention";
     $("scene").classList.remove("cache");
     $("reglages").classList.remove("cache");
     $("btn-camera").classList.add("cache");
-    noter("Caméra allumée.", "ok");
+    noter("Caméra allumée — demandé " + dem.l + ", obtenu " + obtenu + ".",
+      tenu ? "ok" : "attention");
     lancerBoucle();
   } catch (e) {
     $("etat-camera").textContent = "Refus ou erreur : " + e.name;
@@ -372,7 +422,11 @@ function analyser() {
   compteur++;
   if (Date.now() - dernierRelevé > 1000) {
     $("cadence").textContent = compteur + " / s";
-    $("duree").textContent = (sommeDurees / compteur).toFixed(1) + " ms";
+    const moy = sommeDurees / compteur;
+    $("duree").textContent = moy.toFixed(1) + " ms";
+    /* Au-delà de 60 ms, dix analyses par seconde ne tiennent plus et le
+       guidage perd son intérêt. */
+    $("duree").className = moy > 60 ? "ko" : moy > 40 ? "attention" : "ok";
     compteur = 0; sommeDurees = 0; dernierRelevé = Date.now();
   }
 
@@ -433,12 +487,13 @@ function prendre() {
     $("vue-prise").src = priseURL;
     $("score-final").textContent = dernierScore + " %";
     $("res").textContent = fin.width + " × " + fin.height;
-    $("poids").textContent = Math.round(blob.size / 1024) + " Ko";
+    $("poids").textContent = Math.round(blob.size / 1024) + " Ko (qualité " +
+      String(qualiteChoisie()).replace(".", ",") + ")";
     $("bloc-resultat").classList.remove("cache");
     confirmerPrise(dernierScore);
     noter("Photo prise à " + dernierScore + " % — " + fin.width + "×" + fin.height +
       ", " + Math.round(blob.size/1024) + " Ko.", "ok");
-  }, "image/jpeg", 0.82);
+  }, "image/jpeg", qualiteChoisie());
 }
 
 /* Confirmation visible, plus une vibration quand l'appareil la permet :
