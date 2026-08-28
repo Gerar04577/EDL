@@ -164,7 +164,15 @@ async function apercuBlobEntree(photo, grand) {
   const base = photo.drive_id
     ? `/drives/${photo.drive_id}/items/${photo.onedrive_item_id}`
     : `/me/drive/items/${photo.onedrive_item_id}`;
-  const tailles = grand ? ["c1600x1600", "large", "medium"] : ["large", "medium"];
+  /* ATTENTION AU PRÉFIXE « c ». Chez Microsoft, « c1600x1600 » signifie
+     RECADRER à ces dimensions : l'aperçu revenait carré, alors que la
+     photographie d'origine est verticale. La référence apparaissait donc
+     à un cadrage — et à une échelle — différents du flux de la caméra, et
+     la superposition était impossible quoi qu'on fasse.
+
+     Sans le « c », les dimensions sont un plafond : l'image s'inscrit
+     dedans en gardant ses proportions. C'est ce qu'il faut ici. */
+  const tailles = grand ? ["1600x1600", "large", "medium"] : ["large", "medium"];
 
   for (const t of tailles) {
     try {
@@ -191,7 +199,9 @@ async function apercuPhotoEntree(photo, grand) {
   const base = photo.drive_id
     ? `/drives/${photo.drive_id}/items/${photo.onedrive_item_id}`
     : `/me/drive/items/${photo.onedrive_item_id}`;
-  const tailles = grand ? ["c1600x1600", "large", "medium"] : ["large", "medium", "small"];
+  /* Sans le préfixe « c » : les proportions d'origine sont conservées.
+     Voir apercuBlobEntree pour le détail. */
+  const tailles = grand ? ["1600x1600", "large", "medium"] : ["large", "medium", "small"];
 
   for (const t of tailles) {
     try {
