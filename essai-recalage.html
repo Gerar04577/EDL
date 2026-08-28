@@ -287,7 +287,7 @@ function conseil(m) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 1.5";
+const VERSION = "essai 1.6";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -309,6 +309,13 @@ $("fichier").onchange = (e) => {
   const img = new Image();
   img.onload = () => {
     refL = img.naturalWidth; refH = img.naturalHeight;
+    /* UNE NOUVELLE RÉFÉRENCE EFFACE TOUT. Les contours mis en réserve
+       appartiennent à la photographie précédente : les garder revenait à
+       comparer la nouvelle vue à l'ancienne image, et aucun zoom n'y
+       changeait rien. */
+    contoursParEchelle = {};
+    echelleRetenue = null;
+    imageRefChargee = null;
     $("calque").src = url; $("vue-ref").src = url;
     $("scene").style.aspectRatio = refL + " / " + refH;
 
@@ -457,6 +464,7 @@ $("btn-eteindre").onclick = eteindre;
    Les contours de la référence sont calculés UNE FOIS par échelle et
    gardés : c'est ce qui rend la recherche tenable dix fois par seconde. */
 var echelleRetenue = null;        // en pourcent
+var echecs = 0;                   // analyses de suite sous 25 %
 var contoursParEchelle = {};      // mémoire des contours calculés
 var imageRefChargee = null;
 
@@ -499,6 +507,17 @@ function chercherAvecEchelle(fluxC) {
        pas de distance brutalement — le pas de 3 suit ses déplacements. */
     candidats = [echelleRetenue - 3, echelleRetenue, echelleRetenue + 3]
       .filter(p => p >= 50 && p <= 150);
+
+    /* SE DÉPRENDRE D'UN MAUVAIS CHOIX. La première recherche se fait au
+       moment où l'opérateur n'est pas encore placé : elle peut retenir une
+       échelle absurde, et le voisinage de trois pas ne permet plus d'en
+       sortir. Après une série de scores faibles, on rouvre donc le
+       balayage complet. */
+    if (echecs >= 25) { echelleRetenue = null; echecs = 0;
+      candidats = [];
+      for (let p = 50; p <= 150; p += 10) candidats.push(p);
+      noter("Échelle peu convaincante : nouvelle recherche complète.", "attention");
+    }
   }
 
   let meilleur = { score: -1 };
@@ -522,6 +541,10 @@ function chercherAvecEchelle(fluxC) {
         if (m.score > meilleur.score) { meilleur = m; meilleur.echelle = pc; }
       });
   }
+
+  /* Un score durablement bas signifie soit un mauvais cadrage, soit une
+     mauvaise échelle. On compte, et au bout d'un moment on rouvre. */
+  echecs = (meilleur.score < 0.25) ? echecs + 1 : 0;
 
   if (meilleur.echelle) {
     echelleRetenue = meilleur.echelle;
