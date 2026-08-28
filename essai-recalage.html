@@ -411,7 +411,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 2.1";
+const VERSION = "essai 2.2";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -665,12 +665,34 @@ function chercherEchelle(v, dx, dy, cl, ch) {
   const res = sectionDoree(evaluer, 0.02,
                            echelleRetenue === null ? 5 : 4, echelleRetenue);
 
-  /* LISSAGE : on ne retient qu'une part du déplacement — assez pour suivre
-     un vrai changement de distance, trop peu pour trembler sur place. */
-  if (echelleRetenue === null) echelleRetenue = res.echelle;
-  else echelleRetenue = echelleRetenue * 0.75 + res.echelle * 0.25;
+  if (echelleRetenue === null) { echelleRetenue = res.echelle; return arrondi(); }
 
-  return Math.round(echelleRetenue * 10) / 10;
+  /* NE PAS BOUGER POUR RIEN.
+
+     Près du but, deux échelles voisines donnent des scores qui ne
+     diffèrent que de quelques millièmes : c'est le bruit de mesure, pas
+     une information. La section dorée continue pourtant à chercher jusqu'à
+     sa précision demandée, et se met à osciller entre des valeurs
+     équivalentes — d'où le tremblement.
+
+     On n'adopte donc la nouvelle échelle que si elle apporte un gain
+     réel. C'est la même idée que la pénalité de complexité appliquée aux
+     décalages : à résultat équivalent, on ne bouge pas. */
+  const ancienScore = evaluer(echelleRetenue);
+  const gain = res.score - ancienScore;
+  if (gain < 0.02) return arrondi();      // le déplacement ne se justifie pas
+
+  /* LISSAGE, d'autant plus fort que l'alignement est déjà bon : c'est
+     près du but qu'il faut de la stabilité, et loin qu'il faut suivre. */
+  const part = ancienScore > 0.55 ? 0.15 : 0.35;
+  echelleRetenue = echelleRetenue * (1 - part) + res.echelle * part;
+  return arrondi();
+
+  function arrondi() {
+    /* Un demi-point de résolution suffit : au-delà, on n'affiche que du
+       bruit et le curseur s'agite sans que l'image change. */
+    return Math.round(echelleRetenue * 2) / 2;
+  }
 }
 
 /* ---- Analyse en continu ---- */
