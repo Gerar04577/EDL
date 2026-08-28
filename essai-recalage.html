@@ -56,7 +56,16 @@
   /* La référence peut être agrandie : l'appareil natif emploie le
      grand-angle, Safari un objectif plus resserré. Même position, champ
      différent — d'où l'écart d'échelle que le cadrage ne corrige pas. */
-  #calque { pointer-events:none; transform-origin:50% 50%; }
+  /* SOUS 100 %, LA RÉFÉRENCE DOIT COUVRIR LE CADRE. Une transformation
+     d'échelle inférieure à 1 la rétrécissait au centre, entourée du flux :
+     le poêle y devenait plus petit que celui de la caméra, et aucune
+     position ne les faisait coïncider.
+
+     On agrandit donc l'élément lui-même — width et height au-dessus de
+     100 % — et on le recentre par des décalages négatifs. Réduire
+     l'échelle revient alors à MONTRER PLUS de la photographie, comme un
+     pas en arrière, sans jamais découvrir le flux autour. */
+  #calque { pointer-events:none; }
 
   /* Le verdict, en surimpression : lisible d'un coup d'oeil, bras tendu. */
   #verdict { position:absolute; left:0; right:0; top:0; padding:10px 12px;
@@ -66,6 +75,9 @@
     background:#c9403a; transition:width .12s linear, background .2s; }
   #cible { position:absolute; inset:0; border:3px solid transparent;
     border-radius:12px; pointer-events:none; transition:border-color .2s; }
+  /* Orange pendant le décompte : l'alignement est bon, l'appareil fait son
+     point, il ne faut plus bouger. */
+  #cible.pret { border-color:#c8891f !important; }
 
   /* Confirmation de prise de vue. En grand et par-dessus la scène : au
      déclenchement automatique, l'écran n'est pas regardé de près, et il
@@ -85,6 +97,16 @@
   .cote-a-cote img { width:100%; border-radius:8px; display:block; }
   .cote-a-cote figcaption { font-size:12px; color:#8a8a8a; margin-top:4px; text-align:center; }
   .cache { display:none; }
+
+  /* Déclencheur rond, juste sous l'image : le bouton « Prendre la photo »
+     était trop bas pour être atteint au pouce sans lâcher la visée des
+     yeux. Reprend l'allure de l'obturateur d'Apple — cercle blanc, anneau
+     autour — pour être reconnu sans y penser. */
+  #declencheur { display:flex; justify-content:center; margin:-4px 0 12px; }
+  #btn-obturateur { width:74px; height:74px; padding:0; margin:0;
+    border-radius:50%; background:#fff; border:4px solid #1a1a1a;
+    box-shadow:0 0 0 3px #fff inset, 0 2px 8px rgba(0,0,0,.25); }
+  #btn-obturateur:active { background:#dcd8d0; transform:scale(.94); }
 </style>
 </head>
 <body>
@@ -128,12 +150,20 @@
     <div id="flash">PHOTO PRISE</div>
   </div>
 
+  <div id="declencheur" class="cache">
+    <button id="btn-obturateur" aria-label="Prendre la photo"></button>
+  </div>
+
   <div id="reglages" class="cache">
     <div class="ligne"><span>Flux obtenu</span><span id="flux-reel">—</span></div>
     <div class="ligne"><span>Opacité de la référence</span><span id="val-opacite">35 %</span></div>
     <input type="range" id="opacite" min="0" max="100" value="35">
     <div class="ligne"><span>Seuil de déclenchement</span><span id="val-seuil">60 %</span></div>
     <input type="range" id="seuil" min="30" max="95" value="60">
+
+    <div class="ligne"><span>Immobilité avant la prise</span>
+      <span id="val-stab">1.2 s</span></div>
+    <input type="range" id="stab" min="0" max="3000" step="100" value="1200">
 
     <label class="ligne" style="margin-top:10px">
       <span>Chercher l'échelle automatiquement</span>
@@ -287,7 +317,7 @@ function conseil(m) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 1.6";
+const VERSION = "essai 1.8";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -315,6 +345,8 @@ $("fichier").onchange = (e) => {
        changeait rien. */
     contoursParEchelle = {};
     echelleRetenue = null;
+    echelleFigee = null;
+    echecs = 0;
     imageRefChargee = null;
     $("calque").src = url; $("vue-ref").src = url;
     $("scene").style.aspectRatio = refL + " / " + refH;
@@ -386,7 +418,11 @@ $("btn-camera").onclick = async () => {
     const dem = fluxChoisi();
     fluxCamera = await navigator.mediaDevices.getUserMedia({
       video: { facingMode:{ideal:"environment"},
-               width:{ideal:dem.l}, height:{ideal:dem.h} },
+               width:{ideal:dem.l}, height:{ideal:dem.h},
+               /* Sans elle, l'objectif reste calé sur la première distance
+                  vue : la photographie prise après un déplacement sort
+                  floue. « ideal » n'échoue jamais si l'appareil refuse. */
+               focusMode:{ideal:"continuous"} },
       audio: false });
     $("flux").srcObject = fluxCamera;
     await $("flux").play();
@@ -426,6 +462,7 @@ $("btn-camera").onclick = async () => {
     }
 
     $("scene").classList.remove("cache");
+    $("declencheur").classList.remove("cache");
     $("reglages").classList.remove("cache");
     $("btn-camera").classList.add("cache");
     noter("Caméra allumée — demandé " + dem.l + ", obtenu " + obtenu + ".",
@@ -444,6 +481,7 @@ function eteindre() {
   if (fluxCamera) fluxCamera.getTracks().forEach(t => t.stop());
   fluxCamera = null;
   $("scene").classList.add("cache"); $("reglages").classList.add("cache");
+  $("declencheur").classList.add("cache");
   $("btn-camera").classList.remove("cache"); $("btn-camera").disabled = false;
   $("etat-camera").textContent = "Caméra éteinte."; $("etat-camera").className = "note";
 }
@@ -465,6 +503,21 @@ $("btn-eteindre").onclick = eteindre;
    gardés : c'est ce qui rend la recherche tenable dix fois par seconde. */
 var echelleRetenue = null;        // en pourcent
 var echecs = 0;                   // analyses de suite sous 25 %
+var echelleFigee = null;          // arrêtée dès qu'elle est convaincante
+var stableDepuis = 0;             // début de la période d'immobilité
+var DELAI_STABILITE = 1200;       // ms — le temps d'un point et d'un geste arrêté
+
+/* Demande un point sur la scène. La mise au point continue est déjà
+   active, mais un rappel au moment décisif évite de photographier
+   pendant que l'objectif cherche encore. */
+async function demanderPoint() {
+  if (!fluxCamera) return;
+  const piste = fluxCamera.getVideoTracks()[0];
+  if (!piste) return;
+  try {
+    await piste.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
+  } catch (_) { /* l'appareil refuse : la mise au point reste celle du flux */ }
+}
 var contoursParEchelle = {};      // mémoire des contours calculés
 var imageRefChargee = null;
 
@@ -476,7 +529,10 @@ function contoursAEchelle(pc) {
   const ctx = c.getContext("2d", { willReadFrequently: true });
   /* Agrandir la référence revient à n'en garder que le centre : à 150 %,
      on n'en voit que les deux tiers. */
-  const z = pc / 100;
+  /* Même règle qu'à l'affichage : au-dessus de 100 % on rogne la
+     référence en son centre ; en dessous, on la prend entière — c'est le
+     FLUX qui sera rogné, dans analyser(). */
+  const z = Math.max(1, pc / 100);
   const iw = imageRefChargee.naturalWidth, ih = imageRefChargee.naturalHeight;
   const sw = iw / z, sh = ih / z;
   ctx.drawImage(imageRefChargee, (iw - sw) / 2, (ih - sh) / 2, sw, sh,
@@ -486,13 +542,41 @@ function contoursAEchelle(pc) {
   return contoursParEchelle[pc];
 }
 
-function chercherAvecEchelle(fluxC) {
+/* Contours du flux, rognés selon l'échelle : sous 100 %, on n'en garde
+   que le centre — l'équivalent d'un pas en arrière de la référence. */
+function contoursFlux(v, dx, dy, cl, ch, pc) {
+  const z = Math.max(1, 100 / pc);
+  const fl = Math.round(cl / z), fh = Math.round(ch / z);
+  const fx = dx + Math.round((cl - fl) / 2), fy = dy + Math.round((ch - fh) / 2);
+  ctxT.drawImage(v, fx, fy, fl, fh, 0, 0, TAILLE, TAILLE);
+  const px = ctxT.getImageData(0, 0, TAILLE, TAILLE).data;
+  return contours(reduire(px, TAILLE, TAILLE));
+}
+
+/* fluxPour(pc) rend les contours du flux pour une échelle donnée. */
+function chercherAvecEchelle(fluxPour) {
   const auto = $("echelle-auto").checked;
   if (!auto) {
     const pc = Number($("zoom-ref").value);
     const c = contoursAEchelle(pc);
-    const m = c ? chercher(c, fluxC) : { score: 0, dx: 0, dy: 0, e: 1 };
+    const m = c ? chercher(c, fluxPour(pc)) : { score: 0, dx: 0, dy: 0, e: 1 };
     m.echelle = pc;
+    return m;
+  }
+
+  /* Échelle figée : un seul essai, et le score dit la vérité. */
+  if (echelleFigee) {
+    const c = contoursAEchelle(echelleFigee);
+    const m = c ? chercher(c, fluxPour(echelleFigee)) : { score: 0, dx: 0, dy: 0, e: 1 };
+    m.echelle = echelleFigee;
+    /* Si l'alignement s'effondre durablement, on rouvre la recherche. */
+    if (m.score < 0.20) {
+      echecs++;
+      if (echecs >= 30) {
+        echelleFigee = null; echelleRetenue = null; echecs = 0;
+        noter("Alignement perdu : nouvelle recherche d'échelle.", "attention");
+      }
+    } else echecs = 0;
     return m;
   }
 
@@ -524,7 +608,7 @@ function chercherAvecEchelle(fluxC) {
   candidats.forEach(pc => {
     const c = contoursAEchelle(pc);
     if (!c) return;
-    const m = chercher(c, fluxC);
+    const m = chercher(c, fluxPour(pc));
     if (m.score > meilleur.score) { meilleur = m; meilleur.echelle = pc; }
   });
 
@@ -537,7 +621,7 @@ function chercherAvecEchelle(fluxC) {
       .forEach(pc => {
         const c = contoursAEchelle(pc);
         if (!c) return;
-        const m = chercher(c, fluxC);
+        const m = chercher(c, fluxPour(pc));
         if (m.score > meilleur.score) { meilleur = m; meilleur.echelle = pc; }
       });
   }
@@ -546,11 +630,31 @@ function chercherAvecEchelle(fluxC) {
      mauvaise échelle. On compte, et au bout d'un moment on rouvre. */
   echecs = (meilleur.score < 0.25) ? echecs + 1 : 0;
 
+  /* L'ÉCHELLE SE FIGE UNE FOIS CONVAINCANTE.
+
+     Chercher à chaque image gonflait le score : on retenait le meilleur de
+     trois essais, donc toujours plus flatteur qu'un seul. Mesuré : jusqu'à
+     treize points de trop sur un cadrage très décalé. Le déclenchement ne
+     portait plus sur la ressemblance des deux vues, mais sur la meilleure
+     échelle qu'on ait pu leur trouver.
+
+     Au-delà de 45 %, l'échelle est tenue pour bonne et ne bouge plus : le
+     score redevient une mesure honnête de l'alignement. */
+  if (!echelleFigee && meilleur.score >= 0.45 && meilleur.echelle) {
+    echelleFigee = meilleur.echelle;
+    noter("Échelle figée à " + meilleur.echelle + " % — le score mesure " +
+      "désormais le seul alignement.", "ok");
+  }
+
   if (meilleur.echelle) {
     echelleRetenue = meilleur.echelle;
     $("zoom-ref").value = meilleur.echelle;
-    $("val-zoom-ref").textContent = meilleur.echelle + " % (trouvé)";
-    $("calque").style.transform = "scale(" + (meilleur.echelle / 100) + ")";
+    /* « Trouvé » s'affichait quel que soit le score : à 5 % d'alignement,
+       l'application annonçait une échelle trouvée. On ne le dit que
+       lorsque le résultat le mérite. */
+    $("val-zoom-ref").textContent = meilleur.echelle + " % " +
+      (meilleur.score >= 0.45 ? "(trouvé)" : "(en recherche)");
+    poserEchelleCalque(meilleur.echelle);
   }
   return meilleur;
 }
@@ -583,18 +687,20 @@ function analyser() {
      le flux dans le même sens que le zoom de la référence : les deux
      effets s'ajoutaient au lieu de se compenser, et le score s'effondrait
      à mesure que la superposition s'améliorait. */
-  ctxT.drawImage(v, dx, dy, cl, ch, 0, 0, TAILLE, TAILLE);
-  const px = ctxT.getImageData(0, 0, TAILLE, TAILLE).data;
-  const fluxC = contours(reduire(px, TAILLE, TAILLE));
-
-  const m = chercherAvecEchelle(fluxC);
+  /* Le flux est rogné en miroir de la référence : au-dessus de 100 %,
+     c'est la référence qu'on rogne ; en dessous, c'est lui. Les deux
+     images restent ainsi à la même échelle, et couvrent le cadre. */
+  const fluxC = contoursFlux(v, dx, dy, cl, ch, 100);
+  const m = chercherAvecEchelle((pc) => contoursFlux(v, dx, dy, cl, ch, pc));
   const pourcent = Math.max(0, Math.round(m.score * 100));
   dernierScore = pourcent;
 
   const seuil = Number($("seuil").value);
   const bon = pourcent >= seuil;
+  /* Deux pourcentages côte à côte — le score et l'échelle — se
+     confondaient. L'échelle passe en facteur : ×1,12. */
   $("verdict").textContent = pourcent + " % — " + (bon ? "aligné" : conseil(m)) +
-    (m.echelle ? "  ·  échelle " + m.echelle + " %" : "");
+    (m.echelle ? "   ×" + (m.echelle / 100).toFixed(2) : "");
   $("jauge").style.width = pourcent + "%";
   $("jauge").style.background = bon ? "#2f7d63" : pourcent > seuil * 0.7 ? "#c8891f" : "#c9403a";
   $("cible").style.borderColor = bon ? "#2f7d63" : "transparent";
@@ -614,11 +720,38 @@ function analyser() {
   /* Un seul déclenchement par activation : sinon la photo se reprendrait
      dix fois par seconde tant que l'alignement tient. L'état revient donc
      à l'arrêt, et le bouton le dit. */
-  if (auto && bon) {
-    auto = false; majAuto();
-    noter("Déclenchement automatique à " + pourcent + " %.", "ok");
-    prendre();
+  /* IMMOBILITÉ ET MISE AU POINT AVANT LE DÉCLENCHEMENT.
+
+     Partir dès le seuil atteint, c'est photographier PENDANT le
+     mouvement : l'objectif n'a pas fini de faire le point, et l'image sort
+     floue. On exige donc que l'alignement se maintienne le temps que le
+     geste s'arrête et que l'appareil se cale. Un mouvement remet le
+     décompte à zéro. */
+  if (!auto) { stableDepuis = 0; $("cible").classList.remove("pret"); return; }
+  if (!bon) { stableDepuis = 0; $("cible").classList.remove("pret"); return; }
+
+  const maintenant = Date.now();
+  if (!stableDepuis) {
+    stableDepuis = maintenant;
+    /* Un point est demandé au moment précis où le cadrage devient bon :
+       c'est là que la scène est celle qu'on veut nette. */
+    demanderPoint();
   }
+  const tenu = maintenant - stableDepuis;
+
+  if (tenu < DELAI_STABILITE) {
+    $("cible").classList.add("pret");
+    $("verdict").textContent = pourcent + " % — NE BOUGE PLUS… " +
+      (Math.ceil((DELAI_STABILITE - tenu) / 100) / 10).toFixed(1) + " s";
+    return;
+  }
+
+  auto = false; stableDepuis = 0;
+  $("cible").classList.remove("pret");
+  majAuto();
+  noter("Déclenchement à " + pourcent + " % après " +
+    (DELAI_STABILITE / 1000) + " s d'immobilité.", "ok");
+  prendre();
 }
 
 /* ---- Réglages ---- */
@@ -628,11 +761,44 @@ $("opacite").oninput = (e) => {
 };
 $("calque").style.opacity = 0.35;
 $("seuil").oninput = (e) => { $("val-seuil").textContent = e.target.value + " %"; };
+$("stab").oninput = () => {
+  DELAI_STABILITE = Number($("stab").value);
+  $("val-stab").textContent = (DELAI_STABILITE / 1000).toFixed(1) + " s";
+};
 
 /* ZOOM DE LA RÉFÉRENCE — la voie sûre, elle marche partout. */
+/* ON N'AGRANDIT JAMAIS QU'UNE SEULE DES DEUX IMAGES.
+
+   Réduire la référence sous 100 % était impossible sans découvrir du vide
+   autour : une photographie n'a pas de bords au-delà de ses bords. C'est
+   ce qui la faisait rétrécir au centre, entourée du flux.
+
+   Quand la référence doit paraître PLUS PETITE, on agrandit donc le FLUX
+   à la place — ce qui revient au même pour l'oeil, et laisse les deux
+   images couvrir le cadre en permanence.
+
+   Au-dessus de 100 : on agrandit la référence.
+   En dessous : on agrandit le flux d'autant. */
+function poserEchelleCalque(pc) {
+  const zoomer = (el, facteur) => {
+    const t = 100 * facteur;
+    el.style.width = t + "%";
+    el.style.height = t + "%";
+    el.style.left = (-(t - 100) / 2) + "%";
+    el.style.top = (-(t - 100) / 2) + "%";
+  };
+  if (pc >= 100) {
+    zoomer($("calque"), pc / 100);
+    zoomer($("flux"), 1);
+  } else {
+    zoomer($("calque"), 1);
+    zoomer($("flux"), 100 / pc);
+  }
+}
+
 $("zoom-ref").oninput = () => {
   const z = Number($("zoom-ref").value);
-  $("calque").style.transform = "scale(" + (z / 100) + ")";
+  poserEchelleCalque(z);
   $("val-zoom-ref").textContent = z + " %";
   /* Toucher le curseur reprend la main : la recherche automatique repartira
      de cette valeur si on la réactive. */
@@ -676,10 +842,16 @@ function majAuto() {
     : "Automatique arrêté — appuie sur « Prendre la photo ».";
   $("etat-auto").className = auto ? "note ok" : "note";
 }
-$("btn-auto").onclick = () => { auto = !auto; majAuto(); noter(auto ? "Automatique activé." : "Automatique arrêté."); };
+$("btn-auto").onclick = () => {
+  auto = !auto; stableDepuis = 0;
+  $("cible").classList.remove("pret");
+  majAuto();
+  noter(auto ? "Automatique activé." : "Automatique arrêté.");
+};
 
 /* ---- Prise de vue ---- */
 $("btn-prendre").onclick = prendre;
+$("btn-obturateur").onclick = prendre;
 
 function prendre() {
   const v = $("flux");
