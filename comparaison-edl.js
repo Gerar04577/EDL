@@ -19,6 +19,96 @@ var CATEGORIES = [
 /* Va chercher l'état des lieux d'entrée dans le dossier EDLE voisin.
    Trois issues : le fichier de données (comparaison ligne à ligne),
    un ancien PDF seul (lecture à l'œil), ou rien. */
+/* ---- Photographies de l'état des lieux d'entrée -------------------------
+
+   Elles servent de référence à la visée guidée : à la sortie, Julien
+   superpose la vue d'entrée au flux de la caméra et refait le même
+   cadrage. Deux images comparables valent mieux que deux images
+   rapprochées après coup.
+
+   Les liens de téléchargement rendus par Microsoft vivent environ une
+   heure. On ne les met donc pas en réserve durablement : on les redemande
+   à l'ouverture de l'écran. */
+async function chargerPhotosEntree(visite) {
+  if (visite.type !== "EDLS") return { statut: "sans_objet", photos: [] };
+  try {
+    const parent = await refParentEDLE(visite);
+    if (!parent) return { statut: "dossier_introuvable", photos: [] };
+
+    /* Les visites récentes rangent leurs images dans un sous-dossier
+       Photos ; celles d'avant la 2.5.0 les laissent au niveau du dessus.
+       On regarde aux deux endroits. */
+    const contenu = await enfantsDeRef(parent);
+    let dossier = parent;
+    const sousDossier = contenu.find(e =>
+      e.folder && String(e.name || "").toLowerCase() === "photos");
+    if (sousDossier) dossier = refDe(sousDossier, parent.driveId);
+
+    const fichiers = (sousDossier ? await enfantsDeRef(dossier) : contenu)
+      .filter(e => e.file && /\.jpe?g$/i.test(e.name || ""));
+
+    if (!fichiers.length) return { statut: "aucune", photos: [] };
+
+    const photos = fichiers.map(e => {
+      const r = refDe(e, dossier.driveId);
+      return {
+        nom_fichier: e.name,
+        onedrive_item_id: r.id,
+        drive_id: r.driveId,
+        numero: numeroDuNom(e.name),
+        piece: pieceDuNom(e.name),
+        prise_le: e.lastModifiedDateTime || null,
+      };
+    }).sort((a, b) => String(a.nom_fichier).localeCompare(String(b.nom_fichier)));
+
+    await journaliser("photos_entree_lues",
+      { nombre: photos.length, sous_dossier: !!sousDossier });
+    return { statut: "ok", photos, sous_dossier: !!sousDossier };
+  } catch (e) {
+    await journaliser("photos_entree_echec", String(e && e.message));
+    return { statut: "erreur", message: e.message, photos: [] };
+  }
+}
+
+/* Les noms suivent le gabarit EDLE_2026-08-25_sejour_003_abc123.jpg :
+   on en tire le numéro et la pièce, sans dépendre du fichier de données —
+   qui peut manquer sur une entrée ancienne. */
+function numeroDuNom(nom) {
+  const m = String(nom || "").match(/_(\d{3})_/);
+  return m ? m[1] : null;
+}
+
+function pieceDuNom(nom) {
+  const m = String(nom || "").match(/^[A-Z]+_\d{4}-\d{2}-\d{2}_(.+?)_\d{3}_/);
+  return m ? m[1].replace(/-/g, " ") : null;
+}
+
+/* Lien de téléchargement d'une photographie d'entrée. Même mécanisme que
+   lienTelechargement, mais la photo vit dans un AUTRE dossier que la
+   visite en cours : on emploie son propre drive_id. */
+async function lienPhotoEntree(photo) {
+  const url = photo.drive_id
+    ? `/drives/${photo.drive_id}/items/${photo.onedrive_item_id}`
+    : `/me/drive/items/${photo.onedrive_item_id}`;
+  const res = await appelGraph(url);
+  if (!res.ok) throw new Error("Lien de la photo d'entrée : " + await detailErreur(res));
+  const item = await res.json();
+  const lien = item["@microsoft.graph.downloadUrl"] || item["@content.downloadUrl"];
+  if (!lien) throw new Error("Microsoft n'a pas renvoyé de lien pour " + photo.nom_fichier);
+  return lien;
+}
+
+/* Rapproche les photographies d'entrée de la pièce en cours. Le nom de
+   fichier porte la pièce ; à défaut on rend tout, à charge de Julien de
+   choisir. */
+function photosEntreePourPiece(photosEntree, libellePiece) {
+  const cible = nettoyerLibelle(libellePiece || "");
+  if (!cible) return photosEntree;
+  const exactes = photosEntree.filter(p =>
+    p.piece && nettoyerLibelle(p.piece) === cible);
+  return exactes.length ? exactes : photosEntree;
+}
+
 async function chargerEtatDesLieuxEntree(visite) {
   if (visite.type !== "EDLS") return { statut: "sans_objet" };
   try {

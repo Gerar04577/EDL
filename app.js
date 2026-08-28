@@ -2538,6 +2538,9 @@ async function ecranPiece(pieceId) {
   E.piece = pieceId;
   E.brouillons = {}; E.etat = undefined; E.proprete = undefined;
   E.commentaireGeneral = undefined; E.indexEdition = null;
+  /* E.photosEntree et E.liensEntree survivent au changement de pièce :
+     ils valent pour toute la visite, et les relire coûterait un appel
+     Graph par image à chaque fois. */
   viderGroupe();
   VISITE = (await lireVisite(VISITE.visit_id)) || VISITE;
   const piece = VISITE.pieces.find(p => p.piece_id === pieceId);
@@ -2753,6 +2756,78 @@ function brancherCorrection() {
   };
 }
 
+/* ---- Photographies de l'état des lieux d'entrée -------------------------
+
+   Elles servent de référence à la visée guidée. Les liens de
+   téléchargement de Microsoft ne vivent qu'une heure : on garde la LISTE
+   pour toute la visite, mais on redemande les liens à chaque ouverture.
+
+   Rien du TEXTE de l'entrée n'est montré ici. Voir une image ne conduit
+   pas à recopier des mots ; le constat de sortie se rédige à l'aveugle,
+   et les textes ne s'ouvrent qu'à l'écran de comparaison. */
+function blocPhotosEntree() {
+  const e = E.photosEntree;
+  if (!e) {
+    return `<div class="bloc"><h2>État des lieux d'entrée</h2>
+      <button class="mini secondaire" id="btn-photos-entree">Photos de l'entrée</button>
+      <p class="note">Pour refaire les mêmes cadrages qu'à l'entrée.</p></div>`;
+  }
+  if (e.statut !== "ok") {
+    const raisons = {
+      dossier_introuvable: "Dossier EDLE introuvable à côté de celui-ci.",
+      aucune: "Aucune photographie dans l'état des lieux d'entrée.",
+      erreur: "Lecture impossible : " + (e.message || ""),
+      sans_objet: "Sans objet pour un état des lieux d'entrée.",
+    };
+    return `<div class="bloc"><h2>État des lieux d'entrée</h2>
+      <p class="note ko">${echapper(raisons[e.statut] || e.statut)}</p>
+      <button class="mini secondaire" id="btn-photos-entree">Réessayer</button></div>`;
+  }
+
+  const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
+  const lot = photosEntreePourPiece(e.photos, piece && piece.libelle);
+  const reprises = (VISITE.photos || [])
+    .map(p => p.photo_entree_id).filter(Boolean);
+
+  return `<div class="bloc"><h2>Photos de l'entrée — ${lot.length}</h2>
+    ${lot.length === e.photos.length && e.photos.length > 1
+      ? `<p class="note">Aucune ne porte le nom de cette pièce : toutes sont
+         affichées.</p>` : ""}
+    <div class="vignettes">
+      ${lot.map(p => {
+        const prise = reprises.includes(p.onedrive_item_id);
+        return `<figure class="vignette${prise ? " reprise" : ""}"
+            data-entree="${echapper(p.onedrive_item_id)}">
+          <img src="${echapper(E.liensEntree[p.onedrive_item_id] || "")}" alt="" loading="lazy">
+          <figcaption>${echapper(p.numero || "?")}${prise ? " ✓" : ""}</figcaption>
+        </figure>`;
+      }).join("")}
+    </div>
+    <p class="note">Touche une photographie pour refaire le même cadrage.
+    ${reprises.length ? reprises.length + " déjà reprise(s)." : ""}</p>
+  </div>`;
+}
+
+async function ouvrirPhotosEntree() {
+  const b = $("btn-photos-entree");
+  if (b) { b.disabled = true; b.textContent = "Lecture de OneDrive…"; }
+  let e;
+  try { e = await chargerPhotosEntree(VISITE); }
+  catch (err) { e = { statut: "erreur", message: err.message, photos: [] }; }
+  E.photosEntree = e;
+
+  /* Un lien par photographie : c'est le coût réel de cet écran, un appel
+     Graph par image. Sur une vingtaine de vues, quelques secondes en wifi. */
+  E.liensEntree = E.liensEntree || {};
+  if (e.statut === "ok") {
+    for (const p of e.photos) {
+      try { E.liensEntree[p.onedrive_item_id] = await lienPhotoEntree(p); }
+      catch (_) { /* une photographie illisible n'empêche pas les autres */ }
+    }
+  }
+  dessinerPiece();
+}
+
 function numeroDansNom(nom) {
   const m = String(nom || "").match(/_(\d{3})_/);
   return m ? m[1] : "?";
@@ -2800,6 +2875,8 @@ function memoriserGroupe() {
 }
 
 function brancherGroupe(piece, photos) {
+  if ($("btn-photos-entree")) $("btn-photos-entree").onclick = ouvrirPhotosEntree;
+
   $("vue").querySelectorAll("[data-corriger]").forEach(b => b.onclick = () => {
     memoriserGroupe();
     ecranCorrigerPhoto(b.getAttribute("data-corriger"));
@@ -3019,6 +3096,8 @@ function dessinerPiece(message) {
       ? `<div class="erreur"><strong>Envoi bloqué</strong>${echapper(_echecEnvoi)}<br><br>
          Les photographies restent sur le téléphone : rien n'est perdu. Elles
          repartiront dès que la cause sera levée.</div>` : ""}
+
+    ${VISITE.type === "EDLS" ? blocPhotosEntree() : ""}
 
     <div id="zone-groupe">${blocGroupe(piece, photos)}</div>
 

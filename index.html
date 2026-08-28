@@ -52,6 +52,16 @@
   .interrupteur:last-child { border-bottom:0; }
   .pied { color:#9a9a9a; font-size:12px; text-align:center; margin-top:18px; }
   .cache { display:none; }
+  /* Vignettes des photographies d'entrée : assez grandes pour reconnaître
+     la vue, assez petites pour en voir six d'un coup. */
+  .vignettes { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .vignettes figure { margin:0; }
+  .vignettes img { width:100%; aspect-ratio:3/4; object-fit:cover;
+    border-radius:8px; display:block; background:#f0eeea; }
+  .vignettes figcaption { font-size:12px; color:#8a8a8a; text-align:center;
+    margin-top:3px; }
+  .vignette.reprise img { outline:3px solid #2f7d63; outline-offset:-3px; }
+  .vignette.reprise figcaption { color:#1f7a4d; font-weight:600; }
   .barre { position:sticky; top:0; z-index:5; margin:-6px -18px 12px; padding:9px 18px;
     font-size:13px; font-weight:600; text-align:center; }
   .barre-ok { background:#e8f3ec; color:#1f7a4d; }
