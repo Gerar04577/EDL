@@ -71,6 +71,30 @@
   #verdict { position:absolute; left:0; right:0; top:0; padding:10px 12px;
     font-size:15px; font-weight:600; color:#fff; text-align:center;
     background:rgba(20,20,20,.55); backdrop-filter:blur(6px); }
+  /* AUTO en surimpression, dans l'image. Le bouton d'origine se trouvait
+     tout en bas de la page, sous quatre réglages : il était hors de vue
+     pendant la visée, et l'automatique restait éteint sans qu'on le sache.
+     Ici, on le voit et on l'atteint sans quitter le cadrage des yeux. */
+  #auto-image { position:absolute; right:10px; bottom:16px; width:auto;
+    margin:0; padding:11px 18px; font-size:15px; font-weight:700;
+    letter-spacing:.06em; border-radius:24px; border:2px solid rgba(255,255,255,.85);
+    background:rgba(20,20,20,.5); color:#fff; backdrop-filter:blur(6px); }
+  #auto-image.actif { background:#2f7d63; border-color:#fff; }
+
+  /* LE DÉCOMPTE AU CENTRE, EN GRAND. Le message vivait dans le bandeau du
+     haut, mêlé au score et à la consigne de déplacement : c'est le moment
+     où il faut le voir sans hésiter, bras tendu, en tenant l'appareil. */
+  #compte-a-rebours { position:absolute; inset:0; display:none;
+    flex-direction:column; align-items:center; justify-content:center;
+    gap:6px; pointer-events:none;
+    background:radial-gradient(circle at center,
+      rgba(200,137,31,.82) 0%, rgba(200,137,31,.42) 70%, transparent 100%); }
+  #compte-a-rebours.visible { display:flex; }
+  #cr-titre { font-size:30px; font-weight:800; color:#fff; letter-spacing:.02em;
+    text-shadow:0 2px 10px rgba(0,0,0,.5); text-align:center; }
+  #cr-temps { font-size:58px; font-weight:800; color:#fff; line-height:1;
+    font-variant-numeric:tabular-nums; text-shadow:0 2px 12px rgba(0,0,0,.5); }
+
   #jauge { position:absolute; left:0; bottom:0; height:6px; width:0%;
     background:#c9403a; transition:width .12s linear, background .2s; }
   #cible { position:absolute; inset:0; border:3px solid transparent;
@@ -153,6 +177,9 @@
     <img id="calque" alt="">
     <div id="cible"></div>
     <div id="verdict">—</div>
+    <button id="auto-image" aria-label="Déclenchement automatique">AUTO</button>
+    <div id="compte-a-rebours"><span id="cr-titre">NE BOUGE PLUS</span>
+      <span id="cr-temps">1.2</span></div>
     <div id="jauge"></div>
     <div id="flash">PHOTO PRISE</div>
   </div>
@@ -329,7 +356,7 @@ function conseil(m) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 1.10";
+const VERSION = "essai 1.12";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -739,8 +766,13 @@ function analyser() {
      floue. On exige donc que l'alignement se maintienne le temps que le
      geste s'arrête et que l'appareil se cale. Un mouvement remet le
      décompte à zéro. */
-  if (!auto) { stableDepuis = 0; $("cible").classList.remove("pret"); return; }
-  if (!bon) { stableDepuis = 0; $("cible").classList.remove("pret"); return; }
+  const cacherCompte = () => {
+    stableDepuis = 0;
+    $("cible").classList.remove("pret");
+    $("compte-a-rebours").classList.remove("visible");
+  };
+  if (!auto) { cacherCompte(); return; }
+  if (!bon) { cacherCompte(); return; }
 
   const maintenant = Date.now();
   if (!stableDepuis) {
@@ -753,13 +785,16 @@ function analyser() {
 
   if (tenu < DELAI_STABILITE) {
     $("cible").classList.add("pret");
-    $("verdict").textContent = pourcent + " % — NE BOUGE PLUS… " +
-      (Math.ceil((DELAI_STABILITE - tenu) / 100) / 10).toFixed(1) + " s";
+    $("compte-a-rebours").classList.add("visible");
+    $("cr-temps").textContent =
+      (Math.ceil((DELAI_STABILITE - tenu) / 100) / 10).toFixed(1);
+    $("verdict").textContent = pourcent + " % — aligné";
     return;
   }
 
   auto = false; stableDepuis = 0;
   $("cible").classList.remove("pret");
+  $("compte-a-rebours").classList.remove("visible");
   majAuto();
   noter("Déclenchement à " + pourcent + " % après " +
     (DELAI_STABILITE / 1000) + " s d'immobilité.", "ok");
@@ -854,6 +889,10 @@ function majAuto() {
     ? "Désactiver le déclenchement automatique"
     : "Activer le déclenchement automatique";
   $("btn-auto").className = auto ? "principal" : "";
+  /* Le bouton de l'image suit le même état : deux commandes, un seul
+     réglage. */
+  const a = $("auto-image");
+  if (a) { a.className = auto ? "actif" : ""; a.textContent = auto ? "AUTO ●" : "AUTO"; }
   $("etat-auto").textContent = auto
     ? "Automatique ACTIF — la photo partira seule au seuil atteint."
     : "Automatique arrêté — appuie sur « Prendre la photo ».";
@@ -862,6 +901,7 @@ function majAuto() {
 $("btn-auto").onclick = () => {
   auto = !auto; stableDepuis = 0;
   $("cible").classList.remove("pret");
+  $("compte-a-rebours").classList.remove("visible");
   majAuto();
   noter(auto ? "Automatique activé." : "Automatique arrêté.");
 };
@@ -869,6 +909,14 @@ $("btn-auto").onclick = () => {
 /* ---- Prise de vue ---- */
 $("btn-prendre").onclick = prendre;
 $("btn-obturateur").onclick = prendre;
+
+$("auto-image").onclick = () => {
+  auto = !auto; stableDepuis = 0;
+  $("cible").classList.remove("pret");
+  $("compte-a-rebours").classList.remove("visible");
+  majAuto();
+  noter(auto ? "Automatique activé." : "Automatique arrêté.");
+};
 
 $("btn-relancer").onclick = () => {
   echelleFigee = null; echelleRetenue = null; echecs = 0;
