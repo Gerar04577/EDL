@@ -367,17 +367,34 @@ function chercherT(refC, fluxC, T) {
     for (let dy = -lim; dy <= lim; dy += 2) {
       for (let dx = -lim; dx <= lim; dx += 2) {
         const brut = correlationT(refC, fluxC, dx, dy, e, T);
-        /* Pénalité de complexité : à score égal, la transformation la plus
-           simple gagne. Sans elle, le bruit décide entre plusieurs
-           optima voisins et les consignes deviennent absurdes. */
-        const cout = (Math.abs(dx) + Math.abs(dy)) * 0.004
+        /* PÉNALITÉ DU DÉPLACEMENT.
+
+           La fonction cherche le meilleur décalage sur ±13 pixels, ce qui
+           représente plusieurs dizaines de centimètres dans une pièce. Sans
+           pénalité forte, elle rend un score élevé en COMPENSANT le
+           déplacement de l'opérateur : le 29/08, deux poêles visiblement
+           côte à côte donnaient 69 % et un cadre vert.
+
+           Le score doit dire « tu es au bon endroit », pas « les deux
+           images se ressemblent quelque part ». À 0,022 par pixel, un
+           déplacement de treize pixels coûte une trentaine de points — de
+           quoi rendre le score honnête sans le rendre inexploitable.
+
+           L'échelle garde sa propre pénalité : elle vaut 1, s'en écarter
+           n'a pas lieu d'être. */
+        const cout = (Math.abs(dx) + Math.abs(dy)) * 0.022
                    + Math.abs(Math.log(e)) * 0.15;
         const s = brut - cout;
-        if (s > meilleur.score) meilleur = { score: s, brut, dx, dy, e };
+        if (s > meilleur.score) meilleur = { score: s, brut, dx, dy, e, cout };
       }
     }
   }
-  meilleur.score = meilleur.brut;
+  /* LE SCORE RENDU EST LE SCORE PÉNALISÉ.
+
+     Il était auparavant remplacé par la corrélation brute — la pénalité ne
+     servait qu'à choisir, jamais à juger. D'où des scores flatteurs sur des
+     cadrages manifestement faux. */
+  meilleur.score = Math.max(0, meilleur.brut - meilleur.cout);
   return meilleur;
 }
 
@@ -458,7 +475,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 3.2";
+const VERSION = "essai 3.3";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
