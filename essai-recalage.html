@@ -211,9 +211,12 @@
     </label>
 
     <label class="bascule">
-      <input type="checkbox" id="recherche-echelle">
-      <span>Chercher l'échelle (ancien comportement)</span>
+      <input type="checkbox" id="recherche-echelle" checked>
+      <span>Chercher l'échelle</span>
     </label>
+    <p class="note">Activée : validée sur le terrain le 29/08 avec les
+    contours dilatés, étendue verte. Décoche pour figer l'échelle à 100 %
+    et comparer.</p>
 
     <label class="bascule">
       <input type="checkbox" id="redresser-exif" checked>
@@ -486,7 +489,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 3.5";
+const VERSION = "essai 3.6";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -1230,7 +1233,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 poserEchelleCalque(100);
-$("val-zoom-ref").textContent = "100 % (fixe)";
+$("val-zoom-ref").textContent = "100 %";
 $("version").textContent = "· " + VERSION;
 document.title = "Essai cadrage — " + VERSION;
 majAuto();
