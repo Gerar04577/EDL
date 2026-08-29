@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Calibration de l'appareil</title>
+
+<!--
+  MODULE NEUF, indépendant des essais de cadrage.
+
+  IL NE CHERCHE PLUS L'ÉCHELLE : IL LA MESURE UNE FOIS.
+
+  Toute la machinerie des versions précédentes — section dorée, pyramide,
+  lissage, figeage, réouverture — servait à retrouver dix fois par seconde
+  un rapport qui, d'après l'expertise du 29/08/2026, est une CONSTANTE DE
+  L'APPAREIL : le flux vidéo d'iOS est le champ photographique rogné
+  d'environ 10 % pour la stabilisation, auquel s'ajoutent les effets de
+  format et d'objectif. Pour un téléphone, une orientation et des
+  contraintes de flux données, le rapport ne bouge pas.
+
+  Chercher en continu ce qui ne change jamais : c'était l'erreur de
+  conception dont tous les défauts observés découlaient.
+
+  Ce module fait donc deux choses, sans aucune contrainte de temps réel :
+    1. il MESURE le rapport, posément, en plusieurs répétitions ;
+    2. il VÉRIFIE qu'il tient dans d'autres pièces, à d'autres distances.
+
+  Du code éprouvé, il ne reprend que le socle : contours de Sobel avec
+  dilatation morphologique, corrélation normalisée, recherche de décalage.
+
+  À ouvrir dans SAFARI.
+-->
+
+<style>
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; padding:calc(14px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom));
+    font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    color:#1a1a1a; background:#f7f6f3; }
+  h1 { font-size:19px; margin:0 0 2px; }
+  .sous { color:#6b6b6b; font-size:14px; margin:0 0 16px; }
+  .bloc { background:#fff; border:1px solid #e3e0da; border-radius:12px;
+    padding:14px; margin-bottom:12px; }
+  .bloc h2 { font-size:12px; text-transform:uppercase; letter-spacing:.07em;
+    color:#8a8a8a; margin:0 0 10px; font-weight:600; }
+  button { width:100%; padding:14px; font-size:16px; font-weight:600;
+    border:1px solid #2f7d63; border-radius:10px; background:#c9ecdb;
+    color:#12503d; margin-bottom:8px; -webkit-appearance:none; }
+  button.secondaire { background:#dbe9f7; color:#1a4a80; border-color:#7fa9d4; }
+  button:disabled { opacity:.45; }
+  .note { font-size:13px; color:#6b6b6b; margin:6px 0; }
+  .ko { color:#b03a2e; } .ok { color:#1f7a4d; } .attention { color:#8a5a12; }
+  .ligne { display:flex; justify-content:space-between; gap:12px;
+    padding:7px 0; border-bottom:1px solid #f0eeea; font-size:14px; }
+  .ligne:last-child { border-bottom:0; }
+  .ligne span:last-child { color:#4a4a4a; font-variant-numeric:tabular-nums; }
+  .cache { display:none; }
+
+  .etape { display:flex; gap:10px; align-items:flex-start; margin-bottom:12px; }
+  .num { flex:none; width:26px; height:26px; border-radius:50%;
+    background:#2f7d63; color:#fff; font-size:14px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; }
+  .etape.faite .num { background:#c9ecdb; color:#12503d; }
+  .etape.faite .txt { color:#8a8a8a; }
+  .txt { font-size:14px; line-height:1.45; }
+
+  #scene { position:relative; width:100%; aspect-ratio:3/4; background:#000;
+    border-radius:12px; overflow:hidden; margin-bottom:10px; max-height:52vh;
+    margin-left:auto; margin-right:auto; }
+  #flux, #calque { position:absolute; inset:0; width:100%; height:100%;
+    object-fit:cover; }
+  #calque { pointer-events:none; opacity:.4; }
+  #bandeau { position:absolute; left:0; right:0; top:0;
+    padding:calc(12px + env(safe-area-inset-top)) 12px 10px;
+    font-size:15px; font-weight:700; color:#fff; text-align:center;
+    background:linear-gradient(rgba(20,20,20,.75), rgba(20,20,20,.4)); }
+
+  .resultat { font-size:44px; font-weight:800; text-align:center;
+    color:#1f3864; letter-spacing:-.02em; font-variant-numeric:tabular-nums;
+    margin:6px 0 2px; }
+  .resultat-sous { text-align:center; font-size:13px; color:#8a8a8a;
+    margin-bottom:10px; }
+
+  table.mesures { width:100%; border-collapse:collapse; font-size:13px;
+    font-variant-numeric:tabular-nums; }
+  table.mesures td { padding:5px 4px; border-bottom:1px solid #f0eeea; }
+  table.mesures td:last-child { text-align:right; color:#4a4a4a; }
+</style>
+</head>
+<body>
+
+<h1>Calibration de l'appareil</h1>
+<p class="sous">Mesurer une fois le rapport de champ · <strong id="version"></strong></p>
+
+<div class="bloc">
+  <h2>Ce que fait ce module</h2>
+  <div class="etape" id="e1"><div class="num">1</div><div class="txt">
+    Photographie une scène fixe et texturée avec l'appareil normal, à deux
+    mètres au moins.</div></div>
+  <div class="etape" id="e2"><div class="num">2</div><div class="txt">
+    Sans bouger le téléphone, ouvre la caméra ici et laisse mesurer.</div></div>
+  <div class="etape" id="e3"><div class="num">3</div><div class="txt">
+    Répète dans deux ou trois pièces. Si le rapport est le même partout,
+    c'est bien une constante de l'appareil.</div></div>
+  <p class="note">Aucune contrainte de temps : la mesure prend le temps
+  qu'il faut. C'est tout l'intérêt de ne la faire qu'une fois.</p>
+</div>
+
+<div class="bloc">
+  <h2>1. Photographie de référence</h2>
+  <button class="secondaire" id="btn-ref">Choisir dans la pellicule</button>
+  <input type="file" accept="image/*" id="fichier" class="cache">
+  <p class="note" id="etat-ref">Aucune référence chargée.</p>
+</div>
+
+<div class="bloc">
+  <h2>2. Mesure</h2>
+  <button id="btn-camera">Allumer la caméra</button>
+  <p class="note" id="etat-camera">Caméra éteinte.</p>
+
+  <div id="scene" class="cache">
+    <video id="flux" playsinline muted autoplay></video>
+    <img id="calque" alt="">
+    <div id="bandeau">Cadre comme sur la photographie</div>
+  </div>
+
+  <div id="commandes" class="cache">
+    <p class="note">Place-toi comme lorsque tu as pris la photographie, puis
+    ne bouge plus pendant la mesure.</p>
+    <button id="btn-mesurer">Lancer une mesure</button>
+    <p class="note">Chaque mesure essaie les cent une échelles de 50 à 150 %
+    et prend deux à trois secondes. Aucune importance : on ne la fait
+    qu'une fois par téléphone.</p>
+    <button class="secondaire" id="btn-eteindre">Éteindre la caméra</button>
+  </div>
+</div>
+
+<div class="bloc cache" id="bloc-resultat">
+  <h2>3. Rapport mesuré</h2>
+  <div class="resultat" id="valeur">—</div>
+  <div class="resultat-sous" id="valeur-sous">médiane des mesures</div>
+  <table class="mesures" id="table-mesures"></table>
+  <div class="ligne" style="margin-top:8px"><span>Dispersion</span>
+    <span id="dispersion">—</span></div>
+  <div class="ligne"><span>Confiance</span><span id="confiance">—</span></div>
+  <button class="secondaire" id="btn-vider" style="margin-top:10px">Effacer les mesures</button>
+  <p class="note" id="verdict"></p>
+</div>
+
+<div class="bloc">
+  <h2>4. Journal</h2>
+  <p class="note" id="journal">En attente.</p>
+</div>
+
+<script>
+/* ================= SOCLE ÉPROUVÉ =================
+   Repris tel quel du banc d'essai 2.2, sans la machinerie de recherche
+   d'échelle qui n'a plus lieu d'être. */
+const TAILLE = 96;          // côté de l'image de travail
+
+/* Réduit une image (tableau RGBA) en niveaux de gris à T×T. */
+function reduireT(rgba, L, H, T) {
+  const g = new Float32Array(T * T);
+  for (let y = 0; y < T; y++) {
+    const sy = Math.floor(y * H / T);
+    for (let x = 0; x < T; x++) {
+      const sx = Math.floor(x * L / T);
+      const i = (sy * L + sx) * 4;
+      g[y * T + x] = 0.299 * rgba[i] + 0.587 * rgba[i+1] + 0.114 * rgba[i+2];
+    }
+  }
+  return g;
+}
+
+/* Amplitude du gradient (Sobel). On compare des CONTOURS, pas des teintes :
+   l'éclairage change entre l'entrée et la sortie, les arêtes non. */
+function contoursT(g, T) {
+  const c = new Float32Array(T * T);
+  for (let y = 1; y < T - 1; y++) {
+    for (let x = 1; x < T - 1; x++) {
+      const i = y * T + x;
+      const gx = -g[i-T-1] - 2*g[i-1] - g[i+T-1] + g[i-T+1] + 2*g[i+1] + g[i+T+1];
+      const gy = -g[i-T-1] - 2*g[i-T] - g[i-T+1] + g[i+T-1] + 2*g[i+T] + g[i+T+1];
+      c[i] = Math.sqrt(gx*gx + gy*gy);
+    }
+  }
+  return DILATATION ? dilater(c, T) : c;
+}
+
+/* DILATATION MORPHOLOGIQUE DES GRADIENTS.
+
+   Un contour de Sobel fait un pixel d'épaisseur. Deux images légèrement
+   désalignées n'ont alors AUCUN pixel de contour en commun : la mesure de
+   ressemblance ne monte qu'au dernier moment, son sommet est étroit, et
+   elle reste plate partout ailleurs. C'est la cause du tremblement au
+   voisinage de l'optimum : l'algorithme y navigue dans du bruit.
+
+   En remplaçant chaque pixel par le maximum de son voisinage 3×3, les
+   contours passent à cinq ou sept pixels d'épaisseur. Le sommet s'élargit
+   d'autant, et la mesure devient monotone sur une plage utile. */
+var DILATATION = true;
+
+function dilater(c, T) {
+  const d = new Float32Array(T * T);
+  for (let y = 1; y < T - 1; y++) {
+    for (let x = 1; x < T - 1; x++) {
+      const i = y * T + x;
+      let m = c[i];
+      if (c[i-T-1] > m) m = c[i-T-1];
+      if (c[i-T]   > m) m = c[i-T];
+      if (c[i-T+1] > m) m = c[i-T+1];
+      if (c[i-1]   > m) m = c[i-1];
+      if (c[i+1]   > m) m = c[i+1];
+      if (c[i+T-1] > m) m = c[i+T-1];
+      if (c[i+T]   > m) m = c[i+T];
+      if (c[i+T+1] > m) m = c[i+T+1];
+      d[i] = m;
+    }
+  }
+  return d;
+}
+
+function densiteContoursT(c, T) {
+  let n = 0, somme = 0;
+  for (let i = 0; i < c.length; i++) { somme += c[i]; if (c[i] > 40) n++; }
+  return { part: n / c.length, moyenne: somme / c.length };
+}
+
+function correlationT(a, b, dx, dy, e, T) {
+  let sa = 0, sb = 0, sab = 0, saa = 0, sbb = 0, n = 0;
+  const centre = T / 2;
+  for (let y = 4; y < T - 4; y += 2) {
+    for (let x = 4; x < T - 4; x += 2) {
+      const bx = Math.round(centre + (x - centre) / e + dx);
+      const by = Math.round(centre + (y - centre) / e + dy);
+      if (bx < 0 || by < 0 || bx >= T || by >= T) continue;
+      const va = a[y * T + x], vb = b[by * T + bx];
+      sa += va; sb += vb; sab += va * vb; saa += va * va; sbb += vb * vb; n++;
+    }
+  }
+  if (n < 40) return 0;
+  const num = sab - sa * sb / n;
+  const den = Math.sqrt((saa - sa*sa/n) * (sbb - sb*sb/n));
+  return den > 0 ? num / den : 0;
+}
+
+function chercherT(refC, fluxC, T) {
+  let meilleur = { score: -1, brut: -1, dx: 0, dy: 0, e: 1 };
+  const lim = Math.round(T / 7);
+  const echelles = [0.85, 0.93, 1, 1.08, 1.18];
+  for (const e of echelles) {
+    for (let dy = -lim; dy <= lim; dy += 2) {
+      for (let dx = -lim; dx <= lim; dx += 2) {
+        const brut = correlationT(refC, fluxC, dx, dy, e, T);
+        /* Pénalité de complexité : à score égal, la transformation la plus
+           simple gagne. Sans elle, le bruit décide entre plusieurs
+           optima voisins et les consignes deviennent absurdes. */
+        const cout = (Math.abs(dx) + Math.abs(dy)) * 0.004
+                   + Math.abs(Math.log(e)) * 0.15;
+        const s = brut - cout;
+        if (s > meilleur.score) meilleur = { score: s, brut, dx, dy, e };
+      }
+    }
+  }
+  meilleur.score = meilleur.brut;
+  return meilleur;
+}
+
+/* Appels à la taille de travail. */
+const reduire = (rgba, L, H) => reduireT(rgba, L, H, TAILLE);
+const contours = (g) => contoursT(g, TAILLE);
+const densiteContours = (c) => densiteContoursT(c, TAILLE);
+const chercher = (a, b) => chercherT(a, b, TAILLE);
+
+/* Traduit le décalage en consigne compréhensible. */
+function conseil(m) {
+  const t = [];
+  if (m.e < 0.96) t.push("avance");
+  else if (m.e > 1.04) t.push("recule");
+  if (m.dx > 2) t.push("pivote à droite");
+  else if (m.dx < -2) t.push("pivote à gauche");
+  if (m.dy > 2) t.push("baisse");
+  else if (m.dy < -2) t.push("relève");
+  return t.length ? t.join(", ") : "alignement correct";
+}
+
+/* ================= FIN DU SOCLE ================= */
+
+const VERSION = "calibration 1.0";
+const $ = (id) => document.getElementById(id);
+
+let camera = null, imageRef = null, mesures = [];
+
+function noter(t, c) {
+  const j = $("journal");
+  j.innerHTML = `<span class="${c||""}">${new Date().toLocaleTimeString("fr-BE")} — ${t}</span><br>` + j.innerHTML;
+}
+
+function fait(id) { $(id).classList.add("faite"); }
+
+/* ---- 1. Référence ---------------------------------------------------- */
+$("btn-ref").onclick = () => $("fichier").click();
+$("fichier").onchange = (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  const url = URL.createObjectURL(f);
+  const img = new Image();
+  img.onload = () => {
+    imageRef = img;
+    $("calque").src = url;
+    $("scene").style.aspectRatio = img.naturalWidth + " / " + img.naturalHeight;
+    $("etat-ref").textContent = "Référence chargée — " +
+      img.naturalWidth + "×" + img.naturalHeight;
+    $("etat-ref").className = "note ok";
+    fait("e1");
+    noter("Référence " + img.naturalWidth + "×" + img.naturalHeight + ".", "ok");
+  };
+  img.src = url;
+};
+
+/* ---- 2. Caméra ------------------------------------------------------- */
+$("btn-camera").onclick = async () => {
+  if (!imageRef) return noter("Charge d'abord une photographie de référence.", "ko");
+  const b = $("btn-camera");
+  b.disabled = true; b.textContent = "Ouverture…";
+  try {
+    /* LES MÊMES CONTRAINTES QUE L'APPLICATION, sans quoi la valeur mesurée
+       ne vaudrait pas pour elle. */
+    camera = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" },
+               width: { ideal: 4032 }, height: { ideal: 3024 },
+               focusMode: { ideal: "continuous" } },
+      audio: false,
+    });
+    $("flux").srcObject = camera;
+    await $("flux").play();
+    const r = camera.getVideoTracks()[0].getSettings();
+    $("etat-camera").textContent = "Caméra allumée — " + r.width + "×" + r.height;
+    $("etat-camera").className = "note ok";
+    $("scene").classList.remove("cache");
+    $("commandes").classList.remove("cache");
+    b.classList.add("cache");
+    noter("Caméra allumée en " + r.width + "×" + r.height + ".", "ok");
+  } catch (e) {
+    b.disabled = false; b.textContent = "Allumer la caméra";
+    $("etat-camera").textContent = "Refus ou erreur : " + e.name;
+    $("etat-camera").className = "note ko";
+    noter("Caméra refusée : " + e.name, "ko");
+  }
+};
+
+$("btn-eteindre").onclick = () => {
+  if (camera) camera.getTracks().forEach(t => t.stop());
+  camera = null;
+  $("scene").classList.add("cache");
+  $("commandes").classList.add("cache");
+  $("btn-camera").classList.remove("cache");
+  $("btn-camera").disabled = false;
+  $("btn-camera").textContent = "Allumer la caméra";
+  $("etat-camera").textContent = "Caméra éteinte.";
+  $("etat-camera").className = "note";
+};
+
+/* ---- La mesure ------------------------------------------------------- */
+
+/* Contours de la référence à une échelle donnée. Rien n'est mis en réserve :
+   on ne mesure qu'une fois, la vitesse n'a aucune importance. */
+const cvA = document.createElement("canvas");
+cvA.width = TAILLE; cvA.height = TAILLE;
+const ctxA = cvA.getContext("2d", { willReadFrequently: true });
+
+function contoursRef(pc) {
+  const z = Math.max(1, pc / 100);
+  const iw = imageRef.naturalWidth, ih = imageRef.naturalHeight;
+  const sw = iw / z, sh = ih / z;
+  ctxA.drawImage(imageRef, (iw - sw) / 2, (ih - sh) / 2, sw, sh, 0, 0, TAILLE, TAILLE);
+  const d = ctxA.getImageData(0, 0, TAILLE, TAILLE).data;
+  return contoursT(reduireT(d, TAILLE, TAILLE, TAILLE), TAILLE);
+}
+
+const cvB = document.createElement("canvas");
+cvB.width = TAILLE; cvB.height = TAILLE;
+const ctxB = cvB.getContext("2d", { willReadFrequently: true });
+
+function contoursFlux(pc) {
+  const v = $("flux");
+  const rapport = imageRef.naturalWidth / imageRef.naturalHeight;
+  let cl = v.videoWidth, ch = Math.round(v.videoWidth / rapport);
+  if (ch > v.videoHeight) { ch = v.videoHeight; cl = Math.round(v.videoHeight * rapport); }
+  const dx = Math.round((v.videoWidth - cl) / 2), dy = Math.round((v.videoHeight - ch) / 2);
+
+  /* En miroir de la référence : au-dessus de 100 % on rogne la référence,
+     en dessous c'est le flux. Les deux couvrent toujours le cadre. */
+  const z = Math.max(1, 100 / pc);
+  const fl = Math.round(cl / z), fh = Math.round(ch / z);
+  const fx = dx + Math.round((cl - fl) / 2), fy = dy + Math.round((ch - fh) / 2);
+  ctxB.drawImage(v, fx, fy, fl, fh, 0, 0, TAILLE, TAILLE);
+  const px = ctxB.getImageData(0, 0, TAILLE, TAILLE).data;
+  return contoursT(reduireT(px, TAILLE, TAILLE, TAILLE), TAILLE);
+}
+
+/* BALAYAGE EXHAUSTIF, et c'est assumé.
+
+   Une recherche par section dorée suppose une courbe à un seul sommet ;
+   les mesures du 29/08 ont montré qu'elle en a plusieurs quand les
+   contours font un pixel d'épaisseur. La dilatation morphologique corrige
+   cela, mais ici rien n'oblige à parier : on essaie toutes les échelles au
+   pas de 1 %, on prend la meilleure, et on regarde la courbe entière.
+
+   Cent essais à 22 ms font deux secondes. Pour une opération faite une
+   fois par téléphone, c'est sans importance — alors que c'était
+   rédhibitoire à dix fois par seconde. */
+function mesurerUneFois() {
+  const courbe = [];
+  let meilleur = { score: -1, echelle: 100 };
+  for (let pc = 50; pc <= 150; pc++) {
+    const s = chercherT(contoursRef(pc), contoursFlux(pc), TAILLE).score;
+    courbe.push({ pc, s });
+    if (s > meilleur.score) meilleur = { score: s, echelle: pc };
+  }
+
+  /* Affinage parabolique sur les trois points du sommet. */
+  const i = courbe.findIndex(p => p.pc === meilleur.echelle);
+  let fin = meilleur.echelle;
+  if (i > 0 && i < courbe.length - 1) {
+    const y0 = courbe[i-1].s, y1 = courbe[i].s, y2 = courbe[i+1].s;
+    const den = y0 - 2*y1 + y2;
+    if (den !== 0) fin = meilleur.echelle + 0.5 * (y0 - y2) / den;
+  }
+
+  /* Rapport pic sur bruit : la hauteur du sommet rapportée à la dispersion
+     de ce qui l'entoure. Un sommet net a un rapport élevé ; une courbe
+     plate ou à plusieurs bosses, un rapport faible. */
+  const loin = courbe.filter(p => Math.abs(p.pc - meilleur.echelle) > 8).map(p => p.s);
+  const moy = loin.reduce((a, b) => a + b, 0) / loin.length;
+  const ec = Math.sqrt(loin.reduce((a, b) => a + (b - moy) * (b - moy), 0) / loin.length);
+  const psr = ec > 0 ? (meilleur.score - moy) / ec : 0;
+
+  return { echelle: fin, score: meilleur.score, psr };
+}
+
+$("btn-mesurer").onclick = () => {
+  const b = $("btn-mesurer");
+  b.disabled = true; b.textContent = "Mesure en cours…";
+  $("bandeau").textContent = "NE BOUGE PLUS";
+  /* Un tour de boucle pour que l'écran se rafraîchisse avant le calcul. */
+  setTimeout(() => {
+    const t0 = performance.now();
+    const r = mesurerUneFois();
+    const ms = Math.round(performance.now() - t0);
+    mesures.push(r);
+    afficher();
+    fait("e2");
+    noter("Mesure : " + r.echelle.toFixed(1) + " % — pic " +
+      Math.round(r.score * 100) + " %, netteté " + r.psr.toFixed(1) +
+      " (" + ms + " ms).", r.psr >= 1.2 ? "ok" : "attention");
+    b.disabled = false; b.textContent = "Lancer une mesure";
+    $("bandeau").textContent = "Cadre comme sur la photographie";
+  }, 60);
+};
+
+$("btn-vider").onclick = () => {
+  mesures = []; afficher();
+  noter("Mesures effacées.");
+};
+
+function mediane(t) {
+  const v = t.slice().sort((a, b) => a - b);
+  const n = v.length;
+  return n % 2 ? v[(n-1)/2] : (v[n/2 - 1] + v[n/2]) / 2;
+}
+
+function afficher() {
+  if (!mesures.length) { $("bloc-resultat").classList.add("cache"); return; }
+  $("bloc-resultat").classList.remove("cache");
+
+  /* MÉDIANE ET NON MOYENNE : une mesure aberrante — bougé, occultation —
+     ne doit pas déplacer le résultat. */
+  /* SEUIL DE NETTETÉ À 1,2. Les essais du 29/08 donnent des valeurs de 1,5
+     à 2,7 sur des mesures pourtant exactes à un demi-point : le rapport
+     pic sur bruit est bas parce que la corrélation reste élevée sur une
+     large plage d'échelles. Un seuil de 4 aurait tout écarté. */
+  const bonnes = mesures.filter(m => m.psr >= 1.2);
+  const lot = bonnes.length ? bonnes : mesures;
+  const med = mediane(lot.map(m => m.echelle));
+  $("valeur").textContent = med.toFixed(1) + " %";
+  $("valeur-sous").textContent = "médiane de " + lot.length + " mesure" +
+    (lot.length > 1 ? "s" : "") +
+    (bonnes.length < mesures.length
+      ? " · " + (mesures.length - bonnes.length) + " écartée(s)" : "");
+
+  $("table-mesures").innerHTML = mesures.map((m, i) =>
+    `<tr><td>${i + 1}</td><td>${m.echelle.toFixed(1)} %</td>` +
+    `<td>pic ${Math.round(m.score * 100)} % · netteté ${m.psr.toFixed(1)}` +
+    `${m.psr < 1.2 ? " · écartée" : ""}</td></tr>`).join("");
+
+  const vals = lot.map(m => m.echelle);
+  const etendue = vals.length > 1 ? Math.max(...vals) - Math.min(...vals) : 0;
+  $("dispersion").textContent = vals.length > 1
+    ? "± " + (etendue / 2).toFixed(1) + " point" : "une seule mesure";
+  $("dispersion").className = etendue <= 3 ? "ok" : etendue <= 6 ? "attention" : "ko";
+
+  const psrMed = mediane(lot.map(m => m.psr));
+  $("confiance").textContent = "netteté " + psrMed.toFixed(1);
+  $("confiance").className = psrMed >= 2 ? "ok" : psrMed >= 1.2 ? "attention" : "ko";
+
+  /* LE VERDICT EST LA VRAIE QUESTION : le rapport est-il constant ? */
+  if (lot.length < 3) {
+    $("verdict").textContent = "Fais au moins trois mesures, dans des pièces " +
+      "différentes, pour savoir si le rapport est constant.";
+    $("verdict").className = "note";
+  } else if (etendue <= 3) {
+    $("verdict").textContent = "Le rapport est stable d'une mesure à l'autre : " +
+      "c'est bien une constante de l'appareil. La valeur " + med.toFixed(1) +
+      " % peut être inscrite dans l'application.";
+    $("verdict").className = "note ok";
+  } else {
+    $("verdict").textContent = "Le rapport varie de " + etendue.toFixed(1) +
+      " points selon la mesure : ce n'est pas une constante, ou les prises " +
+      "de vue diffèrent trop. Refais-en quelques-unes en soignant la position.";
+    $("verdict").className = "note attention";
+  }
+  if (lot.length >= 3 && etendue <= 3) fait("e3");
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (!camera || document.hidden) return;
+  const p = camera.getVideoTracks()[0];
+  if (!p || p.readyState !== "live") {
+    noter("Le flux a été coupé par iOS — rallume la caméra.", "ko");
+    $("btn-eteindre").click();
+  }
+});
+
+$("version").textContent = VERSION;
+document.title = "Calibration — " + VERSION;
+noter(VERSION + " — prêt. Charge une photographie, puis allume la caméra.");
+</script>
+</body>
+</html>
