@@ -185,11 +185,14 @@ async function apercuBlobEntree(photo, grand) {
      pellicule. Le HEIC des anciens états des lieux passe par « large ». */
   const lisibleParSafari = /\.(jpe?g|png|webp)$/i.test(photo.nom_fichier || "");
 
+  /* On garde le blob : l'appelant en a besoin pour lire l'orientation
+     EXIF, que le canevas ignore. */
   const rapatrier = async (chemin) => {
     const res = await appelGraph(chemin);
     if (!res.ok) return null;
     const blob = await res.blob();
-    return (blob && blob.size) ? URL.createObjectURL(blob) : null;
+    if (!blob || !blob.size) return null;
+    return { url: URL.createObjectURL(blob), blob };
   };
 
   if (grand && lisibleParSafari) {

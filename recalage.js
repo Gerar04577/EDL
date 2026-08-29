@@ -226,3 +226,85 @@ function poserReference(img) {
   imageRefChargee = img;
   reserve = {};
 }
+
+/* ---- Redressement d'une image selon son orientation EXIF ---------------
+
+   drawImage IGNORE LES MÉTADONNÉES EXIF, dont l'orientation. La
+   documentation le dit sans détour, et signale que le comportement est
+   particulièrement gênant sur iOS.
+
+   Conséquence chez nous : la balise <img> affiche la photographie
+   redressée — Safari respecte l'orientation par défaut sur mobile, et en
+   tient compte jusque dans naturalWidth — tandis que le canevas la reçoit
+   telle qu'elle est enregistrée, couchée ou retournée.
+
+   L'affichage et l'analyse travaillaient donc sur deux images différentes.
+   Le score ne voulait rien dire et la superposition paraissait décalée.
+
+   Le banc d'essai y échappait : l'image venait de la pellicule par un
+   sélecteur de fichier, et Safari la redresse avant de la fournir.
+
+   On redresse donc une fois pour toutes, à l'ouverture, et tout le reste
+   travaille ensuite sur une image sans ambiguïté. */
+
+/* Lit l'orientation dans l'en-tête EXIF d'un JPEG. Rend 1 quand il n'y en
+   a pas, ou quand le fichier n'est pas un JPEG — un aperçu Microsoft, par
+   exemple, qui arrive déjà redressé. */
+async function orientationExif(blob) {
+  try {
+    const vue = new DataView(await blob.slice(0, 128 * 1024).arrayBuffer());
+    if (vue.byteLength < 4 || vue.getUint16(0) !== 0xFFD8) return 1;  // pas un JPEG
+    let i = 2;
+    while (i + 4 < vue.byteLength) {
+      if (vue.getUint16(i) !== 0xFFE1) {           // on cherche le bloc APP1
+        if ((vue.getUint16(i) & 0xFF00) !== 0xFF00) return 1;
+        i += 2 + vue.getUint16(i + 2);
+        continue;
+      }
+      const debut = i + 10;                         // après « Exif\0\0 »
+      if (vue.getUint32(i + 4) !== 0x45786966) return 1;
+      const gros = vue.getUint16(debut) === 0x4D4D; // ordre des octets
+      const lireCourt = (o) => vue.getUint16(o, !gros);
+      const lireLong = (o) => vue.getUint32(o, !gros);
+      const ifd = debut + lireLong(debut + 4);
+      const n = lireCourt(ifd);
+      for (let k = 0; k < n; k++) {
+        const t = ifd + 2 + k * 12;
+        if (lireCourt(t) === 0x0112) return lireCourt(t + 8);
+      }
+      return 1;
+    }
+    return 1;
+  } catch (_) { return 1; }
+}
+
+/* Applique l'orientation et rend une image redressée. Les valeurs 5 à 8
+   font pivoter d'un quart de tour : largeur et hauteur s'échangent. */
+function redresser(img, orientation) {
+  if (!orientation || orientation === 1) return Promise.resolve(img);
+
+  const quart = orientation >= 5;
+  const L = img.naturalWidth, H = img.naturalHeight;
+  const c = document.createElement("canvas");
+  c.width = quart ? H : L;
+  c.height = quart ? L : H;
+  const ctx = c.getContext("2d");
+
+  switch (orientation) {
+    case 2: ctx.translate(L, 0); ctx.scale(-1, 1); break;
+    case 3: ctx.translate(L, H); ctx.rotate(Math.PI); break;
+    case 4: ctx.translate(0, H); ctx.scale(1, -1); break;
+    case 5: ctx.rotate(0.5 * Math.PI); ctx.scale(1, -1); break;
+    case 6: ctx.rotate(0.5 * Math.PI); ctx.translate(0, -H); break;
+    case 7: ctx.rotate(0.5 * Math.PI); ctx.translate(L, -H); ctx.scale(-1, 1); break;
+    case 8: ctx.rotate(-0.5 * Math.PI); ctx.translate(-L, 0); break;
+  }
+  ctx.drawImage(img, 0, 0);
+
+  return new Promise((ok, ko) => {
+    const r = new Image();
+    r.onload = () => ok(r);
+    r.onerror = () => ko(new Error("redressement impossible"));
+    r.src = c.toDataURL("image/jpeg", 0.95);
+  });
+}
