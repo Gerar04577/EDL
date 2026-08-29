@@ -3068,21 +3068,18 @@ async function ecranViseeGuidee(itemEntree) {
   /* La vignette suffit à choisir, pas à se superposer : on redemande un
      aperçu en grande taille pour la visée. Toujours du JPEG, quel que soit
      le format d'origine — les anciens états des lieux sont en HEIC. */
-  let lien, blobRef = null;
+  let lien;
   try {
     /* Rapatrié en local : une image d'un autre domaine ne peut pas voir
        ses pixels lus, et l'analyse des contours échouerait. */
-    const a = await apercuBlobEntree(ref, true);
-    lien = noterApercu(a.url);
-    blobRef = a.blob;
+    lien = noterApercu(await apercuBlobEntree(ref, true));
   } catch (err) {
     return dessinerPiece("Aperçu impossible pour cette photographie : " + err.message);
   }
 
   E.ecran = "visee";
-  E.visee = { ref, lien, blobRef, score: 0, auto: false, camera: null,
-              boucle: null, refL: 0, refH: 0, stableDepuis: 0,
-              echelle: ECHELLE_FIXE, journal: [] };
+  E.visee = { ref, lien, score: 0, auto: false, camera: null, boucle: null,
+              refL: 0, refH: 0, stableDepuis: 0, echelle: ECHELLE_FIXE };
   const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
   titre("Refaire le cadrage", piece ? piece.libelle : "");
   dessinerVisee();
@@ -3138,21 +3135,6 @@ function dessinerVisee(message) {
 
       <p class="note" id="visee-diag"></p>
 
-      <button class="mini secondaire pleine" id="visee-diag-plus">${
-        E.viseeDiagOuvert ? "Masquer le diagnostic" : "Diagnostic"}</button>
-      ${E.viseeDiagOuvert ? `
-      <div id="visee-diagnostic">
-        <div class="ligne"><span>Référence</span><span id="d-ref">—</span></div>
-        <div class="ligne"><span>Orientation EXIF</span><span id="d-ori">—</span></div>
-        <div class="ligne"><span>Contours de la référence</span><span id="d-cont">—</span></div>
-        <div class="ligne"><span>Flux obtenu</span><span id="d-flux">—</span></div>
-        <div class="ligne"><span>Fenêtre découpée</span><span id="d-fen">—</span></div>
-        <div class="ligne"><span>Échelle appliquée</span><span id="d-ech">—</span></div>
-        <div class="ligne"><span>Décalage mesuré</span><span id="d-dec">—</span></div>
-        <div class="ligne"><span>Analyses par seconde</span><span id="d-cad">—</span></div>
-        <div class="ligne"><span>Temps par analyse</span><span id="d-ms">—</span></div>
-        <p class="note" id="d-journal">En attente.</p>
-      </div>` : ""}
     </div>
     <button class="secondaire" id="visee-retour">Retour à la pièce</button>
   `, true);
@@ -3178,16 +3160,8 @@ function brancherVisee() {
     $("visee-allumer").classList.add("cache");
     $("visee-sous-image").classList.remove("cache");
     $("visee-reglages").classList.remove("cache");
-    noterVisee("Caméra allumée — demandé 4032, obtenu " +
-      (r.width || "?") + "×" + (r.height || "?") + ".", "ok");
     majAutoVisee();
   }
-
-  if ($("visee-diag-plus")) $("visee-diag-plus").onclick = () => {
-    E.viseeDiagOuvert = !E.viseeDiagOuvert;
-    dessinerVisee();
-    if (V.camera) { $("visee-flux").srcObject = V.camera; $("visee-flux").play(); }
-  };
 
   if ($("visee-plus")) $("visee-plus").onclick = () => {
     E.viseeReglagesOuverts = !E.viseeReglagesOuverts;
@@ -3318,15 +3292,7 @@ async function allumerVisee() {
   /* La référence est réduite une fois pour toutes : c'est sur ses contours
      que porteront toutes les comparaisons. */
   try {
-    let img = await chargerImage(V.lien);
-
-    /* REDRESSEMENT. Le canevas ignore l'orientation EXIF alors que la
-       balise <img> l'applique : sans cette étape, l'affichage et l'analyse
-       portent sur deux images différentes. */
-    const ori = V.blobRef ? await orientationExif(V.blobRef) : 1;
-    V.orientation = ori;
-    if (ori !== 1) img = await redresser(img, ori);
-
+    const img = await chargerImage(V.lien);
     V.refL = img.naturalWidth; V.refH = img.naturalHeight;
     /* Le format est désormais posé par dessinerVisee, à chaque redessin.
        Ici on ne fait que le rattraper pour l'affichage en cours. */
@@ -3349,14 +3315,6 @@ async function allumerVisee() {
       : "Surface très unie (" + (d.part * 100).toFixed(1) + " % de contours) : " +
         "le score sera peu fiable, fie-toi à la superposition.";
     $("visee-diag").className = d.part > 0.02 ? "note ok" : "note attention";
-
-    majDiagnostic({
-      "d-ref": V.refL + "×" + V.refH,
-      "d-ori": ori === 1 ? "aucune (1)" : "corrigée (" + ori + ")",
-      "d-cont": (d.part * 100).toFixed(1) + " %",
-    });
-    noterVisee("Référence " + V.refL + "×" + V.refH +
-      (ori === 1 ? "" : " — orientation " + ori + " redressée") + ".", "ok");
   } catch (err) {
     b.disabled = false; b.textContent = "Allumer la caméra";
     return dessinerVisee("Référence illisible : " + err.message);
@@ -3406,33 +3364,12 @@ function chargerImage(url) {
 /* Dix analyses par seconde : assez pour guider un geste, assez peu pour
    laisser respirer l'appareil. Le calcul porte sur du 96 × 96, donc la
    résolution du flux ne le ralentit pas — mesuré sur le terrain. */
-/* Journal de la visée : les mêmes renseignements que le banc d'essai, pour
-   pouvoir diagnostiquer sur le terrain au lieu de deviner. */
-function noterVisee(t, c) {
-  const V = E.visee;
-  if (!V) return;
-  V.journal = V.journal || [];
-  V.journal.unshift({ h: new Date().toLocaleTimeString("fr-BE"), t, c });
-  if (V.journal.length > 20) V.journal.pop();
-  const j = $("d-journal");
-  if (j) j.innerHTML = V.journal.map(l =>
-    `<span class="${l.c || ""}">${l.h} — ${echapper(l.t)}</span>`).join("<br>");
-}
-
-function majDiagnostic(champs) {
-  Object.keys(champs).forEach(id => {
-    const e = $(id);
-    if (e) e.textContent = champs[id];
-  });
-}
-
 function analyserVisee() {
   const V = E.visee;
   if (!V || !V.image) return;
   const v = $("visee-flux");
   if (!v || !v.videoWidth) return;
   const R = reglagesVisee();
-  const t0 = performance.now();
 
   const f = fenetreVisee(v, V);
 
@@ -3449,22 +3386,6 @@ function analyserVisee() {
 
   const p = Math.max(0, Math.round(m.score * 100));
   V.score = p;
-
-  /* Mesures affichées dans le diagnostic, quand il est déplié. */
-  V.compteur = (V.compteur || 0) + 1;
-  V.sommeMs = (V.sommeMs || 0) + (performance.now() - t0);
-  if (Date.now() - (V.dernierReleve || 0) > 1000) {
-    const moy = V.sommeMs / V.compteur;
-    majDiagnostic({
-      "d-flux": v.videoWidth + "×" + v.videoHeight,
-      "d-fen": f.l + "×" + f.h + " @ " + f.dx + "," + f.dy,
-      "d-ech": pc + " %",
-      "d-dec": "dx " + m.dx + "  dy " + m.dy + "  e " + (m.e || 1).toFixed(2),
-      "d-cad": V.compteur + " / s",
-      "d-ms": moy.toFixed(1) + " ms",
-    });
-    V.compteur = 0; V.sommeMs = 0; V.dernierReleve = Date.now();
-  }
 
   const bon = p >= R.seuil;
   $("visee-verdict").textContent = p + " % — " + (bon ? "aligné" : conseil(m));
