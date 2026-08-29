@@ -458,7 +458,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 3.0";
+const VERSION = "essai 3.1";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -582,12 +582,23 @@ $("btn-camera").onclick = async () => {
       $("zoom-cam").disabled = false;
       $("zoom-cam").min = Math.round(cap.zoom.min * 100);
       $("zoom-cam").max = Math.round(cap.zoom.max * 100);
-      /* 1,30 × par défaut : valeur relevée le 28/08/2026, elle rapproche le
-         champ du flux de celui de l'appareil natif. */
-      const vise = Math.min(Math.max(130, cap.zoom.min * 100), cap.zoom.max * 100);
-      $("zoom-cam").value = Math.round(vise);
-      try { await p0.applyConstraints({ advanced: [{ zoom: vise / 100 }] }); }
-      catch (_) { /* refusé : on garde ce que l'appareil propose */ }
+      /* AUCUN ZOOM IMPOSÉ.
+
+         Ce module forçait le zoom à 1,30 × dès l'allumage, valeur retenue
+         le 28/08 quand je croyais devoir rapprocher les deux champs.
+         C'était l'inverse : ce zoom RESSERRE le champ du flux, Safari
+         retombe alors sur une résolution moindre — 1440×1920 au lieu de
+         3024×4032 — et il fallait ensuite agrandir la référence de 25 %
+         pour compenser.
+
+         Le module de calibration, qui n'impose rien, reçoit le flux entier
+         et n'a besoin d'aucune correction. C'est la preuve : l'écart
+         d'échelle était mon propre réglage, pas une propriété de
+         l'appareil.
+
+         On laisse donc l'appareil à son réglage naturel. Le curseur reste,
+         pour essayer au besoin. */
+      $("zoom-cam").value = Math.round((p0.getSettings().zoom || 1) * 100);
       $("val-zoom-cam").textContent = (Number($("zoom-cam").value) / 100).toFixed(2) + " ×";
       $("etat-zoom-cam").textContent = "Réglable de " + cap.zoom.min.toFixed(2) +
         " × à " + cap.zoom.max.toFixed(2) + " ×.";
