@@ -489,7 +489,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 3.6";
+const VERSION = "essai 3.7";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -765,7 +765,18 @@ function contoursRef(pc, T) {
   /* Au-dessus de 100 %, on rogne la référence en son centre ; en dessous,
      on la prend entière — c'est alors le FLUX qui sera rogné. */
   const z = Math.max(1, pc / 100);
-  const iw = imageRefChargee.naturalWidth, ih = imageRefChargee.naturalHeight;
+  /* UNE IMAGE ET UN BITMAP N'EXPOSENT PAS LES MÊMES PROPRIÉTÉS.
+
+     Une balise <img> a naturalWidth et naturalHeight ; l'objet rendu par
+     createImageBitmap a width et height, et rien d'autre. Lire les
+     premières sur un bitmap donne une valeur indéfinie : le découpage
+     échoue, les contours sortent vides, le score reste à zéro et la
+     recherche d'échelle n'a plus rien à quoi s'accrocher.
+
+     C'est ce qui a cassé la recherche en version 3.5, dès que le
+     redressement EXIF a remplacé l'image par un bitmap. */
+  const iw = imageRefChargee.naturalWidth || imageRefChargee.width;
+  const ih = imageRefChargee.naturalHeight || imageRefChargee.height;
   const sw = iw / z, sh = ih / z;
   ctx.drawImage(imageRefChargee, (iw - sw) / 2, (ih - sh) / 2, sw, sh, 0, 0, T, T);
   const d = ctx.getImageData(0, 0, T, T).data;
