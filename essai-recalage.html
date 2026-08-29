@@ -214,6 +214,14 @@
       <input type="checkbox" id="recherche-echelle">
       <span>Chercher l'échelle (ancien comportement)</span>
     </label>
+
+    <label class="bascule">
+      <input type="checkbox" id="redresser-exif" checked>
+      <span>Redresser selon l'orientation EXIF</span>
+    </label>
+    <p class="note">Le canevas ignore l'orientation EXIF, la balise image
+    l'applique : sans redressement, l'affichage et l'analyse portent sur deux
+    images différentes. Décoche pour voir la différence.</p>
     <p class="note">La calibration du 29/08 a montré que l'appareil photo et
     la caméra du navigateur voient la même largeur : l'échelle vaut 1, il n'y
     a rien à chercher. Coche pour faire revenir l'ancienne recherche — et le
@@ -240,6 +248,8 @@
     <div class="ligne"><span>Analyses par seconde</span><span id="cadence">—</span></div>
     <div class="ligne"><span>Temps par analyse</span><span id="duree">—</span></div>
     <div class="ligne"><span>Échelle — étendue observée</span><span id="etendue">—</span></div>
+    <div class="ligne"><span>Référence — balise image</span><span id="dim-img">—</span></div>
+    <div class="ligne"><span>Référence — analysée</span><span id="dim-ana">—</span></div>
   </div>
 </div>
 
@@ -476,7 +486,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 3.4";
+const VERSION = "essai 3.5";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -491,50 +501,94 @@ function noter(t, c) {
 
 /* ---- Référence ---- */
 $("btn-pellicule").onclick = () => $("fichier").click();
-$("fichier").onchange = (e) => {
+$("fichier").onchange = async (e) => {
   const f = e.target.files && e.target.files[0];
   if (!f) return;
-  const url = URL.createObjectURL(f);
-  const img = new Image();
-  img.onload = () => {
-    refL = img.naturalWidth; refH = img.naturalHeight;
-    /* UNE NOUVELLE RÉFÉRENCE EFFACE TOUT. Les contours mis en réserve
-       appartiennent à la photographie précédente : les garder revenait à
-       comparer la nouvelle vue à l'ancienne image, et aucun zoom n'y
-       changeait rien. */
-    reserve = {};
-    echelleRetenue = null;
-    echelleFigee = null;
-    echecs = 0;
-    imageRefChargee = null;
-    $("calque").src = url; $("vue-ref").src = url;
-    $("scene").style.aspectRatio = refL + " / " + refH;
+  await poserReferenceDepuis(f);
+};
 
-    /* On réduit la référence au format de travail et on en extrait les
-       contours une fois pour toutes. */
-    const c = document.createElement("canvas");
-    c.width = TAILLE; c.height = TAILLE;
-    c.getContext("2d").drawImage(img, 0, 0, TAILLE, TAILLE);
-    const px = c.getContext("2d").getImageData(0, 0, TAILLE, TAILLE).data;
-    refContours = contours(reduire(px, TAILLE, TAILLE));
-    /* Gardée pour recalculer ses contours à d'autres échelles. */
-    imageRefChargee = img;
-    reserve = {};
-    echelleRetenue = null;
+/* CHARGEMENT DE LA RÉFÉRENCE, AVEC REDRESSEMENT.
 
-    const d = densiteContours(refContours);
-    const utilisable = d.part > 0.02;
-    $("densite").textContent = (d.part * 100).toFixed(1) + " %";
-    $("analysable").textContent = utilisable ? "oui" : "NON — surface trop unie";
-    $("analysable").className = utilisable ? "ok" : "ko";
-    $("diag-ref").classList.remove("cache");
-    $("etat-ref").textContent = "Référence chargée — " + refL + "×" + refH;
-    $("etat-ref").className = "note ok";
-    noter("Référence " + refL + "×" + refH + " — contours " +
-      (d.part*100).toFixed(1) + " %" + (utilisable ? "." : ", TROP UNIE."),
-      utilisable ? "ok" : "ko");
-  };
-  img.src = url;
+   LE PROBLÈME. La balise <img> applique l'orientation EXIF — Safari le fait
+   par défaut sur mobile, et en tient compte jusque dans naturalWidth. Le
+   canevas, lui, l'ignore : la documentation le dit sans détour et signale
+   que c'est particulièrement gênant sur iOS.
+
+   L'affichage et l'analyse portent donc sur deux images différentes dès que
+   la photographie porte une orientation — ce qui est le cas de toutes
+   celles prises à l'iPhone. Le score ne veut alors rien dire.
+
+   LA SOLUTION, telle que la documentation la donne : createImageBitmap
+   applique l'orientation EXIF PAR DÉFAUT — c'est la valeur « from-image ».
+   Disponible partout depuis septembre 2021, et corrigé dans WebKit en 2022
+   précisément pour honorer l'EXIF depuis un blob.
+
+   Un appel, là où j'avais écrit deux cents lignes de lecture d'en-tête et
+   de rotation manuelle. */
+async function poserReferenceDepuis(fichier) {
+  const url = URL.createObjectURL(fichier);
+
+  /* L'affichage : la balise, qui redresse d'elle-même. */
+  const img = await new Promise((ok, ko) => {
+    const i = new Image();
+    i.onload = () => ok(i);
+    i.onerror = () => ko(new Error("image illisible"));
+    i.src = url;
+  });
+
+  /* L'analyse : une image déjà redressée, si la case est cochée. */
+  let source = img, redresse = false;
+  if ($("redresser-exif").checked && typeof createImageBitmap === "function") {
+    try {
+      source = await createImageBitmap(fichier, { imageOrientation: "from-image" });
+      redresse = true;
+    } catch (_) { source = img; }
+  }
+
+  const sL = source.width || source.naturalWidth;
+  const sH = source.height || source.naturalHeight;
+  refL = sL; refH = sH;
+
+  /* Une nouvelle référence efface tout : les contours en réserve
+     appartiennent à la photographie précédente. */
+  reserve = {}; echelleRetenue = null; echelleFigee = null; echecs = 0;
+  echMin = 999; echMax = 0;
+
+  $("calque").src = url; $("vue-ref").src = url;
+  $("scene").style.aspectRatio = refL + " / " + refH;
+
+  imageRefChargee = source;
+  refContours = contoursRef(100, TAILLE);
+
+  const d = densiteContours(refContours);
+  const utilisable = d.part > 0.02;
+  $("densite").textContent = (d.part * 100).toFixed(1) + " %";
+  $("analysable").textContent = utilisable ? "oui" : "NON — surface trop unie";
+  $("analysable").className = utilisable ? "ok" : "ko";
+  $("diag-ref").classList.remove("cache");
+  $("etat-ref").textContent = "Référence chargée — " + refL + "×" + refH;
+  $("etat-ref").className = "note ok";
+
+  /* LE CONTRÔLE QUI COMPTE : les deux voies donnent-elles les mêmes
+     dimensions ? Si elles diffèrent, l'orientation EXIF fait pivoter
+     l'image d'un quart de tour, et sans redressement l'analyse travaillait
+     sur une image couchée. */
+  const memes = (img.naturalWidth === sL && img.naturalHeight === sH);
+  $("dim-img").textContent = img.naturalWidth + "×" + img.naturalHeight;
+  $("dim-ana").textContent = sL + "×" + sH + (redresse ? " (redressée)" : "");
+  $("dim-ana").className = memes ? "ok" : "ko";
+
+  noter("Référence " + refL + "×" + refH + " — contours " +
+    (d.part * 100).toFixed(1) + " %" +
+    (redresse ? (memes ? ", orientation déjà droite" : ", ORIENTATION REDRESSÉE")
+              : ", sans redressement"),
+    utilisable ? "ok" : "ko");
+}
+
+$("redresser-exif").onchange = () => {
+  noter($("redresser-exif").checked
+    ? "Redressement activé — recharge la photographie pour l'appliquer."
+    : "Redressement désactivé — recharge la photographie.", "attention");
 };
 
 /* ---- Réglages de prise de vue ---------------------------------------
