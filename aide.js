@@ -191,21 +191,25 @@ var AIDE = [
       "verdit à 60 %, valeur éprouvée sur le terrain. En dessous, une consigne " +
       "s'affiche — recule, pivote à gauche, relève.",
 
-      "L'ÉCHELLE SE CHERCHE TOUTE SEULE, et c'est indispensable. L'appareil " +
-      "photo de l'iPhone et la caméra du navigateur ne voient pas la même " +
-      "largeur : à la même place, le meuble paraît plus gros d'un côté que de " +
-      "l'autre, et aucun déplacement ne les fait coïncider. L'application " +
-      "essaie donc les échelles de 50 à 150 % et retient la meilleure. " +
-      "L'écran affiche celle qu'elle a trouvée.",
+      "LE SCORE NE MESURE QUE TON PLACEMENT. Une campagne de mesures a établi " +
+      "que l'appareil photo de l'iPhone et la caméra du navigateur voient la " +
+      "même largeur : il n'y a aucune correction de taille à faire. Si le " +
+      "score est bas, c'est que tu n'es pas au bon endroit — avance, recule, " +
+      "pivote, comme la consigne l'indique.",
 
-      "Elle se fige dès que l'alignement est bon, et ne bouge plus tant qu'il " +
-      "le reste : sans cela, le score serait flatté — on retiendrait à chaque " +
-      "fois la meilleure des échelles essayées, ce qui n'est plus une mesure " +
-      "de l'alignement. Si l'alignement se perd durablement, la recherche " +
-      "repart.",
+      "UN CURSEUR DE SECOURS existe malgré tout, sous l'image : « Zoom de la " +
+      "référence ». Il vaut 100 % et n'a pas à bouger. Il est là au cas où " +
+      "une photographie d'entrée aurait été prise autrement — à l'ultra " +
+      "grand-angle, par exemple. Un bouton le remet à 100 %.",
 
-      "SI ELLE SE TROMPE, le bouton « Régler l'échelle à la main » te rend un " +
-      "curseur. À l'inverse, le rappuyer relance la recherche depuis le début.",
+      "LE BOUTON AUTO est dans l'image, en bas à droite. Vert avec un point " +
+      "quand il est actif. Le déclencheur rond, lui, est juste sous l'image, " +
+      "à portée de pouce.",
+
+      "LA PHOTOGRAPHIE DE SORTIE SERA PLUS CLAIRE que celle d'entrée, et ce " +
+      "n'est pas réglable : le navigateur n'a pas accès au traitement d'image " +
+      "d'Apple. Tiens-en compte quand tu apprécies une salissure — elle " +
+      "paraîtra moins marquée qu'elle ne l'est.",
 
       "DÉCLENCHEMENT AUTOMATIQUE. Un bouton l'active. Une fois les 60 % " +
       "atteints, le cadre passe à l'orange et un décompte s'affiche : NE BOUGE " +
@@ -226,7 +230,7 @@ var AIDE = [
       "d'entrée et le score obtenu. Ce score figurera au procès-verbal : il dit " +
       "objectivement à quel point les deux vues sont comparables.",
 
-      "TROIS RÉGLAGES DE PLUS, sous le bouton « Réglages » de l'écran de visée. Le SEUIL " +
+      "TROIS RÉGLAGES, sous le bouton « Réglages » de l'écran de visée. Le SEUIL " +
       "d'alignement — bas, il déclenche vite mais cadre moins bien ; haut, il " +
       "exige une précision parfois impossible. L'IMMOBILITÉ avant la prise — la " +
       "mettre à zéro rend les photographies floues. La QUALITÉ de l'image, entre " +

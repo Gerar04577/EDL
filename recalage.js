@@ -10,19 +10,23 @@
 
    ON COMPARE DES CONTOURS, PAS DES COULEURS. L'éclairage change entre
    l'entrée et la sortie — trois ans d'écart, une autre saison — mais les
-   arêtes ne bougent pas.
+   arêtes ne bougent pas. C'est indispensable ici pour une autre raison
+   encore : le flux du navigateur ne reçoit pas le traitement d'image
+   d'Apple, et rend des vues systématiquement plus claires que l'appareil
+   natif. La documentation d'Apple le confirme : getUserMedia ne donne
+   qu'un flux basique, sans le traitement du système.
 
-   CE FICHIER EST COPIÉ DU BANC D'ESSAI essai-recalage.html, version 2.2,
-   éprouvé sur le terrain le 28/08/2026. Le calcul n'y a pas été réécrit :
-   l'expérience de la journée a montré qu'une reformulation, même fidèle en
-   apparence, introduit des écarts qu'on met des heures à retrouver.
+   COPIÉ DU BANC D'ESSAI essai-recalage.html, version 3.3, éprouvé sur le
+   terrain le 29/08/2026. Le calcul n'est pas réécrit : l'expérience a
+   montré qu'une reformulation, même fidèle en apparence, introduit des
+   écarts qu'on met des heures à retrouver.
 
-   Deux fonctions seules diffèrent de l'original, et c'est signalé sur
-   place : chercherEchelle et poserEchelleCalque, qui lisaient les réglages
-   directement à l'écran et les reçoivent ici en paramètre. */
+   IL N'Y A PLUS DE RECHERCHE D'ÉCHELLE. Une campagne de calibration a
+   établi que l'appareil natif et le flux ont le même champ de vision. Ce
+   qu'on prenait pour un écart d'échelle venait d'un zoom de 1,30 imposé
+   par mon propre code au banc d'essai. */
 
-const TAILLE = 96;          // mesure de l'alignement
-const TAILLE_ECH = 48;      // recherche de l'échelle
+const TAILLE = 96;          // côté de l'image de travail
 
 /* Réduit une image (tableau RGBA) en niveaux de gris à T×T. */
 function reduireT(rgba, L, H, T) {
@@ -50,7 +54,40 @@ function contoursT(g, T) {
       c[i] = Math.sqrt(gx*gx + gy*gy);
     }
   }
-  return c;
+  return DILATATION ? dilater(c, T) : c;
+}
+
+/* DILATATION MORPHOLOGIQUE DES GRADIENTS.
+
+   Un contour de Sobel fait un pixel d'épaisseur. Deux images légèrement
+   désalignées n'ont alors AUCUN pixel de contour en commun : la mesure de
+   ressemblance ne monte qu'au dernier moment, son sommet est étroit, et
+   elle reste plate partout ailleurs. C'est la cause du tremblement au
+   voisinage de l'optimum : l'algorithme y navigue dans du bruit.
+
+   En remplaçant chaque pixel par le maximum de son voisinage 3×3, les
+   contours passent à cinq ou sept pixels d'épaisseur. Le sommet s'élargit
+   d'autant, et la mesure devient monotone sur une plage utile. */
+var DILATATION = true;
+
+function dilater(c, T) {
+  const d = new Float32Array(T * T);
+  for (let y = 1; y < T - 1; y++) {
+    for (let x = 1; x < T - 1; x++) {
+      const i = y * T + x;
+      let m = c[i];
+      if (c[i-T-1] > m) m = c[i-T-1];
+      if (c[i-T]   > m) m = c[i-T];
+      if (c[i-T+1] > m) m = c[i-T+1];
+      if (c[i-1]   > m) m = c[i-1];
+      if (c[i+1]   > m) m = c[i+1];
+      if (c[i+T-1] > m) m = c[i+T-1];
+      if (c[i+T]   > m) m = c[i+T];
+      if (c[i+T+1] > m) m = c[i+T+1];
+      d[i] = m;
+    }
+  }
+  return d;
 }
 
 function densiteContoursT(c, T) {
@@ -85,21 +122,38 @@ function chercherT(refC, fluxC, T) {
     for (let dy = -lim; dy <= lim; dy += 2) {
       for (let dx = -lim; dx <= lim; dx += 2) {
         const brut = correlationT(refC, fluxC, dx, dy, e, T);
-        /* Pénalité de complexité : à score égal, la transformation la plus
-           simple gagne. Sans elle, le bruit décide entre plusieurs
-           optima voisins et les consignes deviennent absurdes. */
-        const cout = (Math.abs(dx) + Math.abs(dy)) * 0.004
+        /* PÉNALITÉ DU DÉPLACEMENT.
+
+           La fonction cherche le meilleur décalage sur ±13 pixels, ce qui
+           représente plusieurs dizaines de centimètres dans une pièce. Sans
+           pénalité forte, elle rend un score élevé en COMPENSANT le
+           déplacement de l'opérateur : le 29/08, deux poêles visiblement
+           côte à côte donnaient 69 % et un cadre vert.
+
+           Le score doit dire « tu es au bon endroit », pas « les deux
+           images se ressemblent quelque part ». À 0,022 par pixel, un
+           déplacement de treize pixels coûte une trentaine de points — de
+           quoi rendre le score honnête sans le rendre inexploitable.
+
+           L'échelle garde sa propre pénalité : elle vaut 1, s'en écarter
+           n'a pas lieu d'être. */
+        const cout = (Math.abs(dx) + Math.abs(dy)) * 0.022
                    + Math.abs(Math.log(e)) * 0.15;
         const s = brut - cout;
-        if (s > meilleur.score) meilleur = { score: s, brut, dx, dy, e };
+        if (s > meilleur.score) meilleur = { score: s, brut, dx, dy, e, cout };
       }
     }
   }
-  meilleur.score = meilleur.brut;
+  /* LE SCORE RENDU EST LE SCORE PÉNALISÉ.
+
+     Il était auparavant remplacé par la corrélation brute — la pénalité ne
+     servait qu'à choisir, jamais à juger. D'où des scores flatteurs sur des
+     cadrages manifestement faux. */
+  meilleur.score = Math.max(0, meilleur.brut - meilleur.cout);
   return meilleur;
 }
 
-/* Les appels historiques, à la taille de mesure. */
+/* Appels à la taille de travail. */
 const reduire = (rgba, L, H) => reduireT(rgba, L, H, TAILLE);
 const contours = (g) => contoursT(g, TAILLE);
 const densiteContours = (c) => densiteContoursT(c, TAILLE);
@@ -117,79 +171,19 @@ function conseil(m) {
   return t.length ? t.join(", ") : "alignement correct";
 }
 
-/* ---- RECHERCHE DE L'ÉCHELLE PAR SECTION DORÉE -------------------------
+/* ---- La référence et sa mise à l'échelle -------------------------------
 
-   L'ancienne méthode balayait un pas fixe puis se contentait d'un
-   voisinage : elle ne convergeait jamais et restait prisonnière d'un
-   mauvais réglage. La section dorée, elle, réduit l'intervalle d'un
-   facteur 0,618 à chaque tour et converge en une douzaine d'essais,
-   quelle que soit la valeur cherchée.
+   L'ÉCHELLE VAUT 100 % ET N'EST PLUS CHERCHÉE. Le curseur subsiste dans
+   l'écran de visée : la calibration porte sur un seul appareil, et rien
+   n'exclut qu'un cas se présente où il faille corriger — une photographie
+   d'entrée prise à l'ultra grand-angle, par exemple. On ne sait jamais. */
 
-   L'ÉCHELLE SE PARCOURT EN LOGARITHME. Un pas fixe de 8 % vaut 16 %
-   d'écart relatif à 50 et 5,6 % à 142 : on chercherait finement là où ça
-   ne sert à rien. En logarithme, un pas vaut le même rapport partout. */
-const PHI = (Math.sqrt(5) - 1) / 2;
-const L_MIN = Math.log(50), L_MAX = Math.log(150);
-
-function sectionDoree(evaluer, precision, nAmorce, autour) {
-  /* Amorce : quelques points régulièrement espacés en logarithme, pour
-     encadrer le maximum. La section dorée l'exige — elle ne converge que
-     si le point du milieu bat ses deux voisins. */
-  /* AUTOUR DE LA VALEUR PRÉCÉDENTE quand on en a une. Repartir de zéro à
-     chaque image faisait atterrir la recherche un peu ailleurs à chaque
-     fois : le zoom sautait et la superposition avec. */
-  let lo = L_MIN, hi = L_MAX;
-  if (autour) {
-    const la = Math.log(autour);
-    lo = Math.max(L_MIN, la - Math.log(1.18));
-    hi = Math.min(L_MAX, la + Math.log(1.18));
-  }
-  const pts = [];
-  for (let i = 0; i < nAmorce; i++) {
-    const l = lo + (hi - lo) * i / (nAmorce - 1);
-    pts.push({ l, v: evaluer(Math.exp(l)) });
-  }
-  let k = 0;
-  for (let i = 1; i < pts.length; i++) if (pts[i].v > pts[k].v) k = i;
-  let a = pts[Math.max(0, k - 1)];
-  let b = pts[k];
-  let c = pts[Math.min(pts.length - 1, k + 1)];
-  let essais = nAmorce;
-
-  const cible = Math.log(1 + precision);
-  while (c.l - a.l > cible && essais < 30) {
-    let x;
-    if (c.l - b.l > b.l - a.l) {
-      x = { l: b.l + (1 - PHI) * (c.l - b.l) };
-      x.v = evaluer(Math.exp(x.l)); essais++;
-      if (x.v > b.v) { a = b; b = x; } else { c = x; }
-    } else {
-      x = { l: b.l - (1 - PHI) * (b.l - a.l) };
-      x.v = evaluer(Math.exp(x.l)); essais++;
-      if (x.v > b.v) { c = b; b = x; } else { a = x; }
-    }
-  }
-  return { echelle: Math.exp(b.l), score: b.v, essais };
-}
-
-/* ---- Recherche automatique de l'échelle --------------------------------
-
-   Deux images du même lieu, prises par deux objectifs différents, ne
-   coïncident qu'à une échelle près. On la cherche, au petit format, par
-   section dorée. */
-/* NON REPRIS DU BANC D'ESSAI : le décompte d'immobilité et la demande de
-   mise au point. Ce sont des affaires d'écran, pas de calcul, et la
-   fonction du banc d'essai référençait sa propre variable de caméra —
-   inexistante ici. L'application les tient dans app.js, avec ses propres
-   réglages. */
-
-var echelleRetenue = null;        // en pourcent
-var echelleFigee = null;          // arrêtée dès qu'elle est convaincante
-var echecs = 0;
+var ECHELLE_FIXE = 100;
 var imageRefChargee = null;
+var reserve = {};
 
-/* Contours de la référence à une échelle donnée, mis en réserve. */
-var reserve = {};                 // clé : taille + "|" + pourcent
+/* Contours de la référence à une échelle donnée, mis en réserve : ils ne
+   changent pas tant que la photographie ne change pas. */
 function contoursRef(pc, T) {
   const cle = T + "|" + Math.round(pc * 10);
   if (reserve[cle]) return reserve[cle];
@@ -198,7 +192,8 @@ function contoursRef(pc, T) {
   c.width = T; c.height = T;
   const ctx = c.getContext("2d", { willReadFrequently: true });
   /* Au-dessus de 100 %, on rogne la référence en son centre ; en dessous,
-     on la prend entière — c'est alors le FLUX qui sera rogné. */
+     on la prend entière — c'est alors le FLUX qui est rogné. Jamais l'une
+     réduite dans son coin : cela découvrirait du vide autour. */
   const z = Math.max(1, pc / 100);
   const iw = imageRefChargee.naturalWidth, ih = imageRefChargee.naturalHeight;
   const sw = iw / z, sh = ih / z;
@@ -225,56 +220,9 @@ function contoursFluxT(v, dx, dy, cl, ch, pc, T) {
   return contoursT(reduireT(px, T, T, T), T);
 }
 
-/* Cherche l'échelle au PETIT format, puis mesure l'alignement au GRAND.
-   C'est la pyramide : estimation au grossier, mesure au fin. */
-/* SEULE LIGNE MODIFIÉE PAR RAPPORT AU BANC D'ESSAI.
-
-   L'original lisait les réglages directement à l'écran :
-     if (!$("echelle-auto").checked) return Number($("zoom-ref").value);
-   Ici ils arrivent en paramètre, l'application n'ayant pas les mêmes
-   éléments. Le calcul, lui, est inchangé. */
-function chercherEchelle(v, dx, dy, cl, ch, auto, echelleManuelle) {
-  if (!auto) return echelleManuelle;
-  if (echelleFigee) return echelleFigee;
-
-  const evaluer = (pc) => {
-    const r = contoursRef(pc, TAILLE_ECH);
-    if (!r) return 0;
-    return chercherT(r, contoursFluxT(v, dx, dy, cl, ch, pc, TAILLE_ECH),
-                     TAILLE_ECH).score;
-  };
-
-  /* Amorce large quand on part de rien, resserrée autour de la valeur
-     précédente sinon — l'opérateur ne saute pas d'une distance à l'autre. */
-  const res = sectionDoree(evaluer, 0.02,
-                           echelleRetenue === null ? 5 : 4, echelleRetenue);
-
-  if (echelleRetenue === null) { echelleRetenue = res.echelle; return arrondi(); }
-
-  /* NE PAS BOUGER POUR RIEN.
-
-     Près du but, deux échelles voisines donnent des scores qui ne
-     diffèrent que de quelques millièmes : c'est le bruit de mesure, pas
-     une information. La section dorée continue pourtant à chercher jusqu'à
-     sa précision demandée, et se met à osciller entre des valeurs
-     équivalentes — d'où le tremblement.
-
-     On n'adopte donc la nouvelle échelle que si elle apporte un gain
-     réel. C'est la même idée que la pénalité de complexité appliquée aux
-     décalages : à résultat équivalent, on ne bouge pas. */
-  const ancienScore = evaluer(echelleRetenue);
-  const gain = res.score - ancienScore;
-  if (gain < 0.02) return arrondi();      // le déplacement ne se justifie pas
-
-  /* LISSAGE, d'autant plus fort que l'alignement est déjà bon : c'est
-     près du but qu'il faut de la stabilité, et loin qu'il faut suivre. */
-  const part = ancienScore > 0.55 ? 0.15 : 0.35;
-  echelleRetenue = echelleRetenue * (1 - part) + res.echelle * part;
-  return arrondi();
-
-  function arrondi() {
-    /* Un demi-point de résolution suffit : au-delà, on n'affiche que du
-       bruit et le curseur s'agite sans que l'image change. */
-    return Math.round(echelleRetenue * 2) / 2;
-  }
+/* Remet la référence à neuf. La réserve contiendrait sinon les contours de
+   la photographie précédente — le défaut constaté le 28/08. */
+function poserReference(img) {
+  imageRefChargee = img;
+  reserve = {};
 }

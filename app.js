@@ -3032,8 +3032,8 @@ async function chargerLiensVisibles() {
    elles conviennent à la plupart des pièces, mais un local sombre ou une
    surface peu texturée peut demander autre chose. */
 var REGLAGES_VISEE_DEFAUT = {
-  seuil: 60,        // % d'alignement exigé pour le déclenchement
-  stabilite: 900,   // ms d'immobilité avant la prise
+  seuil: 68,        // % d'alignement exigé — relevé sur le terrain le 29/08
+  stabilite: 1200,  // ms d'immobilité avant la prise
   qualite: 0.96,    // compression JPEG
 };
 
@@ -3090,17 +3090,24 @@ function dessinerVisee(message) {
         <div id="visee-cadre"></div>
         <div id="visee-verdict">Allume la caméra</div>
         <div id="visee-jauge"></div>
+        <button id="visee-auto-image" aria-label="Déclenchement automatique">AUTO</button>
+        <div id="visee-compte"><span>NE BOUGE PLUS</span><span id="visee-cr">1.2</span></div>
         <div id="visee-flash">PHOTO PRISE</div>
+      </div>
+
+      <div id="visee-sous-image" class="cache">
+        <div class="ligne"><span>Zoom de la référence</span>
+          <span id="visee-val-zoom">100 %</span></div>
+        <input type="range" id="visee-zoom" min="50" max="150" step="1" value="100">
+        <button class="mini secondaire" id="visee-zoom-defaut">Remettre à 100 %</button>
+        <div id="visee-declencheur">
+          <button id="visee-obturateur" aria-label="Prendre la photo"></button>
+        </div>
       </div>
 
       <button id="visee-allumer">Allumer la caméra</button>
 
       <div id="visee-reglages" class="cache">
-        <div class="ligne"><span>Échelle de la référence</span>
-          <span id="visee-echelle">100 %</span></div>
-        <button class="mini secondaire" id="visee-echelle-auto">Régler l'échelle à la main</button>
-        <input type="range" id="visee-zoom" min="50" max="150" step="1" value="100" class="cache">
-
           <div class="ligne"><span>Transparence de la référence</span>
           <span id="visee-val-opacite">35 %</span></div>
         <input type="range" id="visee-opacite" min="0" max="100" value="35">
@@ -3137,22 +3144,10 @@ function brancherVisee() {
      lui rendre son affichage et remettre l'écran en mode visée. */
   if (V.camera && $("visee-allumer")) {
     $("visee-allumer").classList.add("cache");
+    $("visee-sous-image").classList.remove("cache");
     $("visee-reglages").classList.remove("cache");
     majAutoVisee();
   }
-
-  if ($("visee-echelle-auto")) $("visee-echelle-auto").onclick = () => {
-    V.echelleAuto = !V.echelleAuto;
-    $("visee-echelle-auto").textContent = V.echelleAuto
-      ? "Régler l'échelle à la main" : "Chercher l'échelle automatiquement";
-    $("visee-zoom").classList.toggle("cache", V.echelleAuto);
-    if (V.echelleAuto) { echelleFigee = null; echelleRetenue = null; echecs = 0; }
-    else $("visee-zoom").value = Math.round(V.echelle || 100);
-  };
-  if ($("visee-zoom")) $("visee-zoom").oninput = () => {
-    V.echelle = Number($("visee-zoom").value);
-    poserEchelleVisee(V.echelle);
-  };
 
   if ($("visee-plus")) $("visee-plus").onclick = () => {
     E.viseeReglagesOuverts = !E.viseeReglagesOuverts;
@@ -3197,8 +3192,25 @@ function brancherVisee() {
     if (V.camera) { $("visee-flux").srcObject = V.camera; $("visee-flux").play(); }
   };
 
-  if ($("visee-auto")) $("visee-auto").onclick = () => {
-    V.auto = !V.auto; V.stableDepuis = 0; majAutoVisee();
+  if ($("visee-auto")) $("visee-auto").onclick = basculerAuto;
+  if ($("visee-auto-image")) $("visee-auto-image").onclick = basculerAuto;
+  if ($("visee-obturateur")) $("visee-obturateur").onclick = prendreVisee;
+
+  /* LE ZOOM DE LA RÉFÉRENCE. Il vaut 100 % et n'a pas à bouger : la
+     calibration l'a établi. Mais elle porte sur un seul appareil, et rien
+     n'exclut un cas où il faudrait corriger — une photographie d'entrée
+     prise à l'ultra grand-angle, par exemple. On ne sait jamais. */
+  if ($("visee-zoom")) $("visee-zoom").oninput = () => {
+    V.echelle = Number($("visee-zoom").value);
+    $("visee-val-zoom").textContent = V.echelle + " %" +
+      (V.echelle === 100 ? "" : " (modifié)");
+    poserEchelleVisee(V.echelle);
+  };
+  if ($("visee-zoom-defaut")) $("visee-zoom-defaut").onclick = () => {
+    V.echelle = ECHELLE_FIXE;
+    $("visee-zoom").value = ECHELLE_FIXE;
+    $("visee-val-zoom").textContent = ECHELLE_FIXE + " %";
+    poserEchelleVisee(ECHELLE_FIXE);
   };
   if ($("visee-prendre")) $("visee-prendre").onclick = prendreVisee;
 }
@@ -3228,6 +3240,14 @@ function blocReglagesVisee() {
     <button class="mini secondaire" id="visee-defaut">Revenir aux valeurs d'usine</button>`;
 }
 
+function basculerAuto() {
+  const V = E.visee;
+  V.auto = !V.auto; V.stableDepuis = 0; V.sousSeuil = 0;
+  $("visee-cadre").classList.remove("pret");
+  $("visee-compte").classList.remove("visible");
+  majAutoVisee();
+}
+
 function majAutoVisee() {
   const V = E.visee;
   const b = $("visee-auto");
@@ -3236,6 +3256,10 @@ function majAutoVisee() {
     ? "Désactiver le déclenchement automatique"
     : "Activer le déclenchement automatique";
   b.className = V.auto ? "mini" : "mini secondaire";
+  /* Les deux commandes suivent le même état : celle de l'image et celle
+     du bas de page. */
+  const ai = $("visee-auto-image");
+  if (ai) { ai.className = V.auto ? "actif" : ""; ai.textContent = V.auto ? "AUTO ●" : "AUTO"; }
   $("visee-etat-auto").textContent = V.auto
     ? "Automatique ACTIF — la photo partira seule après " +
       (reglagesVisee().stabilite / 1000) + " s d'immobilité à " +
@@ -3263,15 +3287,11 @@ async function allumerVisee() {
        contours à chaque échelle essayée. La réserve est vidée : elle
        contiendrait ceux de la photographie précédente. */
     V.image = img;
-    imageRefChargee = img;
-    reserve = {};
-    echelleRetenue = null;
-    echelleFigee = null;
-    echecs = 0;
-    V.echelleAuto = true;
-    V.echelle = 100;
+    V.echelle = ECHELLE_FIXE;
+    poserReference(img);
+    poserEchelleVisee(ECHELLE_FIXE);
 
-    const contoursRefInitial = contoursRef(100, TAILLE);
+    const contoursRefInitial = contoursRef(ECHELLE_FIXE, TAILLE);
     const d = densiteContoursT(contoursRefInitial, TAILLE);
     $("visee-diag").textContent = d.part > 0.02
       ? "Référence analysable — " + (d.part * 100).toFixed(1) + " % de contours."
@@ -3284,13 +3304,20 @@ async function allumerVisee() {
   }
 
   try {
+    /* PLEINE RÉSOLUTION ET AUCUN ZOOM IMPOSÉ.
+
+       Un zoom de 1,30 forcé à l'allumage resserrait le champ : Safari
+       retombait sur 1440×1920 au lieu de 3024×4032, et il fallait ensuite
+       agrandir la référence de 25 % pour compenser. C'est ce réglage —
+       le mien — qui a fait croire pendant deux jours à un écart d'échelle
+       entre l'appareil natif et le navigateur. Il n'y en a pas.
+
+       La mise au point continue, elle, reste indispensable : sans elle
+       l'objectif garde la première distance vue et la photographie prise
+       après un déplacement sort floue. */
     V.camera = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: "environment" },
                width: { ideal: 4032 }, height: { ideal: 3024 },
-               /* Mise au point continue : sans elle, le flux reste réglé
-                  sur la première distance vue, et une photographie prise
-                  après un déplacement sort floue. Tous les appareils ne
-                  l'acceptent pas — d'où « ideal », qui n'échoue jamais. */
                focusMode: { ideal: "continuous" } },
       audio: false,
     });
@@ -3329,11 +3356,12 @@ function analyserVisee() {
 
   const f = fenetreVisee(v, V);
 
-  /* PYRAMIDE. L'échelle se cherche sur une image de 48 pixels — douze
-     essais y coûtent 16 ms au lieu de 268 — puis l'alignement se mesure
-     une seule fois à 96. Les deux photographies ne coïncident qu'à une
-     échelle près : l'appareil natif et Safari n'ont pas le même champ. */
-  const pc = chercherEchelle(v, f.dx, f.dy, f.l, f.h, V.echelleAuto, V.echelle);
+  /* AUCUNE RECHERCHE D'ÉCHELLE. La calibration du 29/08/2026 a établi que
+     l'appareil natif et le flux du navigateur ont le même champ de vision
+     — cinq mesures à 99,9 %, dispersion nulle. Le score mesure donc
+     l'alignement seul, sans plus jamais compenser un déplacement par une
+     échelle. */
+  const pc = V.echelle || ECHELLE_FIXE;
   const refC = contoursRef(pc, TAILLE);
   const m = refC
     ? chercherT(refC, contoursFluxT(v, f.dx, f.dy, f.l, f.h, pc, TAILLE), TAILLE)
@@ -3341,23 +3369,6 @@ function analyserVisee() {
 
   const p = Math.max(0, Math.round(m.score * 100));
   V.score = p;
-  V.echelle = pc;
-
-  /* La superposition suit l'échelle trouvée. */
-  poserEchelleVisee(pc);
-  if ($("visee-echelle")) {
-    $("visee-echelle").textContent = pc + " %" +
-      (V.echelleAuto ? (m.score >= 0.45 ? " · trouvée" : " · en recherche") : " · manuelle");
-  }
-
-  /* L'échelle se fige quand elle est convaincante : la recherche cesse
-     alors de flatter le score, qui redevient une mesure de l'alignement
-     seul. Elle se libère si l'alignement s'effondre durablement. */
-  if (!echelleFigee && m.score >= 0.65) echelleFigee = pc;
-  echecs = (m.score < 0.35) ? echecs + 1 : 0;
-  if (echelleFigee && echecs >= 15) {
-    echelleFigee = null; echelleRetenue = null; echecs = 0;
-  }
 
   const bon = p >= R.seuil;
   $("visee-verdict").textContent = p + " % — " + (bon ? "aligné" : conseil(m));
@@ -3375,8 +3386,20 @@ function analyserVisee() {
      On exige donc que l'alignement se maintienne un peu avant de
      déclencher — le temps que le geste s'arrête et que la mise au point
      se fasse. */
-  if (!V.auto) { V.stableDepuis = 0; return; }
-  if (!bon) { V.stableDepuis = 0; $("visee-cadre").classList.remove("pret"); return; }
+  const cacherCompte = () => {
+    V.stableDepuis = 0; V.sousSeuil = 0;
+    $("visee-cadre").classList.remove("pret");
+    $("visee-compte").classList.remove("visible");
+  };
+  if (!V.auto) { cacherCompte(); return; }
+
+  /* Une chute brève n'annule pas le décompte : le score varie de quelques
+     points d'une image à l'autre, et l'exiger au-dessus du seuil à chaque
+     instant faisait repartir le compte sans cesse. */
+  if (!bon) {
+    if (!V.stableDepuis) { cacherCompte(); return; }
+    if ((V.sousSeuil = (V.sousSeuil || 0) + 1) > 4) { cacherCompte(); return; }
+  } else V.sousSeuil = 0;
 
   const maintenant = Date.now();
   if (!V.stableDepuis) V.stableDepuis = maintenant;
@@ -3384,23 +3407,26 @@ function analyserVisee() {
 
   if (tenu < R.stabilite) {
     $("visee-cadre").classList.add("pret");
-    $("visee-verdict").textContent = p + " % — NE BOUGE PLUS… " +
-      Math.ceil((R.stabilite - tenu) / 100) / 10 + " s";
+    $("visee-compte").classList.add("visible");
+    $("visee-cr").textContent =
+      (Math.ceil((R.stabilite - tenu) / 100) / 10).toFixed(1);
+    $("visee-verdict").textContent = p + " % — aligné";
     return;
   }
 
-  V.auto = false; V.stableDepuis = 0;
+  V.auto = false; V.stableDepuis = 0; V.sousSeuil = 0;
   $("visee-cadre").classList.remove("pret");
+  $("visee-compte").classList.remove("visible");
   majAutoVisee();
   prendreVisee();
 }
 
-/* ON N'AGRANDIT JAMAIS QU'UNE SEULE DES DEUX IMAGES.
+/* MISE À L'ÉCHELLE DE LA SUPERPOSITION.
 
-   Réduire la référence sous 100 % découvrirait du vide autour : une
-   photographie n'a pas de bords au-delà de ses bords. Quand elle doit
-   paraître plus petite, on agrandit donc le FLUX à la place — ce qui
-   revient au même pour l'oeil, et laisse les deux couvrir le cadre. */
+   À 100 %, elle ne fait rien — les deux images ont le même champ. Elle sert
+   au curseur de secours : on n'agrandit jamais qu'une seule des deux, car
+   réduire l'une découvrirait du vide autour. Au-dessus de 100, c'est la
+   référence ; en dessous, le flux. */
 function poserEchelleVisee(pc) {
   const zoomer = (el, facteur) => {
     if (!el) return;
@@ -3439,9 +3465,9 @@ async function prendreVisee() {
 
   const f = fenetreVisee(v, V);
 
-  /* Même rognage qu'à l'analyse : la photographie prise doit cadrer comme
-     la référence à l'échelle retenue, pas comme le flux brut. */
-  const z = Math.max(1, 100 / (V.echelle || 100));
+  /* Même rognage qu'à l'analyse, pour que la photographie prise cadre
+     comme ce qui a été visé. À 100 %, il n'y a aucun rognage. */
+  const z = Math.max(1, 100 / (V.echelle || ECHELLE_FIXE));
   const pl = Math.round(f.l / z), ph = Math.round(f.h / z);
   const ox = f.dx + Math.round((f.l - pl) / 2);
   const oy = f.dy + Math.round((f.h - ph) / 2);
