@@ -15,7 +15,7 @@
    copie et les corrections ne sont jamais visibles. C'est le seul piège de
    ce mécanisme, et il est silencieux. */
 
-const VERSION = "2.20.1";
+const VERSION = "2.20.2";
 const CACHE = "edl-" + VERSION;
 
 const FICHIERS = [

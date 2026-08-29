@@ -164,57 +164,47 @@ async function apercuBlobEntree(photo, grand) {
   const base = photo.drive_id
     ? `/drives/${photo.drive_id}/items/${photo.onedrive_item_id}`
     : `/me/drive/items/${photo.onedrive_item_id}`;
-  /* ATTENTION AU PRÉFIXE « c ». Chez Microsoft, « c1600x1600 » signifie
-     RECADRER à ces dimensions : l'aperçu revenait carré, alors que la
-     photographie d'origine est verticale. La référence apparaissait donc
-     à un cadrage — et à une échelle — différents du flux de la caméra, et
-     la superposition était impossible quoi qu'on fasse.
 
-     Sans le « c », les dimensions sont un plafond : l'image s'inscrit
-     dedans en gardant ses proportions. C'est ce qu'il faut ici. */
-  /* POUR LA VISÉE, LE FICHIER D'ORIGINE D'ABORD.
+  /* LES TAILLES D'APERÇU DE MICROSOFT, telles que la documentation les
+     définit :
+       small   — 48 × 48, RECADRÉ au carré ;
+       medium  — 176 × 176, redimensionné ;
+       large   — 1920 × 1920, redimensionné, plus long côté à 1920 ;
+       cLxH    — taille libre, mais le préfixe « c » RECADRE : l'image
+                 remplit la boîte et ce qui dépasse est coupé.
 
-     Les aperçus de repli — « large », « medium » — ne garantissent pas les
-     proportions : Microsoft les recadre parfois au lieu de les réduire. La
-     référence apparaît alors à une autre échelle que le flux, ce qui rend
-     la superposition fausse sans qu'aucun réglage n'y change rien. C'est le
-     défaut observé le 29/08 : la référence trop grande à 100 %.
+     Il n'existe pas de taille libre SANS recadrage. Mes deux tentatives
+     précédentes s'y sont brisées : « c1600x1600 » rendait un carré, puis
+     « 1600x1600 » sans le « c » ne correspondait à rien et échouait.
 
-     Quand Safari sait lire le fichier — JPEG, PNG, WebP — on le prend donc
-     tel quel : mêmes proportions, même cadrage que l'original, exactement
-     comme le banc d'essai qui charge depuis la pellicule.
+     LARGE EST LA BONNE RÉPONSE, et l'était depuis le début : 1920 pixels
+     au plus long côté, proportions conservées, une seule requête.
 
-     Le HEIC des anciens états des lieux n'est pas affichable : pour lui, un
-     seul aperçu, « 1600x1600 » sans le préfixe « c », qui respecte les
-     proportions. Pas de repli sur une taille qui pourrait recadrer. */
+     Pour la visée on préfère quand même le FICHIER D'ORIGINE quand Safari
+     sait le lire — mêmes pixels que le banc d'essai qui charge depuis la
+     pellicule. Le HEIC des anciens états des lieux passe par « large ». */
   const lisibleParSafari = /\.(jpe?g|png|webp)$/i.test(photo.nom_fichier || "");
 
+  const rapatrier = async (chemin) => {
+    const res = await appelGraph(chemin);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return (blob && blob.size) ? URL.createObjectURL(blob) : null;
+  };
+
   if (grand && lisibleParSafari) {
-    try {
-      const res = await appelGraph(`${base}/content`);
-      if (res.ok) {
-        const blob = await res.blob();
-        if (blob && blob.size) return URL.createObjectURL(blob);
-      }
-    } catch (_) { /* on tentera l'aperçu */ }
+    try { const u = await rapatrier(`${base}/content`); if (u) return u; }
+    catch (_) { /* on tentera l'aperçu */ }
   }
 
-  const tailles = grand ? ["1600x1600"] : ["large", "medium"];
-  for (const t of tailles) {
-    try {
-      const res = await appelGraph(`${base}/thumbnails/0/${t}/content`);
-      if (!res.ok) continue;
-      const blob = await res.blob();
-      if (blob && blob.size) return URL.createObjectURL(blob);
-    } catch (_) { /* taille suivante */ }
+  for (const t of (grand ? ["large", "medium"] : ["large", "medium"])) {
+    try { const u = await rapatrier(`${base}/thumbnails/0/${t}/content`); if (u) return u; }
+    catch (_) { /* taille suivante */ }
   }
 
   if (lisibleParSafari) {
-    const res = await appelGraph(`${base}/content`);
-    if (res.ok) {
-      const blob = await res.blob();
-      if (blob && blob.size) return URL.createObjectURL(blob);
-    }
+    try { const u = await rapatrier(`${base}/content`); if (u) return u; }
+    catch (_) { /* échec annoncé ci-dessous */ }
   }
   throw new Error("Aperçu indisponible pour " + photo.nom_fichier);
 }
@@ -223,9 +213,9 @@ async function apercuPhotoEntree(photo, grand) {
   const base = photo.drive_id
     ? `/drives/${photo.drive_id}/items/${photo.onedrive_item_id}`
     : `/me/drive/items/${photo.onedrive_item_id}`;
-  /* Sans le préfixe « c » : les proportions d'origine sont conservées.
-     Voir apercuBlobEntree pour le détail. */
-  const tailles = grand ? ["1600x1600", "large", "medium"] : ["large", "medium", "small"];
+  /* « large » : 1920 pixels au plus long côté, proportions conservées.
+     Voir apercuBlobEntree pour le détail des tailles de Microsoft. */
+  const tailles = ["large", "medium"];
 
   for (const t of tailles) {
     try {
