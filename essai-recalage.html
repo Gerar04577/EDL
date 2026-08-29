@@ -161,8 +161,8 @@
   <h2>2. Réglages de prise de vue</h2>
   <p class="note">À changer AVANT d'allumer la caméra. Surveille le temps
   par analyse : au-delà de 60 ms, la visée devient saccadée.</p>
-  <div class="ligne"><span>Largeur du flux</span><span id="lib-flux">1920 — sûr</span></div>
-  <input type="range" id="reg-flux" min="0" max="2" value="0" step="1">
+  <div class="ligne"><span>Largeur du flux</span><span id="lib-flux">4032 — pleine résolution</span></div>
+  <input type="range" id="reg-flux" min="0" max="2" value="2" step="1">
   <div class="ligne" style="margin-top:8px"><span>Qualité JPEG</span><span id="lib-qualite">0,82 — actuelle</span></div>
   <input type="range" id="reg-qualite" min="0" max="3" value="0" step="1">
 </div>
@@ -458,7 +458,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 3.1";
+const VERSION = "essai 3.2";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -528,8 +528,17 @@ $("fichier").onchange = (e) => {
    accélération graphique.
 
    D'où ce réglage : mesurer plutôt que supposer. */
+/* PLEINE RÉSOLUTION PAR DÉFAUT.
+
+   Ce module demandait 1920 de large — un réglage laissé des essais de
+   définition du 28/08 — alors que le module de calibration demande 4032.
+   D'où deux flux différents : 1440×1920 ici, 3024×4032 là-bas, et des
+   comportements qu'on ne pouvait pas comparer.
+
+   Moins de détail rend aussi la mesure plus indulgente : le score de 67 %
+   observé sur une superposition manifestement mauvaise vient de là. */
 const FLUX = [
-  { l: 1920, h: 1440, lib: "1920 — sûr" },
+  { l: 1920, h: 1440, lib: "1920 — réduit" },
   { l: 2560, h: 1920, lib: "2560 — intermédiaire" },
   { l: 4032, h: 3024, lib: "4032 — pleine résolution" },
 ];
