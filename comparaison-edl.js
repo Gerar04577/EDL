@@ -172,8 +172,34 @@ async function apercuBlobEntree(photo, grand) {
 
      Sans le « c », les dimensions sont un plafond : l'image s'inscrit
      dedans en gardant ses proportions. C'est ce qu'il faut ici. */
-  const tailles = grand ? ["1600x1600", "large", "medium"] : ["large", "medium"];
+  /* POUR LA VISÉE, LE FICHIER D'ORIGINE D'ABORD.
 
+     Les aperçus de repli — « large », « medium » — ne garantissent pas les
+     proportions : Microsoft les recadre parfois au lieu de les réduire. La
+     référence apparaît alors à une autre échelle que le flux, ce qui rend
+     la superposition fausse sans qu'aucun réglage n'y change rien. C'est le
+     défaut observé le 29/08 : la référence trop grande à 100 %.
+
+     Quand Safari sait lire le fichier — JPEG, PNG, WebP — on le prend donc
+     tel quel : mêmes proportions, même cadrage que l'original, exactement
+     comme le banc d'essai qui charge depuis la pellicule.
+
+     Le HEIC des anciens états des lieux n'est pas affichable : pour lui, un
+     seul aperçu, « 1600x1600 » sans le préfixe « c », qui respecte les
+     proportions. Pas de repli sur une taille qui pourrait recadrer. */
+  const lisibleParSafari = /\.(jpe?g|png|webp)$/i.test(photo.nom_fichier || "");
+
+  if (grand && lisibleParSafari) {
+    try {
+      const res = await appelGraph(`${base}/content`);
+      if (res.ok) {
+        const blob = await res.blob();
+        if (blob && blob.size) return URL.createObjectURL(blob);
+      }
+    } catch (_) { /* on tentera l'aperçu */ }
+  }
+
+  const tailles = grand ? ["1600x1600"] : ["large", "medium"];
   for (const t of tailles) {
     try {
       const res = await appelGraph(`${base}/thumbnails/0/${t}/content`);
@@ -183,9 +209,7 @@ async function apercuBlobEntree(photo, grand) {
     } catch (_) { /* taille suivante */ }
   }
 
-  /* Aucun aperçu : on rapatrie le fichier lui-même, si Safari sait le
-     lire. Le HEIC, lui, resterait invisible — d'où l'échec annoncé. */
-  if (/\.(jpe?g|png|webp)$/i.test(photo.nom_fichier || "")) {
+  if (lisibleParSafari) {
     const res = await appelGraph(`${base}/content`);
     if (res.ok) {
       const blob = await res.blob();

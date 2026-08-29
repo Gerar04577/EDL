@@ -3037,17 +3037,24 @@ var REGLAGES_VISEE_DEFAUT = {
   qualite: 0.96,    // compression JPEG
 };
 
+/* Les réglages conservés portent le numéro de la version qui les a écrits.
+   Sans cela, un seuil descendu pendant un essai survivait indéfiniment et
+   écrasait les valeurs d'usine des versions suivantes — le seuil restait à
+   35 % alors que la nouvelle valeur était 68. */
+var REGLAGES_VISEE_VERSION = 2;
+
 function reglagesVisee() {
   if (E.reglagesVisee) return E.reglagesVisee;
   let v = null;
   try { v = JSON.parse(localStorage.getItem("edl_reglages_visee") || "null"); }
   catch (_) { /* réglages illisibles : on repart des valeurs d'usine */ }
+  if (!v || v.v !== REGLAGES_VISEE_VERSION) v = null;
   E.reglagesVisee = Object.assign({}, REGLAGES_VISEE_DEFAUT, v || {});
   return E.reglagesVisee;
 }
 
 function enregistrerReglagesVisee(modif) {
-  const r = Object.assign(reglagesVisee(), modif);
+  const r = Object.assign(reglagesVisee(), modif, { v: REGLAGES_VISEE_VERSION });
   try { localStorage.setItem("edl_reglages_visee", JSON.stringify(r)); }
   catch (_) { /* stockage plein ou refusé : les réglages valent pour la session */ }
   return r;
@@ -3096,10 +3103,16 @@ function dessinerVisee(message) {
       </div>
 
       <div id="visee-sous-image" class="cache">
+        <div class="ligne"><span>Seuil de déclenchement</span>
+          <span id="visee-val-seuil">${reglagesVisee().seuil} %</span></div>
+        <input type="range" id="visee-seuil-haut" min="35" max="95" step="1"
+          value="${reglagesVisee().seuil}">
+
         <div class="ligne"><span>Zoom de la référence</span>
           <span id="visee-val-zoom">100 %</span></div>
         <input type="range" id="visee-zoom" min="50" max="150" step="1" value="100">
-        <button class="mini secondaire" id="visee-zoom-defaut">Remettre à 100 %</button>
+        <button class="mini secondaire pleine" id="visee-zoom-defaut">Remettre le zoom à 100 %</button>
+
         <div id="visee-declencheur">
           <button id="visee-obturateur" aria-label="Prendre la photo"></button>
         </div>
@@ -3181,7 +3194,7 @@ function brancherVisee() {
     champ.oninput = appliquer;
     champ.onchange = appliquer;
   };
-  regle("visee-seuil", "seuil", "visee-val-seuil");
+  regle("visee-seuil", "seuil", "visee-val-seuil-bas");
   regle("visee-stab", "stabilite", "visee-val-stab");
   regle("visee-qualite", "qualite", "visee-val-qualite", (n) => n / 100);
 
@@ -3200,6 +3213,15 @@ function brancherVisee() {
      calibration l'a établi. Mais elle porte sur un seul appareil, et rien
      n'exclut un cas où il faudrait corriger — une photographie d'entrée
      prise à l'ultra grand-angle, par exemple. On ne sait jamais. */
+  if ($("visee-seuil-haut")) $("visee-seuil-haut").oninput = () => {
+    const v = Number($("visee-seuil-haut").value);
+    enregistrerReglagesVisee({ seuil: v });
+    $("visee-val-seuil").textContent = v + " %";
+    if ($("visee-val-seuil-bas")) $("visee-val-seuil-bas").textContent = v + " %";
+    if ($("visee-seuil")) $("visee-seuil").value = v;
+    majAutoVisee();
+  };
+
   if ($("visee-zoom")) $("visee-zoom").oninput = () => {
     V.echelle = Number($("visee-zoom").value);
     $("visee-val-zoom").textContent = V.echelle + " %" +
@@ -3221,8 +3243,8 @@ function brancherVisee() {
 function blocReglagesVisee() {
   const R = reglagesVisee();
   return `
-    <div class="ligne" style="margin-top:10px"><span>Seuil d'alignement</span>
-      <span id="visee-val-seuil">${R.seuil} %</span></div>
+    <div class="ligne" style="margin-top:10px"><span>Seuil de déclenchement</span>
+      <span id="visee-val-seuil-bas">${R.seuil} %</span></div>
     <input type="range" id="visee-seuil" min="35" max="90" step="5" value="${R.seuil}">
 
     <div class="ligne"><span>Immobilité avant la prise</span>
@@ -3294,7 +3316,8 @@ async function allumerVisee() {
     const contoursRefInitial = contoursRef(ECHELLE_FIXE, TAILLE);
     const d = densiteContoursT(contoursRefInitial, TAILLE);
     $("visee-diag").textContent = d.part > 0.02
-      ? "Référence analysable — " + (d.part * 100).toFixed(1) + " % de contours."
+      ? "Référence " + V.refL + "×" + V.refH + " — " +
+        (d.part * 100).toFixed(1) + " % de contours."
       : "Surface très unie (" + (d.part * 100).toFixed(1) + " % de contours) : " +
         "le score sera peu fiable, fie-toi à la superposition.";
     $("visee-diag").className = d.part > 0.02 ? "note ok" : "note attention";
