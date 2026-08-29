@@ -205,6 +205,20 @@
     <div class="ligne"><span>Flux obtenu</span><span id="flux-reel">—</span></div>
     <div class="ligne"><span>Opacité de la référence</span><span id="val-opacite">35 %</span></div>
     <input type="range" id="opacite" min="0" max="100" value="35">
+    <label class="bascule">
+      <input type="checkbox" id="dilatation" checked>
+      <span>Dilater les contours</span>
+    </label>
+
+    <label class="bascule">
+      <input type="checkbox" id="recherche-echelle">
+      <span>Chercher l'échelle (ancien comportement)</span>
+    </label>
+    <p class="note">La calibration du 29/08 a montré que l'appareil photo et
+    la caméra du navigateur voient la même largeur : l'échelle vaut 1, il n'y
+    a rien à chercher. Coche pour faire revenir l'ancienne recherche — et le
+    tremblement avec.</p>
+
     <div class="ligne"><span>Seuil de déclenchement</span><span id="val-seuil">60 %</span></div>
     <input type="range" id="seuil" min="30" max="95" value="60">
 
@@ -285,7 +299,40 @@ function contoursT(g, T) {
       c[i] = Math.sqrt(gx*gx + gy*gy);
     }
   }
-  return c;
+  return DILATATION ? dilater(c, T) : c;
+}
+
+/* DILATATION MORPHOLOGIQUE DES GRADIENTS.
+
+   Un contour de Sobel fait un pixel d'épaisseur. Deux images légèrement
+   désalignées n'ont alors AUCUN pixel de contour en commun : la mesure de
+   ressemblance ne monte qu'au dernier moment, son sommet est étroit, et
+   elle reste plate partout ailleurs. C'est la cause du tremblement au
+   voisinage de l'optimum : l'algorithme y navigue dans du bruit.
+
+   En remplaçant chaque pixel par le maximum de son voisinage 3×3, les
+   contours passent à cinq ou sept pixels d'épaisseur. Le sommet s'élargit
+   d'autant, et la mesure devient monotone sur une plage utile. */
+var DILATATION = true;
+
+function dilater(c, T) {
+  const d = new Float32Array(T * T);
+  for (let y = 1; y < T - 1; y++) {
+    for (let x = 1; x < T - 1; x++) {
+      const i = y * T + x;
+      let m = c[i];
+      if (c[i-T-1] > m) m = c[i-T-1];
+      if (c[i-T]   > m) m = c[i-T];
+      if (c[i-T+1] > m) m = c[i-T+1];
+      if (c[i-1]   > m) m = c[i-1];
+      if (c[i+1]   > m) m = c[i+1];
+      if (c[i+T-1] > m) m = c[i+T-1];
+      if (c[i+T]   > m) m = c[i+T];
+      if (c[i+T+1] > m) m = c[i+T+1];
+      d[i] = m;
+    }
+  }
+  return d;
 }
 
 function densiteContoursT(c, T) {
@@ -411,7 +458,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 2.2";
+const VERSION = "essai 3.0";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -650,6 +697,21 @@ function contoursFluxT(v, dx, dy, cl, ch, pc, T) {
 /* Cherche l'échelle au PETIT format, puis mesure l'alignement au GRAND.
    C'est la pyramide : estimation au grossier, mesure au fin. */
 function chercherEchelle(v, dx, dy, cl, ch) {
+  /* ÉCHELLE FIXÉE À 100 PAR DÉFAUT.
+
+     La calibration du 29/08/2026 a établi que l'appareil natif et le flux
+     du navigateur ont le même champ : cinq mesures à 99,9 %, dispersion
+     nulle. Il n'y a donc aucune échelle à chercher, et tout ce qui suit
+     répondait à un problème inexistant.
+
+     Ce qui la rendait nécessaire en apparence : quand l'opérateur n'est
+     pas à l'endroit exact de la photographie, la recherche compensait par
+     l'échelle un écart qui était un déplacement. D'où les valeurs
+     erratiques — 108 %, puis 70 % — et le tremblement.
+
+     La case reste, pour constater la différence en basculant. */
+  if (!$("recherche-echelle").checked) return 100;
+
   if (!$("echelle-auto").checked) return Number($("zoom-ref").value);
   if (echelleFigee) return echelleFigee;
 
@@ -737,7 +799,9 @@ function analyser() {
   m.echelle = pc;
 
   /* Le curseur et la superposition suivent l'échelle trouvée. */
-  if ($("echelle-auto").checked) {
+  if (!$("recherche-echelle").checked) {
+    $("val-zoom-ref").textContent = "100 % (fixe)";
+  } else if ($("echelle-auto").checked) {
     $("zoom-ref").value = pc;
     $("val-zoom-ref").textContent = pc + " % " +
       (m.score >= 0.45 ? "(trouvé)" : "(en recherche)");
@@ -842,6 +906,27 @@ $("opacite").oninput = (e) => {
 };
 $("calque").style.opacity = 0.35;
 $("seuil").oninput = (e) => { $("val-seuil").textContent = e.target.value + " %"; };
+
+$("recherche-echelle").onchange = () => {
+  echelleRetenue = null; echelleFigee = null; echecs = 0;
+  if (!$("recherche-echelle").checked) {
+    $("zoom-ref").value = 100;
+    $("val-zoom-ref").textContent = "100 % (fixe)";
+    poserEchelleCalque(100);
+  }
+  noter($("recherche-echelle").checked
+    ? "Recherche d'échelle réactivée — ancien comportement."
+    : "Échelle fixée à 100 % — plus rien à chercher.", "ok");
+};
+
+$("dilatation").onchange = () => {
+  DILATATION = $("dilatation").checked;
+  /* Les contours mis en réserve ont été calculés avec l'autre réglage. */
+  reserve = {}; echelleRetenue = null; echelleFigee = null; echecs = 0;
+  if (imageRefChargee) refContours = contoursRef(100, TAILLE);
+  noter(DILATATION ? "Contours dilatés — sommet élargi."
+                   : "Contours d'un pixel — sommet étroit.", "ok");
+};
 $("stab").oninput = () => {
   DELAI_STABILITE = Number($("stab").value);
   $("val-stab").textContent = (DELAI_STABILITE / 1000).toFixed(1) + " s";
@@ -1028,6 +1113,8 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+poserEchelleCalque(100);
+$("val-zoom-ref").textContent = "100 % (fixe)";
 $("version").textContent = "· " + VERSION;
 document.title = "Essai cadrage — " + VERSION;
 majAuto();
