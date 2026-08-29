@@ -239,6 +239,7 @@
     <button id="btn-eteindre">Éteindre la caméra</button>
     <div class="ligne"><span>Analyses par seconde</span><span id="cadence">—</span></div>
     <div class="ligne"><span>Temps par analyse</span><span id="duree">—</span></div>
+    <div class="ligne"><span>Échelle — étendue observée</span><span id="etendue">—</span></div>
   </div>
 </div>
 
@@ -475,7 +476,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 3.3";
+const VERSION = "essai 3.4";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -674,6 +675,7 @@ $("btn-eteindre").onclick = eteindre;
    emportées : DELAI_STABILITE valait « undefined », la comparaison du
    décompte échouait, et le déclenchement automatique ne pouvait jamais
    aboutir. C'est la cause du défaut signalé. */
+var echMin = 999, echMax = 0;     // étendue de l'échelle depuis l'allumage
 var stableDepuis = 0;             // début de la période d'immobilité
 var sousSeuil = 0;                // images consécutives sous le seuil
 var DELAI_STABILITE = 1200;       // ms d'immobilité avant la prise
@@ -865,14 +867,36 @@ function analyser() {
   const bon = pourcent >= seuil;
   /* Deux pourcentages côte à côte — le score et l'échelle — se
      confondaient. L'échelle passe en facteur : ×1,12. */
+  /* L'ÉCHELLE, TOUJOURS AFFICHÉE.
+
+     La calibration du 29/08 a établi qu'elle vaut 1. Si la recherche s'en
+     écarte durablement, c'est qu'elle compense un DÉPLACEMENT par une
+     échelle — le défaut qui produisait le tremblement. On la montre donc
+     en permanence, avec son écart, pour pouvoir le constater. */
+  const ecart = m.echelle ? Math.abs(m.echelle - 100) : 0;
   $("verdict").textContent = pourcent + " % — " + (bon ? "aligné" : conseil(m)) +
-    (m.echelle ? "   ×" + (m.echelle / 100).toFixed(2) : "");
+    (m.echelle ? "   ×" + (m.echelle / 100).toFixed(2) +
+      (ecart > 8 ? " ⚠" : "") : "");
   $("jauge").style.width = pourcent + "%";
   $("jauge").style.background = bon ? "#2f7d63" : pourcent > seuil * 0.7 ? "#c8891f" : "#c9403a";
   $("cible").style.borderColor = bon ? "#2f7d63" : "transparent";
 
   sommeDurees += performance.now() - t0;
   compteur++;
+  /* Étendue de l'échelle depuis l'allumage : c'est elle qui dit si la
+     recherche est stable ou si elle vagabonde. */
+  if (m.echelle) {
+    echMin = Math.min(echMin, m.echelle);
+    echMax = Math.max(echMax, m.echelle);
+    const e = $("etendue");
+    if (e) {
+      e.textContent = echMin.toFixed(0) + " à " + echMax.toFixed(0) + " %  (" +
+        (echMax - echMin).toFixed(0) + " pt)";
+      e.className = (echMax - echMin) <= 4 ? "ok"
+                  : (echMax - echMin) <= 10 ? "attention" : "ko";
+    }
+  }
+
   if (Date.now() - dernierRelevé > 1000) {
     $("cadence").textContent = compteur + " / s";
     const moy = sommeDurees / compteur;
@@ -946,6 +970,7 @@ $("seuil").oninput = (e) => { $("val-seuil").textContent = e.target.value + " %"
 
 $("recherche-echelle").onchange = () => {
   echelleRetenue = null; echelleFigee = null; echecs = 0;
+  echMin = 999; echMax = 0;
   if (!$("recherche-echelle").checked) {
     $("zoom-ref").value = 100;
     $("val-zoom-ref").textContent = "100 % (fixe)";
