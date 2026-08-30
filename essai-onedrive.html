@@ -101,7 +101,12 @@
 
 <div class="bloc">
   <h2>1. Connexion</h2>
-  <button id="btn-connexion">Se connecter à OneDrive</button>
+  <button id="btn-connexion">Reprendre la session de l'application</button>
+  <p class="note">Le banc n'ouvre pas de session : Microsoft n'autorise la
+  connexion que depuis les adresses déclarées, et celle-ci ne l'est pas.
+  Il reprend celle que l'application a déjà ouverte sur ce téléphone.</p>
+  <p class="note">Si rien ne vient : ouvre d'abord l'application, connecte-toi,
+  puis reviens ici.</p>
   <p class="note" id="etat-connexion">Non connecté.</p>
 </div>
 
@@ -176,7 +181,18 @@
 <script src="recalage.js"></script>
 
 <script>
-const VERSION = "onedrive 1.0";
+const VERSION = "onedrive 1.1";
+
+/* L'adresse de redirection est ramenée à celle de l'application — la seule
+   que Microsoft accepte. Elle n'est pas employée puisque le banc n'ouvre
+   pas de session, mais MSAL la vérifie à l'initialisation.
+
+   CONFIG n'est pas modifié sur le disque : seule la valeur en mémoire de
+   cette page l'est, le temps de son exécution. */
+if (typeof CONFIG !== "undefined" && CONFIG.microsoft) {
+  CONFIG.microsoft.redirect_uri =
+    location.origin + location.pathname.replace(/[^/]*$/, "");
+}
 const $ = (id) => document.getElementById(id);
 
 let camera = null, boucle = null;
@@ -199,22 +215,42 @@ function ech(s) {
 }
 
 /* ---- 1. Connexion ------------------------------------------------------ */
+/* LE BANC N'OUVRE PAS DE SESSION.
+
+   Microsoft n'autorise la connexion que depuis les adresses déclarées à
+   l'avance pour l'application. Celle du banc ne l'est pas — d'où le refus
+   « redirect_uri is not valid » du 30/08/2026.
+
+   Deux façons d'en sortir : déclarer l'adresse du banc dans le portail
+   Azure, ou ne pas ouvrir de session du tout. La seconde ne demande rien à
+   personne et ne touche à aucun fichier.
+
+   La session de l'application est conservée dans le stockage local, sur
+   la même origine. Le banc la retrouve donc sans redirection : initAuth
+   lit les comptes présents et prend le premier. Si aucun n'existe, il faut
+   d'abord ouvrir l'application et s'y connecter. */
 $("btn-connexion").onclick = async () => {
   const b = $("btn-connexion");
-  b.disabled = true; b.textContent = "Connexion…";
+  b.disabled = true; b.textContent = "Lecture de la session…";
   try {
     await initAuth();
-    if (!estConnecte()) await seConnecter();
-    $("etat-connexion").textContent = "Connecté — " + (nomUtilisateur() || "");
+    if (!estConnecte()) {
+      b.disabled = false; b.textContent = "Reprendre la session de l'application";
+      $("etat-connexion").textContent =
+        "Aucune session ouverte. Ouvre l'application, connecte-toi, puis reviens.";
+      $("etat-connexion").className = "note attention";
+      return noter("Aucune session dans le stockage local.", "attention");
+    }
+    $("etat-connexion").textContent = "Session reprise — " + (nomUtilisateur() || "");
     $("etat-connexion").className = "note ok";
     b.classList.add("cache");
-    noter("Connecté à OneDrive.", "ok");
+    noter("Session de l'application reprise.", "ok");
     await ouvrirRacine();
   } catch (e) {
-    b.disabled = false; b.textContent = "Se connecter à OneDrive";
+    b.disabled = false; b.textContent = "Reprendre la session de l'application";
     $("etat-connexion").textContent = "Échec : " + e.message;
     $("etat-connexion").className = "note ko";
-    noter("Connexion refusée : " + e.message, "ko");
+    noter("Échec : " + e.message, "ko");
   }
 };
 
