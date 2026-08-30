@@ -3111,7 +3111,7 @@ function dessinerVisee(message) {
         <div class="ligne"><span>Zoom de la référence</span>
           <span id="visee-val-zoom">100 %</span></div>
         <input type="range" id="visee-zoom" min="50" max="150" step="1" value="100">
-        <button class="mini secondaire pleine" id="visee-zoom-defaut">Remettre le zoom à 100 %</button>
+        <button class="mini secondaire pleine" id="visee-zoom-defaut">Rechercher l'échelle automatiquement</button>
 
         <div id="visee-declencheur">
           <button id="visee-obturateur" aria-label="Prendre la photo"></button>
@@ -3220,14 +3220,18 @@ function brancherVisee() {
     majAutoVisee();
   };
 
+  /* Toucher le curseur arrête la recherche : c'est une reprise en main. */
   if ($("visee-zoom")) $("visee-zoom").oninput = () => {
+    V.echelleAuto = false;
     V.echelle = Number($("visee-zoom").value);
-    $("visee-val-zoom").textContent = V.echelle + " %" +
-      (V.echelle === 100 ? "" : " (modifié)");
+    $("visee-val-zoom").textContent = V.echelle + " % (à la main)";
     poserEchelleVisee(V.echelle);
   };
+  /* Et le bouton rend la recherche automatique. */
   if ($("visee-zoom-defaut")) $("visee-zoom-defaut").onclick = () => {
+    V.echelleAuto = true;
     V.echelle = ECHELLE_FIXE;
+    echelleRetenue = null; echelleFigee = null; echecs = 0;
     $("visee-zoom").value = ECHELLE_FIXE;
     $("visee-val-zoom").textContent = ECHELLE_FIXE + " %";
     poserEchelleVisee(ECHELLE_FIXE);
@@ -3304,6 +3308,7 @@ async function allumerVisee() {
        contiendrait ceux de la photographie précédente. */
     V.image = img;
     V.echelle = ECHELLE_FIXE;
+    V.echelleAuto = true;
     poserReference(img);
     poserEchelleVisee(ECHELLE_FIXE);
 
@@ -3373,12 +3378,14 @@ function analyserVisee() {
 
   const f = fenetreVisee(v, V);
 
-  /* AUCUNE RECHERCHE D'ÉCHELLE. La calibration du 29/08/2026 a établi que
-     l'appareil natif et le flux du navigateur ont le même champ de vision
-     — cinq mesures à 99,9 %, dispersion nulle. Le score mesure donc
-     l'alignement seul, sans plus jamais compenser un déplacement par une
-     échelle. */
-  const pc = V.echelle || ECHELLE_FIXE;
+  /* RECHERCHE D'ÉCHELLE, validée sur le terrain le 29/08/2026 avec les
+     contours dilatés : elle reste stable autour de 100 %, ce qui confirme
+     la calibration au lieu de compenser un déplacement.
+
+     Elle se cherche au petit format — un essai y coûte 1,3 ms au lieu de
+     22 — puis l'alignement se mesure une seule fois au grand. */
+  const pc = chercherEchelle(v, f.dx, f.dy, f.l, f.h,
+                             V.echelleAuto !== false, V.echelle);
   const refC = contoursRef(pc, TAILLE);
   const m = refC
     ? chercherT(refC, contoursFluxT(v, f.dx, f.dy, f.l, f.h, pc, TAILLE), TAILLE)
@@ -3386,6 +3393,27 @@ function analyserVisee() {
 
   const p = Math.max(0, Math.round(m.score * 100));
   V.score = p;
+
+  /* L'échelle trouvée gouverne la superposition et le curseur. Elle est
+     affichée en permanence : si elle s'éloignait durablement de 100, ce
+     serait le signe qu'elle compense un déplacement, et il faudrait
+     l'arrêter. */
+  if (V.echelleAuto !== false && pc !== V.echelle) {
+    V.echelle = pc;
+    poserEchelleVisee(pc);
+    if ($("visee-zoom")) $("visee-zoom").value = Math.round(pc);
+    if ($("visee-val-zoom")) $("visee-val-zoom").textContent =
+      pc.toFixed(1).replace(".0", "") + " %";
+  }
+
+  /* L'échelle se fige quand elle est convaincante : la recherche cesse
+     alors de flatter le score, qui redevient une mesure de l'alignement
+     seul. Elle se libère si l'alignement s'effondre durablement. */
+  if (!echelleFigee && m.score >= 0.65) echelleFigee = pc;
+  echecs = (m.score < 0.22) ? echecs + 1 : 0;
+  if (echelleFigee && echecs >= 40) {
+    echelleFigee = null; echelleRetenue = null; echecs = 0;
+  }
 
   const bon = p >= R.seuil;
   $("visee-verdict").textContent = p + " % — " + (bon ? "aligné" : conseil(m));

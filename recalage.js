@@ -26,7 +26,9 @@
    qu'on prenait pour un écart d'échelle venait d'un zoom de 1,30 imposé
    par mon propre code au banc d'essai. */
 
-const TAILLE = 96;          // côté de l'image de travail
+const TAILLE = 96;          // mesure de l'alignement
+const TAILLE_ECH = 48;      // recherche de l'échelle — un essai y coûte
+                            // 1,3 ms au lieu de 22
 
 /* Réduit une image (tableau RGBA) en niveaux de gris à T×T. */
 function reduireT(rgba, L, H, T) {
@@ -181,6 +183,9 @@ function conseil(m) {
 var ECHELLE_FIXE = 100;
 var imageRefChargee = null;
 var reserve = {};
+var echelleRetenue = null;        // en pourcent, lissée
+var echelleFigee = null;          // arrêtée dès qu'elle est convaincante
+var echecs = 0;                   // analyses de suite sous le seuil
 
 /* Contours de la référence à une échelle donnée, mis en réserve : ils ne
    changent pas tant que la photographie ne change pas. */
@@ -229,6 +234,117 @@ function contoursFluxT(v, dx, dy, cl, ch, pc, T) {
   return contoursT(reduireT(px, T, T, T), T);
 }
 
+/* ---- RECHERCHE DE L'ÉCHELLE PAR SECTION DORÉE -------------------------
+
+   L'ancienne méthode balayait un pas fixe puis se contentait d'un
+   voisinage : elle ne convergeait jamais et restait prisonnière d'un
+   mauvais réglage. La section dorée, elle, réduit l'intervalle d'un
+   facteur 0,618 à chaque tour et converge en une douzaine d'essais,
+   quelle que soit la valeur cherchée.
+
+   L'ÉCHELLE SE PARCOURT EN LOGARITHME. Un pas fixe de 8 % vaut 16 %
+   d'écart relatif à 50 et 5,6 % à 142 : on chercherait finement là où ça
+   ne sert à rien. En logarithme, un pas vaut le même rapport partout. */
+const PHI = (Math.sqrt(5) - 1) / 2;
+const L_MIN = Math.log(50), L_MAX = Math.log(150);
+
+function sectionDoree(evaluer, precision, nAmorce, autour) {
+  /* Amorce : quelques points régulièrement espacés en logarithme, pour
+     encadrer le maximum. La section dorée l'exige — elle ne converge que
+     si le point du milieu bat ses deux voisins. */
+  /* AUTOUR DE LA VALEUR PRÉCÉDENTE quand on en a une. Repartir de zéro à
+     chaque image faisait atterrir la recherche un peu ailleurs à chaque
+     fois : le zoom sautait et la superposition avec. */
+  let lo = L_MIN, hi = L_MAX;
+  if (autour) {
+    const la = Math.log(autour);
+    lo = Math.max(L_MIN, la - Math.log(1.18));
+    hi = Math.min(L_MAX, la + Math.log(1.18));
+  }
+  const pts = [];
+  for (let i = 0; i < nAmorce; i++) {
+    const l = lo + (hi - lo) * i / (nAmorce - 1);
+    pts.push({ l, v: evaluer(Math.exp(l)) });
+  }
+  let k = 0;
+  for (let i = 1; i < pts.length; i++) if (pts[i].v > pts[k].v) k = i;
+  let a = pts[Math.max(0, k - 1)];
+  let b = pts[k];
+  let c = pts[Math.min(pts.length - 1, k + 1)];
+  let essais = nAmorce;
+
+  const cible = Math.log(1 + precision);
+  while (c.l - a.l > cible && essais < 30) {
+    let x;
+    if (c.l - b.l > b.l - a.l) {
+      x = { l: b.l + (1 - PHI) * (c.l - b.l) };
+      x.v = evaluer(Math.exp(x.l)); essais++;
+      if (x.v > b.v) { a = b; b = x; } else { c = x; }
+    } else {
+      x = { l: b.l - (1 - PHI) * (b.l - a.l) };
+      x.v = evaluer(Math.exp(x.l)); essais++;
+      if (x.v > b.v) { c = b; b = x; } else { a = x; }
+    }
+  }
+  return { echelle: Math.exp(b.l), score: b.v, essais };
+}
+
+/* SEULE ADAPTATION PAR RAPPORT AU BANC D'ESSAI.
+
+   L'original lisait trois réglages directement à l'écran :
+     if (!$("recherche-echelle").checked) return 100;
+     if (!$("echelle-auto").checked) return Number($("zoom-ref").value);
+   L'application n'a pas ces éléments : les valeurs arrivent en paramètre.
+   Le calcul, lui, n'est pas touché d'une ligne.
+
+   La recherche a été validée sur le terrain le 29/08/2026, avec les
+   contours dilatés : échelle stable autour de 100 %, étendue verte. */
+function chercherEchelle(v, dx, dy, cl, ch, active, echelleManuelle) {
+  if (!active) return echelleManuelle || 100;
+  if (echelleFigee) return echelleFigee;
+
+  const evaluer = (pc) => {
+    const r = contoursRef(pc, TAILLE_ECH);
+    if (!r) return 0;
+    return chercherT(r, contoursFluxT(v, dx, dy, cl, ch, pc, TAILLE_ECH),
+                     TAILLE_ECH).score;
+  };
+
+  /* Amorce large quand on part de rien, resserrée autour de la valeur
+     précédente sinon — l'opérateur ne saute pas d'une distance à l'autre. */
+  const res = sectionDoree(evaluer, 0.02,
+                           echelleRetenue === null ? 5 : 4, echelleRetenue);
+
+  if (echelleRetenue === null) { echelleRetenue = res.echelle; return arrondi(); }
+
+  /* NE PAS BOUGER POUR RIEN.
+
+     Près du but, deux échelles voisines donnent des scores qui ne
+     diffèrent que de quelques millièmes : c'est le bruit de mesure, pas
+     une information. La section dorée continue pourtant à chercher jusqu'à
+     sa précision demandée, et se met à osciller entre des valeurs
+     équivalentes — d'où le tremblement.
+
+     On n'adopte donc la nouvelle échelle que si elle apporte un gain
+     réel. C'est la même idée que la pénalité de complexité appliquée aux
+     décalages : à résultat équivalent, on ne bouge pas. */
+  const ancienScore = evaluer(echelleRetenue);
+  const gain = res.score - ancienScore;
+  if (gain < 0.02) return arrondi();      // le déplacement ne se justifie pas
+
+  /* LISSAGE, d'autant plus fort que l'alignement est déjà bon : c'est
+     près du but qu'il faut de la stabilité, et loin qu'il faut suivre. */
+  const part = ancienScore > 0.55 ? 0.15 : 0.35;
+  echelleRetenue = echelleRetenue * (1 - part) + res.echelle * part;
+  return arrondi();
+
+  function arrondi() {
+    /* Un demi-point de résolution suffit : au-delà, on n'affiche que du
+       bruit et le curseur s'agite sans que l'image change. */
+    return Math.round(echelleRetenue * 2) / 2;
+  }
+}
+
 /* Réduit la référence à une taille de travail, en gardant ses proportions.
    Rend un canevas, que drawImage accepte comme une image. */
 function reduireSource(src, cote) {
@@ -257,4 +373,7 @@ function reduireSource(src, cote) {
 function poserReference(img) {
   imageRefChargee = reduireSource(img, 512);
   reserve = {};
+  echelleRetenue = null;
+  echelleFigee = null;
+  echecs = 0;
 }
