@@ -192,7 +192,7 @@
 
     <div class="ligne"><span>Zoom de la RÉFÉRENCE</span>
       <span id="val-zoom-ref">100 %</span></div>
-    <input type="range" id="zoom-ref" min="50" max="150" step="2" value="100">
+    <input type="range" id="zoom-ref" min="10" max="125" step="1" value="100">
     <button class="mini secondaire" id="btn-relancer"
       style="width:100%;margin:0 0 4px">Relancer la recherche d'échelle</button>
 
@@ -442,7 +442,28 @@ function conseil(m) {
    d'écart relatif à 50 et 5,6 % à 142 : on chercherait finement là où ça
    ne sert à rien. En logarithme, un pas vaut le même rapport partout. */
 const PHI = (Math.sqrt(5) - 1) / 2;
-const L_MIN = Math.log(50), L_MAX = Math.log(150);
+/* PLAGE 10 À 125 %.
+
+   Elle allait de 50 à 150. Deux constats du 30/08/2026 l'ont fait revoir :
+
+   AU-DESSUS DE 100, ELLE NE SERT À RIEN. Une échelle supérieure à 100
+   signifierait que la référence embrasse PLUS que le flux — donc qu'on a
+   dézoomé en photographiant. Personne ne dézoome pour un état des lieux.
+   On garde 125 pour absorber les écarts de position, pas davantage.
+
+   EN DESSOUS, IL EN FAUT BEAUCOUP PLUS. L'opérateur zoome pour
+   photographier une écornure, une prise, un joint : c'est le cas normal,
+   pas l'exception. Un zoom de 2× à la prise demande une échelle de 50 %,
+   soit exactement l'ancienne borne — d'où l'échec constaté. Un zoom de
+   10× demande 10 %.
+
+   La plage passe donc d'un rapport de 3 à un rapport de 12. La section
+   dorée converge en un nombre d'essais proportionnel au logarithme de
+   cette largeur : seize au lieu de treize.
+
+   RÉSERVE : une plage large offre plus d'endroits où deux images sans
+   rapport se ressemblent par hasard. C'est à surveiller. */
+const L_MIN = Math.log(10), L_MAX = Math.log(125);
 
 function sectionDoree(evaluer, precision, nAmorce, autour) {
   /* Amorce : quelques points régulièrement espacés en logarithme, pour
@@ -453,6 +474,9 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
      fois : le zoom sautait et la superposition avec. */
   let lo = L_MIN, hi = L_MAX;
   if (autour) {
+    /* Fenêtre de ±18 % en RELATIF : à 100 elle couvre 85 à 118, à 20 elle
+       couvre 17 à 24. C'est ce qu'il faut, l'écart de position étant
+       proportionnel à l'échelle et non additif. */
     const la = Math.log(autour);
     lo = Math.max(L_MIN, la - Math.log(1.18));
     hi = Math.min(L_MAX, la + Math.log(1.18));
@@ -489,7 +513,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 3.8";
+const VERSION = "essai 4.0";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -884,9 +908,11 @@ function chercherEchelle(v, dx, dy, cl, ch) {
   return arrondi();
 
   function arrondi() {
-    /* Un demi-point de résolution suffit : au-delà, on n'affiche que du
-       bruit et le curseur s'agite sans que l'image change. */
-    return Math.round(echelleRetenue * 2) / 2;
+    /* Résolution relative : un demi-point à 100 %, un dixième à 20 %.
+       Un pas fixe serait grossier en bas de plage et inutilement fin en
+       haut. */
+    const pas = Math.max(0.1, echelleRetenue / 200);
+    return Math.round(echelleRetenue / pas) * pas;
   }
 }
 
@@ -988,10 +1014,12 @@ function analyser() {
     echMax = Math.max(echMax, m.echelle);
     const e = $("etendue");
     if (e) {
+      /* En relatif : quatre points d'écart à 100 % n'ont pas la même
+         portée qu'à 20 %. */
+      const rel = echMax / Math.max(1, echMin) - 1;
       e.textContent = echMin.toFixed(0) + " à " + echMax.toFixed(0) + " %  (" +
-        (echMax - echMin).toFixed(0) + " pt)";
-      e.className = (echMax - echMin) <= 4 ? "ok"
-                  : (echMax - echMin) <= 10 ? "attention" : "ko";
+        (rel * 100).toFixed(0) + " % d'écart)";
+      e.className = rel <= 0.05 ? "ok" : rel <= 0.12 ? "attention" : "ko";
     }
   }
 
