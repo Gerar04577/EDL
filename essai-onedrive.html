@@ -164,6 +164,8 @@
   <div class="ligne"><span>Échelle trouvée</span><span id="d-echelle">—</span></div>
   <div class="ligne"><span>Étendue observée</span><span id="d-etendue">—</span></div>
   <div class="ligne"><span>Temps par analyse</span><span id="d-ms">—</span></div>
+  <div class="ligne"><span>Détail du temps</span><span id="d-detail">—</span></div>
+  <div class="ligne"><span>Essais d'échelle</span><span id="d-essais">—</span></div>
 </div>
 
 <div class="bloc">
@@ -181,7 +183,7 @@
 <script src="recalage.js"></script>
 
 <script>
-const VERSION = "onedrive 1.2";
+const VERSION = "onedrive 1.3";
 
 /* L'adresse de redirection est ramenée à celle de l'application — la seule
    que Microsoft accepte. Elle n'est pas employée puisque le banc n'ouvre
@@ -201,6 +203,7 @@ let photos = [], liens = {};
 let V = null;                  // référence en cours
 let echMin = 999, echMax = 0;
 let compteur = 0, sommeMs = 0, dernier = Date.now();
+let sommeRech = 0, sommeMes = 0, sommeEssais = 0;
 
 function noter(t, c) {
   const j = $("journal");
@@ -517,18 +520,38 @@ function fenetre(v) {
            dy: Math.round((v.videoHeight - h) / 2) };
 }
 
+/* CHRONOMÉTRAGE PAR ÉTAPE.
+
+   Le banc de la pellicule tourne à 30 ms, celui-ci à 180 sur un calcul
+   identique. Mesurer chaque étape séparément est le seul moyen de savoir
+   laquelle coûte — plutôt que de supposer une quatrième fois.
+
+   On compte aussi les essais d'échelle : la section dorée en fait douze
+   au premier passage et trois ensuite, mais si elle repart de zéro à
+   chaque image, elle en refait douze indéfiniment. */
+let essaisEchelle = 0;
+const _contoursRefBrut = contoursRef;
+contoursRef = function (pc, T) { essaisEchelle++; return _contoursRefBrut(pc, T); };
+
 function analyser() {
   const v = $("flux");
   if (!v.videoWidth || !V) return;
   const t0 = performance.now();
+  essaisEchelle = 0;
   const f = fenetre(v);
 
   const auto = $("auto-echelle").checked;
+  const tRech = performance.now();
   const pc = chercherEchelle(v, f.dx, f.dy, f.l, f.h, auto, Number($("zoom").value));
+  const msRech = performance.now() - tRech;
+
+  const tMes = performance.now();
   const refC = contoursRef(pc, TAILLE);
   const m = refC
     ? chercherT(refC, contoursFluxT(v, f.dx, f.dy, f.l, f.h, pc, TAILLE), TAILLE)
     : { score: 0, dx: 0, dy: 0, e: 1 };
+  const msMes = performance.now() - tMes;
+  sommeRech += msRech; sommeMes += msMes; sommeEssais += essaisEchelle;
 
   const p = Math.max(0, Math.round(m.score * 100));
   const bon = p >= 68;
@@ -553,8 +576,14 @@ function analyser() {
 
   compteur++; sommeMs += performance.now() - t0;
   if (Date.now() - dernier > 1000) {
-    maj({ "d-ms": (sommeMs / compteur).toFixed(1) + " ms  ·  " + compteur + " / s" });
-    compteur = 0; sommeMs = 0; dernier = Date.now();
+    maj({
+      "d-ms": (sommeMs / compteur).toFixed(1) + " ms  ·  " + compteur + " / s",
+      "d-detail": "échelle " + (sommeRech / compteur).toFixed(0) + " ms  ·  " +
+        "mesure " + (sommeMes / compteur).toFixed(0) + " ms",
+      "d-essais": (sommeEssais / compteur).toFixed(1) + " par analyse",
+    });
+    compteur = 0; sommeMs = 0; sommeRech = 0; sommeMes = 0; sommeEssais = 0;
+    dernier = Date.now();
   }
 }
 
