@@ -195,7 +195,16 @@ function contoursRef(pc, T) {
      on la prend entière — c'est alors le FLUX qui est rogné. Jamais l'une
      réduite dans son coin : cela découvrirait du vide autour. */
   const z = Math.max(1, pc / 100);
-  const iw = imageRefChargee.naturalWidth, ih = imageRefChargee.naturalHeight;
+  /* UNE IMAGE, UN CANEVAS ET UN BITMAP N'EXPOSENT PAS LES MÊMES PROPRIÉTÉS.
+
+     Une balise <img> a naturalWidth et naturalHeight ; un canevas et un
+     bitmap n'ont que width et height. Lire les premières sur un canevas
+     donne une valeur indéfinie : le découpage échoue, les contours sortent
+     vides, le score reste à zéro. C'est exactement ce qui a cassé le banc
+     d'essai en version 3.5, et la réduction ci-dessus rend désormais un
+     canevas. */
+  const iw = imageRefChargee.naturalWidth || imageRefChargee.width;
+  const ih = imageRefChargee.naturalHeight || imageRefChargee.height;
   const sw = iw / z, sh = ih / z;
   ctx.drawImage(imageRefChargee, (iw - sw) / 2, (ih - sh) / 2, sw, sh, 0, 0, T, T);
   const d = ctx.getImageData(0, 0, T, T).data;
@@ -220,9 +229,32 @@ function contoursFluxT(v, dx, dy, cl, ch, pc, T) {
   return contoursT(reduireT(px, T, T, T), T);
 }
 
+/* Réduit la référence à une taille de travail, en gardant ses proportions.
+   Rend un canevas, que drawImage accepte comme une image. */
+function reduireSource(src, cote) {
+  const L = src.naturalWidth || src.width;
+  const H = src.naturalHeight || src.height;
+  const f = Math.min(1, cote / Math.max(L, H));
+  if (f >= 1) return src;
+  const c = document.createElement("canvas");
+  c.width = Math.round(L * f);
+  c.height = Math.round(H * f);
+  c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+  return c;
+}
+
 /* Remet la référence à neuf. La réserve contiendrait sinon les contours de
-   la photographie précédente — le défaut constaté le 28/08. */
+   la photographie précédente — le défaut constaté le 28/08.
+
+   LA RÉFÉRENCE EST RÉDUITE UNE SEULE FOIS, à 512 pixels au plus grand côté.
+
+   Chaque essai d'échelle redécoupait sinon l'image d'origine — 4284 × 5712,
+   soit vingt-quatre millions de pixels. Mesuré sur le terrain le 29/08 :
+   574 ms par analyse, deux images par seconde au lieu de dix.
+
+   Tout finissant en 96 × 96, cette réduction ne coûte aucune précision et
+   divise le travail par cent vingt-quatre. */
 function poserReference(img) {
-  imageRefChargee = img;
+  imageRefChargee = reduireSource(img, 512);
   reserve = {};
 }

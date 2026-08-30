@@ -4,7 +4,7 @@
 
 var CONFIG = {
 
-  version_app: "2.20.3",
+  version_app: "2.21.0",
 
   /* Protocole de signature imprimé en page 1 du procès-verbal.
      TEXTE DÉFINITIF, validé par l'avocat le 25/08/2026. Toute modification
