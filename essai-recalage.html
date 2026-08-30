@@ -192,7 +192,7 @@
 
     <div class="ligne"><span>Zoom de la RÉFÉRENCE</span>
       <span id="val-zoom-ref">100 %</span></div>
-    <input type="range" id="zoom-ref" min="10" max="125" step="1" value="100">
+    <input type="range" id="zoom-ref" min="25" max="125" step="1" value="100">
     <button class="mini secondaire" id="btn-relancer"
       style="width:100%;margin:0 0 4px">Relancer la recherche d'échelle</button>
 
@@ -451,19 +451,26 @@ const PHI = (Math.sqrt(5) - 1) / 2;
    dézoomé en photographiant. Personne ne dézoome pour un état des lieux.
    On garde 125 pour absorber les écarts de position, pas davantage.
 
-   EN DESSOUS, IL EN FAUT BEAUCOUP PLUS. L'opérateur zoome pour
-   photographier une écornure, une prise, un joint : c'est le cas normal,
-   pas l'exception. Un zoom de 2× à la prise demande une échelle de 50 %,
-   soit exactement l'ancienne borne — d'où l'échec constaté. Un zoom de
-   10× demande 10 %.
+   EN DESSOUS, IL EN FAUT PLUS. L'opérateur zoome souvent : un zoom de 2×
+   à la prise demande une échelle de 50 %, soit exactement l'ancienne
+   borne — d'où l'échec constaté. On descend donc à 25 %, ce qui couvre
+   jusqu'à un zoom de 4×.
 
-   La plage passe donc d'un rapport de 3 à un rapport de 12. La section
-   dorée converge en un nombre d'essais proportionnel au logarithme de
-   cette largeur : seize au lieu de treize.
+   POURQUOI PAS PLUS BAS. Une plage de 10 à 125 a été essayée le
+   30/08/2026 : le zoom s'est mis à bouger très fort. Douze fois plus
+   d'échelles à explorer, c'est douze fois plus d'endroits où deux images
+   sans rapport se ressemblent par hasard.
 
-   RÉSERVE : une plage large offre plus d'endroits où deux images sans
-   rapport se ressemblent par hasard. C'est à surveiller. */
-const L_MIN = Math.log(10), L_MAX = Math.log(125);
+   Et le principe même de la visée suppose un cadrage large — un mur, un
+   coin de pièce, un équipement entier — où les contours sont nombreux et
+   le placement tolérant. Retrouver à main levée un cadrage zoomé 10×
+   reviendrait à viser une zone de quelques centimètres : la référence n'y
+   montre qu'un centième de la surface.
+
+   Au-delà de 4×, la visée guidée ne s'applique pas. L'opérateur reprend
+   la photographie à vue — il voit la référence, il sait ce qu'il
+   cherche. */
+const L_MIN = Math.log(25), L_MAX = Math.log(125);
 
 function sectionDoree(evaluer, precision, nAmorce, autour) {
   /* Amorce : quelques points régulièrement espacés en logarithme, pour
@@ -513,7 +520,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 4.0";
+const VERSION = "essai 4.1";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
