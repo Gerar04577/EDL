@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Visée depuis OneDrive</title>
+
+<!--
+  BANC D'ESSAI À PARITÉ.
+
+  POURQUOI CE FICHIER EXISTE. Tous les échecs de portage des 29 et 30 août
+  viennent de la même cause : le banc d'essai chargeait la photographie
+  depuis la pellicule, l'application la charge depuis OneDrive. Deux
+  chemins, deux images, et ce qui marchait d'un côté échouait de l'autre.
+
+  Le 30/08, trois tentatives de contournement ont échoué :
+    — comparer deux fichiers pris sur le téléphone : iOS les convertit tous
+      deux en JPEG avant de les remettre à la page, on compare donc deux
+      sorties du même convertisseur ;
+    — coller un lien de partage : Microsoft refuse la lecture depuis une
+      autre origine ;
+    — supposer ce que fait Microsoft : quatre suppositions, quatre erreurs.
+
+  Il ne restait qu'une voie : que le banc reçoive l'image PAR LE MÊME
+  CHEMIN que l'application. C'est ce que fait ce fichier.
+
+  CE QU'IL NE FAIT PAS. Il n'écrit rien, ne supprime rien, ne dépose rien.
+  Il lit. Les fichiers de l'application — auth.js, graph.js,
+  comparaison-edl.js, recalage.js — sont inclus tels quels, jamais
+  modifiés : le banc s'adapte à eux, jamais l'inverse.
+
+  À ouvrir dans SAFARI, pas depuis l'icône de l'application.
+-->
+
+<style>
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; padding:calc(14px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom));
+    font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    color:#1a1a1a; background:#f7f6f3; }
+  h1 { font-size:19px; margin:0 0 2px; }
+  .sous { color:#6b6b6b; font-size:14px; margin:0 0 16px; }
+  .bloc { background:#fff; border:1px solid #e3e0da; border-radius:12px;
+    padding:14px; margin-bottom:12px; }
+  .bloc h2 { font-size:12px; text-transform:uppercase; letter-spacing:.07em;
+    color:#8a8a8a; margin:0 0 10px; font-weight:600; }
+  button { width:100%; padding:14px; font-size:16px; font-weight:600;
+    border:1px solid #2f7d63; border-radius:10px; background:#c9ecdb;
+    color:#12503d; margin-bottom:8px; -webkit-appearance:none; }
+  button.secondaire { background:#dbe9f7; color:#1a4a80; border-color:#7fa9d4; }
+  button.choix { text-align:left; font-weight:500; font-size:15px;
+    padding:12px 14px; background:#fff; border-color:#d0ccc4; color:#1a1a1a; }
+  button:disabled { opacity:.45; }
+  .note { font-size:13px; color:#6b6b6b; margin:6px 0; }
+  .ko { color:#b03a2e; } .ok { color:#1f7a4d; } .attention { color:#8a5a12; }
+  .cache { display:none; }
+  input[type=range] { width:100%; height:44px; margin:2px 0 10px;
+    -webkit-appearance:none; background:transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height:10px;
+    border-radius:5px; background:#dcd8d0; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none;
+    width:32px; height:32px; margin-top:-11px; border-radius:50%;
+    background:#2f7d63; border:3px solid #fff;
+    box-shadow:0 1px 4px rgba(0,0,0,.3); }
+  .ligne { display:flex; justify-content:space-between; gap:12px;
+    padding:7px 0; border-bottom:1px solid #f0eeea; font-size:14px; }
+  .ligne:last-child { border-bottom:0; }
+  .ligne span:last-child { color:#4a4a4a; font-variant-numeric:tabular-nums; }
+  .bascule { display:flex; align-items:center; gap:10px; padding:4px 0 8px;
+    font-size:15px; font-weight:500; }
+  .bascule input { width:30px; height:30px; margin:0; flex:none; }
+
+  #scene { position:relative; width:100%; aspect-ratio:3/4; background:#000;
+    border-radius:12px; overflow:hidden; margin-bottom:10px; max-height:56vh;
+    margin-left:auto; margin-right:auto; }
+  #flux, #calque { position:absolute; inset:0; width:100%; height:100%;
+    object-fit:cover; }
+  #calque { pointer-events:none; opacity:.35; }
+  #cadre { position:absolute; inset:0; border:3px solid transparent;
+    border-radius:12px; pointer-events:none; transition:border-color .2s; }
+  #verdict { position:absolute; left:0; right:0; top:0;
+    padding:calc(12px + env(safe-area-inset-top)) 12px 10px;
+    font-size:16px; font-weight:700; color:#fff; text-align:center;
+    background:linear-gradient(rgba(20,20,20,.78), rgba(20,20,20,.42)); }
+  #jauge { position:absolute; left:0; bottom:0; height:6px; width:0%;
+    background:#c9403a; transition:width .12s linear, background .2s; }
+
+  .vignettes { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .vignettes figure { margin:0; }
+  .vignettes img { width:100%; aspect-ratio:3/4; object-fit:cover;
+    border-radius:8px; display:block; background:#f0eeea; }
+  .vignettes figcaption { font-size:12px; color:#8a8a8a; text-align:center;
+    margin-top:3px; }
+  #journal { font-size:12px; line-height:1.55; max-height:220px;
+    overflow-y:auto; }
+</style>
+</head>
+<body>
+
+<h1>Visée depuis OneDrive</h1>
+<p class="sous">La référence arrive par le même chemin que dans l'application · <strong id="version"></strong></p>
+
+<div class="bloc">
+  <h2>1. Connexion</h2>
+  <button id="btn-connexion">Se connecter à OneDrive</button>
+  <p class="note" id="etat-connexion">Non connecté.</p>
+</div>
+
+<div class="bloc cache" id="bloc-dossiers">
+  <h2>2. Choisir un dossier d'entrée</h2>
+  <p class="note">Immeuble, puis unité, puis locataire. Le banc lira le
+  dossier EDLE qui s'y trouve.</p>
+  <div id="chemin" class="note"></div>
+  <div id="liste"></div>
+  <button class="secondaire cache" id="btn-remonter">Remonter</button>
+</div>
+
+<div class="bloc cache" id="bloc-photos">
+  <h2>3. Photographies de l'entrée</h2>
+  <p class="note" id="etat-photos"></p>
+  <div class="vignettes" id="vignettes"></div>
+</div>
+
+<div class="bloc cache" id="bloc-visee">
+  <h2>4. Visée</h2>
+  <div id="scene">
+    <video id="flux" playsinline muted autoplay></video>
+    <img id="calque" alt="">
+    <div id="cadre"></div>
+    <div id="verdict">Allume la caméra</div>
+    <div id="jauge"></div>
+  </div>
+
+  <button id="btn-camera">Allumer la caméra</button>
+
+  <div id="reglages" class="cache">
+    <div class="ligne"><span>Zoom de la référence</span>
+      <span id="val-zoom">100 %</span></div>
+    <input type="range" id="zoom" min="25" max="125" step="1" value="100">
+    <label class="bascule">
+      <input type="checkbox" id="auto-echelle" checked>
+      <span>Chercher l'échelle automatiquement</span>
+    </label>
+    <div class="ligne"><span>Transparence</span><span id="val-opacite">35 %</span></div>
+    <input type="range" id="opacite" min="0" max="100" value="35">
+    <button class="secondaire" id="btn-eteindre">Éteindre la caméra</button>
+  </div>
+</div>
+
+<div class="bloc cache" id="bloc-diag">
+  <h2>5. Ce que le banc a reçu</h2>
+  <div class="ligne"><span>Fichier</span><span id="d-nom">—</span></div>
+  <div class="ligne"><span>Voie employée</span><span id="d-voie">—</span></div>
+  <div class="ligne"><span>Poids reçu</span><span id="d-poids">—</span></div>
+  <div class="ligne"><span>Type reçu</span><span id="d-type">—</span></div>
+  <div class="ligne"><span>Dimensions</span><span id="d-dim">—</span></div>
+  <div class="ligne"><span>Décodeur</span><span id="d-decodeur">—</span></div>
+  <div class="ligne"><span>Contours</span><span id="d-contours">—</span></div>
+  <div class="ligne"><span>Flux obtenu</span><span id="d-flux">—</span></div>
+  <div class="ligne"><span>Échelle trouvée</span><span id="d-echelle">—</span></div>
+  <div class="ligne"><span>Étendue observée</span><span id="d-etendue">—</span></div>
+  <div class="ligne"><span>Temps par analyse</span><span id="d-ms">—</span></div>
+</div>
+
+<div class="bloc">
+  <h2>6. Journal</h2>
+  <p class="note" id="journal">En attente.</p>
+</div>
+
+<!-- LES FICHIERS DE L'APPLICATION, INCLUS TELS QUELS. Aucun n'est modifié. -->
+<script src="msal-browser.min.js"></script>
+<script src="config.js"></script>
+<script src="db.js"></script>
+<script src="auth.js"></script>
+<script src="graph.js"></script>
+<script src="comparaison-edl.js"></script>
+<script src="recalage.js"></script>
+
+<script>
+const VERSION = "onedrive 1.0";
+const $ = (id) => document.getElementById(id);
+
+let camera = null, boucle = null;
+let pile = [];                 // chemin de navigation
+let photos = [], liens = {};
+let V = null;                  // référence en cours
+let echMin = 999, echMax = 0;
+let compteur = 0, sommeMs = 0, dernier = Date.now();
+
+function noter(t, c) {
+  const j = $("journal");
+  j.innerHTML = `<span class="${c||""}">${new Date().toLocaleTimeString("fr-BE")} — ${t}</span><br>` + j.innerHTML;
+}
+function maj(champs) {
+  Object.keys(champs).forEach(id => { const e = $(id); if (e) e.textContent = champs[id]; });
+}
+function ech(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g,
+    c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+/* ---- 1. Connexion ------------------------------------------------------ */
+$("btn-connexion").onclick = async () => {
+  const b = $("btn-connexion");
+  b.disabled = true; b.textContent = "Connexion…";
+  try {
+    await initAuth();
+    if (!estConnecte()) await seConnecter();
+    $("etat-connexion").textContent = "Connecté — " + (nomUtilisateur() || "");
+    $("etat-connexion").className = "note ok";
+    b.classList.add("cache");
+    noter("Connecté à OneDrive.", "ok");
+    await ouvrirRacine();
+  } catch (e) {
+    b.disabled = false; b.textContent = "Se connecter à OneDrive";
+    $("etat-connexion").textContent = "Échec : " + e.message;
+    $("etat-connexion").className = "note ko";
+    noter("Connexion refusée : " + e.message, "ko");
+  }
+};
+
+/* ---- 2. Navigation dans les dossiers ---------------------------------- */
+async function ouvrirRacine() {
+  try {
+    const racine = await obtenirRefRacineImmobilier();
+    pile = [{ ref: racine, nom: CONFIG.onedrive.dossier_racine }];
+    $("bloc-dossiers").classList.remove("cache");
+    await afficherDossier();
+  } catch (e) {
+    noter("Racine introuvable : " + e.message, "ko");
+  }
+}
+
+async function afficherDossier() {
+  const courant = pile[pile.length - 1];
+  $("chemin").textContent = pile.map(p => p.nom).join(" / ");
+  $("btn-remonter").classList.toggle("cache", pile.length <= 1);
+  $("liste").innerHTML = "<p class='note'>Lecture…</p>";
+
+  let enfants;
+  try { enfants = await enfantsDeRef(courant.ref); }
+  catch (e) { $("liste").innerHTML = ""; return noter("Lecture impossible : " + e.message, "ko"); }
+
+  const dossiers = enfants.filter(e => e.folder || e.remoteItem);
+  const edle = dossiers.find(d =>
+    String(d.name || "").trim().toUpperCase() === CONFIG.onedrive.sous_dossier_edle);
+
+  $("liste").innerHTML = dossiers.map((d, i) =>
+    `<button class="choix" data-i="${i}">${ech(d.name)}${
+      String(d.name||"").trim().toUpperCase() === CONFIG.onedrive.sous_dossier_edle
+        ? "   ← photographies d'entrée" : ""}</button>`).join("")
+    || "<p class='note'>Aucun sous-dossier.</p>";
+
+  $("liste").querySelectorAll("[data-i]").forEach(b => b.onclick = async () => {
+    const d = dossiers[Number(b.getAttribute("data-i"))];
+    pile.push({ ref: refDe(d, courant.ref.driveId), nom: d.name });
+    if (String(d.name||"").trim().toUpperCase() === CONFIG.onedrive.sous_dossier_edle) {
+      await chargerPhotos();
+    } else {
+      await afficherDossier();
+    }
+  });
+
+  if (edle) noter("Dossier EDLE repéré ici.", "ok");
+}
+
+$("btn-remonter").onclick = async () => {
+  pile.pop();
+  $("bloc-photos").classList.add("cache");
+  await afficherDossier();
+};
+
+/* ---- 3. Les photographies, PAR LE CHEMIN DE L'APPLICATION -------------- */
+async function chargerPhotos() {
+  const courant = pile[pile.length - 1];
+  $("bloc-photos").classList.remove("cache");
+  $("etat-photos").textContent = "Lecture du dossier…";
+  $("vignettes").innerHTML = "";
+
+  let enfants;
+  try { enfants = await enfantsDeRef(courant.ref); }
+  catch (e) { return noter("Lecture impossible : " + e.message, "ko"); }
+
+  /* Le sous-dossier Photos des visites récentes, sinon le niveau courant. */
+  const sous = enfants.find(e => (e.folder || e.remoteItem) &&
+    String(e.name || "").toLowerCase() === "photos");
+  let liste = enfants, refPhotos = courant.ref;
+  if (sous) {
+    refPhotos = refDe(sous, courant.ref.driveId);
+    try { liste = await enfantsDeRef(refPhotos); } catch (_) {}
+  }
+
+  photos = liste
+    .filter(e => (e.file || (e.remoteItem && e.remoteItem.file)) &&
+                 /\.(jpe?g|png|heic|heif|webp)$/i.test(e.name || ""))
+    .map(e => {
+      const r = refDe(e, refPhotos.driveId);
+      return { nom_fichier: e.name, onedrive_item_id: r.id, drive_id: r.driveId };
+    })
+    .sort((a, b) => String(a.nom_fichier).localeCompare(String(b.nom_fichier)));
+
+  if (!photos.length) {
+    $("etat-photos").textContent = "Aucune photographie dans ce dossier.";
+    $("etat-photos").className = "note ko";
+    return noter("Aucune photographie.", "ko");
+  }
+
+  $("etat-photos").textContent = photos.length + " photographie(s). Touche-en une.";
+  $("etat-photos").className = "note ok";
+  noter(photos.length + " photographie(s) trouvée(s).", "ok");
+
+  $("vignettes").innerHTML = photos.map((p, i) =>
+    `<figure data-i="${i}"><div style="width:100%;aspect-ratio:3/4;
+      border-radius:8px;background:#f0eeea"></div>
+      <figcaption>${i + 1}</figcaption></figure>`).join("");
+
+  $("vignettes").querySelectorAll("[data-i]").forEach(f => f.onclick = () =>
+    choisirPhoto(photos[Number(f.getAttribute("data-i"))]));
+
+  /* Les aperçus, par la même fonction que l'application. */
+  for (let i = 0; i < photos.length; i++) {
+    try {
+      const u = await apercuPhotoEntree(photos[i], false);
+      liens[photos[i].onedrive_item_id] = u;
+      const f = $("vignettes").querySelector('[data-i="' + i + '"]');
+      if (f) f.innerHTML = `<img src="${ech(u)}" alt="" loading="lazy">` +
+        `<figcaption>${i + 1}</figcaption>`;
+    } catch (_) { /* une vignette manquante n'empêche rien */ }
+  }
+}
+
+/* ---- Le point qui compte : la référence par le chemin de l'application -- */
+async function choisirPhoto(p) {
+  $("bloc-visee").classList.remove("cache");
+  $("bloc-diag").classList.remove("cache");
+  maj({ "d-nom": p.nom_fichier });
+  noter("Chargement de " + p.nom_fichier + " par le chemin de l'application…");
+
+  let a;
+  try { a = await apercuBlobEntree(p, true); }
+  catch (e) {
+    noter("Aperçu impossible : " + e.message, "ko");
+    return maj({ "d-voie": "échec" });
+  }
+
+  const blob = a.blob || null;
+  const url = a.url || a;
+  maj({
+    "d-poids": blob ? Math.round(blob.size / 1024) + " Ko" : "inconnu",
+    "d-type": blob ? (blob.type || "inconnu") : "inconnu",
+    "d-voie": /\.(jpe?g|png|webp)$/i.test(p.nom_fichier)
+      ? "fichier d'origine" : "aperçu Microsoft",
+  });
+
+  /* Décodage : le même que le banc de recalage. */
+  const balise = await new Promise((ok, ko) => {
+    const i = new Image(); i.onload = () => ok(i);
+    i.onerror = () => ko(new Error("image illisible")); i.src = url;
+  });
+  let src = balise, decodeur = "balise";
+  if (blob && typeof createImageBitmap === "function") {
+    try {
+      src = await createImageBitmap(blob, { imageOrientation: "from-image" });
+      decodeur = "bitmap";
+    } catch (_) { src = balise; }
+  }
+
+  const L = src.naturalWidth || src.width, H = src.naturalHeight || src.height;
+  poserReference(src);
+  const c = contoursRef(100, TAILLE);
+  const d = densiteContoursT(c, TAILLE);
+
+  V = { photo: p, url, L, H };
+  echMin = 999; echMax = 0;
+  $("calque").src = url;
+  $("scene").style.aspectRatio = L + " / " + H;
+
+  maj({
+    "d-dim": L + "×" + H,
+    "d-decodeur": decodeur,
+    "d-contours": (d.part * 100).toFixed(1) + " %",
+  });
+  noter("Reçu : " + L + "×" + H + " par " + decodeur + ", " +
+    (d.part * 100).toFixed(1) + " % de contours.", "ok");
+}
+
+/* ---- 4. La visée, identique au banc de recalage ------------------------ */
+$("btn-camera").onclick = async () => {
+  if (!V) return noter("Choisis d'abord une photographie.", "ko");
+  const b = $("btn-camera");
+  b.disabled = true; b.textContent = "Ouverture…";
+  try {
+    camera = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" },
+               width: { ideal: 4032 }, height: { ideal: 3024 },
+               focusMode: { ideal: "continuous" } },
+      audio: false,
+    });
+    $("flux").srcObject = camera;
+    await $("flux").play();
+    const r = camera.getVideoTracks()[0].getSettings();
+    maj({ "d-flux": (r.width || "?") + "×" + (r.height || "?") });
+    b.classList.add("cache");
+    $("reglages").classList.remove("cache");
+    boucle = setInterval(analyser, 100);
+    noter("Caméra allumée — " + r.width + "×" + r.height + ".", "ok");
+  } catch (e) {
+    b.disabled = false; b.textContent = "Allumer la caméra";
+    noter("Caméra refusée : " + e.name, "ko");
+  }
+};
+
+$("btn-eteindre").onclick = () => {
+  if (boucle) { clearInterval(boucle); boucle = null; }
+  if (camera) camera.getTracks().forEach(t => t.stop());
+  camera = null;
+  $("reglages").classList.add("cache");
+  $("btn-camera").classList.remove("cache");
+  $("btn-camera").disabled = false;
+  $("btn-camera").textContent = "Allumer la caméra";
+};
+
+$("opacite").oninput = () => {
+  $("calque").style.opacity = $("opacite").value / 100;
+  $("val-opacite").textContent = $("opacite").value + " %";
+};
+$("zoom").oninput = () => {
+  $("auto-echelle").checked = false;
+  poserEchelle(Number($("zoom").value));
+  $("val-zoom").textContent = $("zoom").value + " % (à la main)";
+};
+
+/* Même règle que le banc de recalage : on n'agrandit jamais qu'une des
+   deux images, car réduire l'une découvrirait du vide. */
+function poserEchelle(pc) {
+  const zoomer = (el, f) => {
+    const t = 100 * f;
+    el.style.width = t + "%"; el.style.height = t + "%";
+    el.style.left = (-(t - 100) / 2) + "%";
+    el.style.top = (-(t - 100) / 2) + "%";
+  };
+  if (pc >= 100) { zoomer($("calque"), pc / 100); zoomer($("flux"), 1); }
+  else { zoomer($("calque"), 1); zoomer($("flux"), 100 / pc); }
+}
+
+function fenetre(v) {
+  const rapport = V.L / V.H;
+  let l = v.videoWidth, h = Math.round(v.videoWidth / rapport);
+  if (h > v.videoHeight) { h = v.videoHeight; l = Math.round(v.videoHeight * rapport); }
+  return { l, h, dx: Math.round((v.videoWidth - l) / 2),
+           dy: Math.round((v.videoHeight - h) / 2) };
+}
+
+function analyser() {
+  const v = $("flux");
+  if (!v.videoWidth || !V) return;
+  const t0 = performance.now();
+  const f = fenetre(v);
+
+  const auto = $("auto-echelle").checked;
+  const pc = chercherEchelle(v, f.dx, f.dy, f.l, f.h, auto, Number($("zoom").value));
+  const refC = contoursRef(pc, TAILLE);
+  const m = refC
+    ? chercherT(refC, contoursFluxT(v, f.dx, f.dy, f.l, f.h, pc, TAILLE), TAILLE)
+    : { score: 0, dx: 0, dy: 0, e: 1 };
+
+  const p = Math.max(0, Math.round(m.score * 100));
+  const bon = p >= 68;
+  $("verdict").textContent = p + " % — " + (bon ? "aligné" : conseil(m)) +
+    "   ×" + (pc / 100).toFixed(2);
+  $("jauge").style.width = p + "%";
+  $("jauge").style.background = bon ? "#2f7d63" : p > 48 ? "#c8891f" : "#c9403a";
+  $("cadre").style.borderColor = bon ? "#2f7d63" : "transparent";
+
+  if (auto) {
+    poserEchelle(pc);
+    $("zoom").value = Math.round(pc);
+    $("val-zoom").textContent = pc.toFixed(1).replace(".0", "") + " %";
+    echMin = Math.min(echMin, pc); echMax = Math.max(echMax, pc);
+    const rel = echMax / Math.max(1, echMin) - 1;
+    maj({ "d-echelle": pc.toFixed(1) + " %",
+          "d-etendue": echMin.toFixed(0) + " à " + echMax.toFixed(0) +
+            " %  (" + (rel * 100).toFixed(0) + " %)" });
+    const e = $("d-etendue");
+    if (e) e.className = rel <= 0.05 ? "ok" : rel <= 0.12 ? "attention" : "ko";
+  }
+
+  compteur++; sommeMs += performance.now() - t0;
+  if (Date.now() - dernier > 1000) {
+    maj({ "d-ms": (sommeMs / compteur).toFixed(1) + " ms  ·  " + compteur + " / s" });
+    compteur = 0; sommeMs = 0; dernier = Date.now();
+  }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (!camera || document.hidden) return;
+  const p = camera.getVideoTracks()[0];
+  if (!p || p.readyState !== "live") {
+    noter("Le flux a été coupé par iOS — rallume la caméra.", "ko");
+    $("btn-eteindre").click();
+  }
+});
+
+$("version").textContent = VERSION;
+document.title = "OneDrive — " + VERSION;
+noter(VERSION + " — prêt. Connecte-toi à OneDrive.");
+</script>
+</body>
+</html>
