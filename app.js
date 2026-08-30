@@ -2564,14 +2564,31 @@ async function ecranPiece(pieceId) {
      navigation — laisserait la caméra allumée et la boucle d'analyse en
      marche. */
   if (E.visee) arreterVisee();   /* caméra et boucle d'analyse */
+  const memePiece = (E.piece === pieceId);
   E.ecran = "piece";
   E.piece = pieceId;
-  E.brouillons = {}; E.etat = undefined; E.proprete = undefined;
-  E.commentaireGeneral = undefined; E.indexEdition = null;
+
+  /* LES BROUILLONS NE SURVIVENT PAS À UN CHANGEMENT DE PIÈCE — mais ils
+     doivent survivre à un RETOUR DANS LA MÊME.
+
+     garderVisee revient ici après chaque photographie. Effacer les
+     brouillons à ce moment-là perdait le texte des photographies déjà
+     comparées : on comparait la troisième, on prenait la quatrième, et la
+     comparaison de la troisième disparaissait sans un mot.
+
+     C'est ce qui faisait croire que « Ajouter au constat » ne marchait pas
+     pour les comparaisons — défaut trouvé le 30/08/2026. */
+  if (!memePiece) {
+    E.brouillons = {};
+    E.commentaireGeneral = undefined;
+    viderGroupe();
+  }
+  E.etat = undefined; E.proprete = undefined;
+  E.indexEdition = null;
+  E.photoGardee = null;
   /* E.photosEntree et E.liensEntree survivent au changement de pièce :
      ils valent pour toute la visite, et les relire coûterait un appel
      Graph par image à chaque fois. */
-  viderGroupe();
   VISITE = (await lireVisite(VISITE.visit_id)) || VISITE;
   const piece = VISITE.pieces.find(p => p.piece_id === pieceId);
   titre(piece.libelle, VISITE.bien.unite_source);
@@ -3660,6 +3677,7 @@ function dessinerControleVisee(message) {
 }
 
 async function garderVisee() {
+  let photoId = null;
   const V = E.visee;
   const p = V.prise;
   const b = $("visee-garder");
@@ -3669,7 +3687,7 @@ async function garderVisee() {
     /* La photographie suit le chemin habituel — empreinte, file d'attente,
        sous-dossier Photos. Trois champs de plus la rattachent à sa
        référence et conservent la qualité du cadrage. */
-    await ajouterPhoto(VISITE, E.piece, p.blob, {
+    photoId = await ajouterPhoto(VISITE, E.piece, p.blob, {
       photo_entree_id: V.ref.onedrive_item_id,
       photo_entree_nom: V.ref.nom_fichier,
       score_alignement: p.score,
@@ -3681,8 +3699,20 @@ async function garderVisee() {
   await journaliser("visee_photo_gardee",
     { entree: V.ref.nom_fichier, score: p.score });
 
+  /* ON REVIENT SUR LA PHOTOGRAPHIE QU'ON VIENT DE PRENDRE.
+
+     L'écran remontait en haut de la pièce : l'opérateur se retrouvait
+     devant la PREMIÈRE photographie, la décrivait, et la comparaison
+     faite sur la troisième restait sans constat. Défaut signalé le
+     30/08/2026 — il ne se voyait pas, puisque tout paraissait fonctionner.
+
+     Elle est donc signalée par un liseré et l'écran défile jusqu'à elle.
+     Le liseré disparaît dès que la constatation est faite : il dit ce
+     qu'il RESTE à faire, pas ce qui a été fait. */
+  const gardee = photoId;
   arreterVisee();
   await ecranPiece(E.piece);
+  E.photoGardee = gardee;
   dessinerPiece("Photographie reprise à " + p.score + " % d'alignement");
 }
 
@@ -3962,6 +3992,16 @@ function brancherZoneGroupe(piece, photos) {
   };
 }
 
+/* Amène la photographie signalée sous les yeux. Un défilement immédiat
+   arriverait avant que le navigateur n'ait posé la mise en page. */
+function allerAPhotoGardee() {
+  if (!E.photoGardee) return;
+  requestAnimationFrame(() => {
+    const el = $("photo-a-traiter");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+}
+
 function dessinerPiece(message) {
   const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
   const photos = VISITE.photos.filter(p => p.rattachement === E.piece);
@@ -4026,7 +4066,11 @@ function dessinerPiece(message) {
         const brouillon = E.brouillons[p.photo_id] === undefined
           ? (p.description || "") : E.brouillons[p.photo_id];
         const dejaConstat = piece.constatations.some(c => c.photo_id === p.photo_id);
-        return `<div class="constat">
+        /* Le liseré ne dure que tant qu'il reste quelque chose à faire. */
+        const aTraiter = E.photoGardee === p.photo_id && !dejaConstat;
+        return `<div class="constat${aTraiter ? " a-traiter" : ""}${
+          dejaConstat ? " traitee" : ""}"${aTraiter ? ' id="photo-a-traiter"' : ""}>
+          ${aTraiter ? `<p class="etiquette-gardee">Celle que tu viens de garder</p>` : ""}
           <div class="ligne"><span>${echapper(p.nom_fichier)}</span>
           <span class="val ${p.statut_transfert === "confirme" ? "ok" : "ko"}">${
             p.statut_transfert === "confirme" ? "enregistrée"
@@ -4152,6 +4196,7 @@ function dessinerPiece(message) {
       return dessinerPiece("Enregistrement impossible : " + e.message);
     }
     E.brouillons[id] = texte;
+    if (E.photoGardee === id) E.photoGardee = null;
     programmerDepot();
     const pc = VISITE.pieces.find(x => x.piece_id === E.piece);
     dessinerPiece("Constatation enregistrée — " + pc.constatations.length +
@@ -4306,6 +4351,8 @@ function dessinerPiece(message) {
 
   brancherGroupe(piece, photos);
   majCompteurAttente(VISITE.photos.length);
+
+  allerAPhotoGardee();
 }
 
 /* Le fichier de visite n'est plus déposé à chaque frappe : on attend

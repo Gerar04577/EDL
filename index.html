@@ -129,6 +129,15 @@
     border-radius:50%; background:#fff; border:4px solid #1a1a1a;
     box-shadow:0 0 0 3px #fff inset, 0 2px 8px rgba(0,0,0,.25); }
   #visee-obturateur:active { background:#dcd8d0; transform:scale(.94); }
+
+  /* LA PHOTOGRAPHIE QU'ON VIENT DE GARDER.
+     Le liseré ne dure que tant qu'il reste une constatation à écrire :
+     il dit ce qu'il RESTE à faire, pas ce qui a été fait. */
+  .constat.a-traiter { border:2px solid #2f7d63; }
+  .etiquette-gardee { margin:0 0 8px; font-size:12px; display:inline-block;
+    background:#e6f4ec; color:#12503d; padding:3px 10px; border-radius:8px; }
+  /* Celles qui sont déjà décrites reculent, sans devenir illisibles. */
+  .constat.traitee { opacity:.72; }
   /* Les boutons « mini » se posaient à côté des curseurs et en masquaient
      la moitié droite : la poignée du zoom, au milieu de sa course, paraissait
      à gauche. Sur leur propre ligne, ils ne recouvrent plus rien. */

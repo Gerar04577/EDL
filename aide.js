@@ -191,16 +191,22 @@ var AIDE = [
       "verdit à 60 %, valeur éprouvée sur le terrain. En dessous, une consigne " +
       "s'affiche — recule, pivote à gauche, relève.",
 
-      "LE SCORE NE MESURE QUE TON PLACEMENT. Une campagne de mesures a établi " +
-      "que l'appareil photo de l'iPhone et la caméra du navigateur voient la " +
-      "même largeur : il n'y a aucune correction de taille à faire. Si le " +
-      "score est bas, c'est que tu n'es pas au bon endroit — avance, recule, " +
-      "pivote, comme la consigne l'indique.",
+      "L'ÉCHELLE SE CHERCHE TOUTE SEULE. Si la photographie d'entrée a été " +
+      "prise en zoomant, elle montre les choses plus grosses que ta caméra : " +
+      "l'application s'en aperçoit et ajuste la superposition. Tu n'as rien " +
+      "à faire. Le pourcentage s'affiche sous l'image, et 100 % veut dire " +
+      "qu'aucune correction n'est nécessaire.",
 
-      "UN CURSEUR DE SECOURS existe malgré tout, sous l'image : « Zoom de la " +
-      "référence ». Il vaut 100 % et n'a pas à bouger. Il est là au cas où " +
-      "une photographie d'entrée aurait été prise autrement — à l'ultra " +
-      "grand-angle, par exemple. Un bouton le remet à 100 %.",
+      "JUSQU'À UN ZOOM DE QUATRE FOIS, le guidage fonctionne. Au-delà — une " +
+      "écornure photographiée de très près, un joint, une prise — la " +
+      "référence ne montre qu'un tout petit morceau de la pièce et retrouver " +
+      "ce cadrage à main levée devient impossible. Reprends alors la " +
+      "photographie à vue : tu as la vignette d'entrée sous les yeux, tu " +
+      "sais ce que tu cherches.",
+
+      "UN CURSEUR DE SECOURS reste disponible sous l'image : « Zoom de la " +
+      "référence ». Le toucher arrête la recherche automatique ; le bouton " +
+      "juste en dessous la relance.",
 
       "LE BOUTON AUTO est dans l'image, en bas à droite. Vert avec un point " +
       "quand il est actif. Le déclencheur rond, lui, est juste sous l'image, " +
@@ -209,7 +215,8 @@ var AIDE = [
       "LA PHOTOGRAPHIE DE SORTIE SERA PLUS CLAIRE que celle d'entrée, et ce " +
       "n'est pas réglable : le navigateur n'a pas accès au traitement d'image " +
       "d'Apple. Tiens-en compte quand tu apprécies une salissure — elle " +
-      "paraîtra moins marquée qu'elle ne l'est.",
+      "paraîtra moins marquée qu'elle ne l'est. Si un doute subsiste, " +
+      "photographie de plus près.",
 
       "DÉCLENCHEMENT AUTOMATIQUE. Un bouton l'active. Une fois les 60 % " +
       "atteints, le cadre passe à l'orange et un décompte s'affiche : NE BOUGE " +
@@ -225,6 +232,13 @@ var AIDE = [
       "n'est enregistré ni envoyé dans OneDrive tant que tu n'as pas appuyé sur " +
       "« Garder ». « Refaire » relance la visée, « Abandonner » revient à la " +
       "pièce.",
+
+      "APRÈS « GARDER », TU REVIENS SUR CETTE PHOTOGRAPHIE, pas en haut de " +
+      "la pièce. Elle est entourée d'un liseré vert et signalée « Celle que " +
+      "tu viens de garder ». Les photographies déjà décrites sont légèrement " +
+      "estompées. C'est là que tu écris ta constatation, ou que tu touches " +
+      "« Comparer avec l'entrée ». Le liseré disparaît dès que la " +
+      "constatation est ajoutée.",
 
       "CE QUI EST CONSERVÉ. La photographie gardée porte le lien vers sa vue " +
       "d'entrée et le score obtenu. Ce score figurera au procès-verbal : il dit " +
