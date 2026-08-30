@@ -185,11 +185,14 @@ async function apercuBlobEntree(photo, grand) {
      pellicule. Le HEIC des anciens états des lieux passe par « large ». */
   const lisibleParSafari = /\.(jpe?g|png|webp)$/i.test(photo.nom_fichier || "");
 
+  /* On garde le blob : la visée le confie à createImageBitmap, qui décode
+     comme le banc d'essai. */
   const rapatrier = async (chemin) => {
     const res = await appelGraph(chemin);
     if (!res.ok) return null;
     const blob = await res.blob();
-    return (blob && blob.size) ? URL.createObjectURL(blob) : null;
+    if (!blob || !blob.size) return null;
+    return { url: URL.createObjectURL(blob), blob };
   };
 
   if (grand && lisibleParSafari) {
@@ -197,7 +200,26 @@ async function apercuBlobEntree(photo, grand) {
     catch (_) { /* on tentera l'aperçu */ }
   }
 
-  for (const t of (grand ? ["large", "medium"] : ["large", "medium"])) {
+  /* c1920x1920 D'ABORD POUR LA VISÉE — mesuré sur le terrain le
+     30/08/2026, sur un HEIC d'iPhone déposé dans OneDrive :
+
+       source        refusée
+       c1920x1920    1440×1920   317 Ko    ← proportions conservées
+       large          600×800     68 Ko
+       medium         132×176      6 Ko
+       small           72×96       3 Ko
+
+     LE PRÉFIXE « c » NE RECADRE PAS. C'est le suffixe « _crop » qui le
+     fait — l'exemple officiel est « c300x400_crop ». Je l'avais retirée le
+     29/08 en croyant l'inverse, sans jamais le vérifier : c'était la
+     meilleure taille disponible.
+
+     ET « large » NE FAIT PAS 1920 malgré la documentation : 600×800 sur ce
+     fichier. Deux signalements ouverts depuis 2021 décrivent cette perte
+     de résolution sur les HEIC de l'iPhone, jamais corrigée.
+
+     Pour les vignettes, « large » suffit et coûte cinq fois moins. */
+  for (const t of (grand ? ["c1920x1920", "large", "medium"] : ["large", "medium"])) {
     try { const u = await rapatrier(`${base}/thumbnails/0/${t}/content`); if (u) return u; }
     catch (_) { /* taille suivante */ }
   }
@@ -213,8 +235,8 @@ async function apercuPhotoEntree(photo, grand) {
   const base = photo.drive_id
     ? `/drives/${photo.drive_id}/items/${photo.onedrive_item_id}`
     : `/me/drive/items/${photo.onedrive_item_id}`;
-  /* « large » : 1920 pixels au plus long côté, proportions conservées.
-     Voir apercuBlobEntree pour le détail des tailles de Microsoft. */
+  /* Vignettes : « large » suffit — 600×800 mesuré, 68 Ko. Voir
+     apercuBlobEntree pour le détail des tailles de Microsoft. */
   const tailles = ["large", "medium"];
 
   for (const t of tailles) {

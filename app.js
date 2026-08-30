@@ -3068,18 +3068,24 @@ async function ecranViseeGuidee(itemEntree) {
   /* La vignette suffit à choisir, pas à se superposer : on redemande un
      aperçu en grande taille pour la visée. Toujours du JPEG, quel que soit
      le format d'origine — les anciens états des lieux sont en HEIC. */
-  let lien;
+  let lien, blobRef = null;
   try {
     /* Rapatrié en local : une image d'un autre domaine ne peut pas voir
-       ses pixels lus, et l'analyse des contours échouerait. */
-    lien = noterApercu(await apercuBlobEntree(ref, true));
+       ses pixels lus, et l'analyse des contours échouerait.
+
+       Le blob est conservé : createImageBitmap le décode comme le fait le
+       banc d'essai, et c'est ce décodeur-là qui donne les bons scores. */
+    const a = await apercuBlobEntree(ref, true);
+    lien = noterApercu(a.url);
+    blobRef = a.blob;
   } catch (err) {
     return dessinerPiece("Aperçu impossible pour cette photographie : " + err.message);
   }
 
   E.ecran = "visee";
-  E.visee = { ref, lien, score: 0, auto: false, camera: null, boucle: null,
-              refL: 0, refH: 0, stableDepuis: 0, echelle: ECHELLE_FIXE };
+  E.visee = { ref, lien, blobRef, score: 0, auto: false, camera: null,
+              boucle: null, refL: 0, refH: 0, stableDepuis: 0,
+              echelle: ECHELLE_FIXE };
   const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
   titre("Refaire le cadrage", piece ? piece.libelle : "");
   dessinerVisee();
@@ -3296,8 +3302,33 @@ async function allumerVisee() {
   /* La référence est réduite une fois pour toutes : c'est sur ses contours
      que porteront toutes les comparaisons. */
   try {
-    const img = await chargerImage(V.lien);
-    V.refL = img.naturalWidth; V.refH = img.naturalHeight;
+    /* LE MÊME DÉCODEUR QUE LE BANC D'ESSAI.
+
+       C'était la seule différence entre les deux : le banc décode avec
+       createImageBitmap, l'application décodait avec une balise image. Deux
+       décodeurs distincts, deux jeux de pixels, deux amplitudes de
+       gradient — d'où des scores exagérés dans l'application alors que le
+       banc était juste.
+
+       La documentation signale d'ailleurs que Safari a des bugs de
+       conversion d'espace colorimétrique sur cette voie, et que la qualité
+       de réduction n'est pas définie par la norme.
+
+       ATTENTION : l'objet rendu n'a QUE width et height, jamais
+       naturalWidth. C'est cette erreur qui avait tout cassé le 29/08 —
+       toutes les lectures de dimensions acceptent désormais les deux
+       noms. */
+    const balise = await chargerImage(V.lien);
+    let img = balise;
+    if (V.blobRef && typeof createImageBitmap === "function") {
+      try {
+        img = await createImageBitmap(V.blobRef, { imageOrientation: "from-image" });
+      } catch (_) { img = balise; }
+    }
+
+    V.refL = img.naturalWidth || img.width;
+    V.refH = img.naturalHeight || img.height;
+    V.decodeur = (img === balise) ? "balise" : "bitmap";
     /* Le format est désormais posé par dessinerVisee, à chaque redessin.
        Ici on ne fait que le rattraper pour l'affichage en cours. */
     const scene = $("scene-visee");
@@ -3315,7 +3346,7 @@ async function allumerVisee() {
     const contoursRefInitial = contoursRef(ECHELLE_FIXE, TAILLE);
     const d = densiteContoursT(contoursRefInitial, TAILLE);
     $("visee-diag").textContent = d.part > 0.02
-      ? "Référence " + V.refL + "×" + V.refH + " — " +
+      ? "Référence " + V.refL + "×" + V.refH + " (" + V.decodeur + ") — " +
         (d.part * 100).toFixed(1) + " % de contours."
       : "Surface très unie (" + (d.part * 100).toFixed(1) + " % de contours) : " +
         "le score sera peu fiable, fie-toi à la superposition.";
