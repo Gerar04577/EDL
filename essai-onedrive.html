@@ -169,6 +169,16 @@
   <div class="ligne"><span>Échelle figée</span><span id="d-figee">non</span></div>
 </div>
 
+<div class="bloc cache" id="bloc-tailles">
+  <h2>Ce que Microsoft rend, taille par taille</h2>
+  <p class="note">Chaque taille du jeu de vignettes est demandée et mesurée.
+  La documentation annonce 1920 pour « large » et l'image d'origine pour
+  « source » ; deux signalements ouverts depuis 2021 décrivent au contraire
+  une perte de résolution sur les HEIC de l'iPhone.</p>
+  <table id="tab-tailles" style="width:100%;border-collapse:collapse;font-size:14px"></table>
+  <button class="secondaire" id="btn-tailles" style="margin-top:10px">Réessayer</button>
+</div>
+
 <div class="bloc">
   <h2>6. Journal</h2>
   <p class="note" id="journal">En attente.</p>
@@ -184,7 +194,7 @@
 <script src="recalage.js"></script>
 
 <script>
-const VERSION = "onedrive 1.4";
+const VERSION = "onedrive 1.5";
 
 /* L'adresse de redirection est ramenée à celle de l'application — la seule
    que Microsoft accepte. Elle n'est pas employée puisque le banc n'ouvre
@@ -453,7 +463,78 @@ async function choisirPhoto(p) {
   });
   noter("Reçu : " + L + "×" + H + " par " + decodeur + ", " +
     (d.part * 100).toFixed(1) + " % de contours.", "ok");
+
+  $("bloc-tailles").classList.remove("cache");
+  mesurerTailles(p);
 }
+
+/* ---- Ce que Microsoft rend, taille par taille -------------------------
+
+   « source » n'était pas employée : la documentation la décrit comme
+   « une vignette personnalisée OU L'IMAGE D'ORIGINE ayant servi à générer
+   les autres ». C'est précisément ce qu'il nous faut.
+
+   Et le préfixe « c » ne recadre pas : c'est le suffixe « _crop » qui le
+   fait. L'exemple officiel est « c300x400_crop ». J'avais conclu
+   l'inverse le 29/08 et retiré cette taille pour la mauvaise raison, sans
+   jamais la vérifier.
+
+   On mesure donc, au lieu de supposer une cinquième fois. */
+const TAILLES = ["source", "c1920x1920", "large", "medium", "small"];
+
+async function mesurerTailles(p) {
+  const base = p.drive_id
+    ? `/drives/${p.drive_id}/items/${p.onedrive_item_id}`
+    : `/me/drive/items/${p.onedrive_item_id}`;
+
+  $("tab-tailles").innerHTML =
+    "<tr><th style='text-align:left;padding:6px 4px;font-size:11px;" +
+    "text-transform:uppercase;color:#8a8a8a'>Taille</th>" +
+    "<th style='text-align:right;padding:6px 4px;font-size:11px;" +
+    "text-transform:uppercase;color:#8a8a8a'>Reçu</th>" +
+    "<th style='text-align:right;padding:6px 4px;font-size:11px;" +
+    "text-transform:uppercase;color:#8a8a8a'>Poids</th></tr>" +
+    TAILLES.map(t => `<tr id="t-${t}"><td style="padding:7px 4px;` +
+      `border-bottom:1px solid #f0eeea">${t}</td>` +
+      `<td style="text-align:right;padding:7px 4px;border-bottom:1px solid #f0eeea">…</td>` +
+      `<td style="text-align:right;padding:7px 4px;border-bottom:1px solid #f0eeea">…</td></tr>`).join("");
+
+  let meilleure = null, meilleurCote = 0;
+
+  for (const t of TAILLES) {
+    const tr = $("t-" + t);
+    try {
+      const res = await appelGraph(`${base}/thumbnails/0/${t}/content`);
+      if (!res.ok) { tr.cells[1].textContent = "refusée"; tr.cells[2].textContent = "—"; continue; }
+      const blob = await res.blob();
+      const u = URL.createObjectURL(blob);
+      const img = await new Promise((ok, ko) => {
+        const i = new Image(); i.onload = () => ok(i);
+        i.onerror = () => ko(new Error("illisible")); i.src = u;
+      });
+      const cote = Math.max(img.naturalWidth, img.naturalHeight);
+      tr.cells[1].textContent = img.naturalWidth + "×" + img.naturalHeight;
+      tr.cells[2].textContent = Math.round(blob.size / 1024) + " Ko";
+      if (cote > meilleurCote) { meilleurCote = cote; meilleure = t; }
+      URL.revokeObjectURL(u);
+    } catch (e) {
+      tr.cells[1].textContent = "échec";
+      tr.cells[2].textContent = "—";
+    }
+  }
+
+  if (meilleure) {
+    const tr = $("t-" + meilleure);
+    tr.style.background = "#e6f4ec";
+    tr.cells[0].style.fontWeight = "600";
+    noter("Meilleure taille : « " + meilleure + " » — " + meilleurCote +
+      " px au plus grand côté.", "ok");
+  } else {
+    noter("Aucune taille n'a répondu.", "ko");
+  }
+}
+
+$("btn-tailles").onclick = () => { if (V) mesurerTailles(V.photo); };
 
 /* ---- 4. La visée, identique au banc de recalage ------------------------ */
 $("btn-camera").onclick = async () => {
