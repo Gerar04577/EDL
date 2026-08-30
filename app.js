@@ -3083,9 +3083,11 @@ async function ecranViseeGuidee(itemEntree) {
   }
 
   E.ecran = "visee";
+  /* État neuf à chaque photographie : les valeurs de la visée précédente
+     n'ont rien à faire ici. */
   E.visee = { ref, lien, blobRef, score: 0, auto: false, camera: null,
-              boucle: null, refL: 0, refH: 0, stableDepuis: 0,
-              echelle: ECHELLE_FIXE };
+              boucle: null, refL: 0, refH: 0, stableDepuis: 0, sousSeuil: 0,
+              echelle: ECHELLE_FIXE, echelleAuto: true };
   const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
   titre("Refaire le cadrage", piece ? piece.libelle : "");
   dessinerVisee();
@@ -3116,7 +3118,7 @@ function dessinerVisee(message) {
 
         <div class="ligne"><span>Zoom de la référence</span>
           <span id="visee-val-zoom">100 %</span></div>
-        <input type="range" id="visee-zoom" min="50" max="150" step="1" value="100">
+        <input type="range" id="visee-zoom" min="25" max="125" step="1" value="100">
         <button class="mini secondaire pleine" id="visee-zoom-defaut">Rechercher l'échelle automatiquement</button>
 
         <div id="visee-declencheur">
@@ -3169,9 +3171,17 @@ function brancherVisee() {
     majAutoVisee();
   }
 
+  /* LE REDESSIN NE DOIT PAS INTERROMPRE L'ANALYSE.
+
+     dessinerVisee recrée tous les éléments : la boucle continue de tourner
+     mais écrivait dans des éléments détachés, invisibles. D'où un score
+     figé après avoir touché « Réglages ». On relance donc la boucle
+     proprement. */
   if ($("visee-plus")) $("visee-plus").onclick = () => {
     E.viseeReglagesOuverts = !E.viseeReglagesOuverts;
+    if (V.boucle) { clearInterval(V.boucle); V.boucle = null; }
     dessinerVisee();
+    if (V.camera) V.boucle = setInterval(analyserVisee, 100);
     /* Le redessin recrée les éléments : on rend son flux à la vidéo sans
        rallumer la caméra, qui tourne toujours. Le format de la scène,
        lui, est reposé par dessinerVisee à partir de V.refL et V.refH. */
@@ -3207,7 +3217,9 @@ function brancherVisee() {
   if ($("visee-defaut")) $("visee-defaut").onclick = () => {
     E.reglagesVisee = null;
     try { localStorage.removeItem("edl_reglages_visee"); } catch (_) {}
+    if (V.boucle) { clearInterval(V.boucle); V.boucle = null; }
     dessinerVisee("Réglages revenus aux valeurs d'usine.");
+    if (V.camera) V.boucle = setInterval(analyserVisee, 100);
     if (V.camera) { $("visee-flux").srcObject = V.camera; $("visee-flux").play(); }
   };
 
@@ -3400,7 +3412,29 @@ function chargerImage(url) {
 /* Dix analyses par seconde : assez pour guider un geste, assez peu pour
    laisser respirer l'appareil. Le calcul porte sur du 96 × 96, donc la
    résolution du flux ne le ralentit pas — mesuré sur le terrain. */
+/* L'ANALYSE NE DOIT PLUS ÉCHOUER EN SILENCE.
+
+   Une erreur dans cette boucle ne s'affichait nulle part : le score
+   restait vide, le déclenchement ne partait jamais, l'écran de contrôle
+   n'apparaissait pas — et rien n'indiquait pourquoi. C'est ce qui a rendu
+   le défaut du 30/08/2026 introuvable.
+
+   Désormais l'erreur s'affiche dans le bandeau, la boucle s'arrête pour ne
+   pas la répéter cent fois, et le message reste lisible. */
 function analyserVisee() {
+  try { analyserViseeInterne(); }
+  catch (err) {
+    const V = E.visee;
+    if (V && V.boucle) { clearInterval(V.boucle); V.boucle = null; }
+    const b = $("visee-verdict");
+    if (b) {
+      b.textContent = "Analyse interrompue : " + (err && err.message ? err.message : err);
+      b.style.background = "rgba(176,58,46,.85)";
+    }
+  }
+}
+
+function analyserViseeInterne() {
   const V = E.visee;
   if (!V || !V.image) return;
   const v = $("visee-flux");
@@ -3555,7 +3589,15 @@ async function prendreVisee() {
 
   const blob = await new Promise(ok =>
     fin.toBlob(ok, "image/jpeg", reglagesVisee().qualite));
-  if (!blob) return dessinerVisee("Capture impossible.");
+  if (!blob) {
+    dessinerVisee("Capture impossible.");
+    if (V.camera) {
+      $("visee-flux").srcObject = V.camera; $("visee-flux").play();
+      if (V.boucle) clearInterval(V.boucle);
+      V.boucle = setInterval(analyserVisee, 100);
+    }
+    return;
+  }
 
   confirmerVisee(V.score);
   V.prise = { blob, score: V.score,
@@ -3603,7 +3645,13 @@ function dessinerControleVisee(message) {
 
   $("visee-garder").onclick = garderVisee;
   $("visee-refaire").onclick = () => {
+    /* La caméra a été éteinte à la prise et la boucle arrêtée : allumerVisee
+       relance les deux. On s'assure qu'aucune ancienne boucle ne tourne
+       encore, sinon deux boucles écriraient dans le même écran. */
+    if (E.visee.boucle) { clearInterval(E.visee.boucle); E.visee.boucle = null; }
     E.visee.prise = null;
+    E.visee.stableDepuis = 0;
+    E.visee.sousSeuil = 0;
     E.ecran = "visee";
     dessinerVisee("Reprends le cadrage.");
     allumerVisee();

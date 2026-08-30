@@ -246,7 +246,24 @@ function contoursFluxT(v, dx, dy, cl, ch, pc, T) {
    d'écart relatif à 50 et 5,6 % à 142 : on chercherait finement là où ça
    ne sert à rien. En logarithme, un pas vaut le même rapport partout. */
 const PHI = (Math.sqrt(5) - 1) / 2;
-const L_MIN = Math.log(50), L_MAX = Math.log(150);
+/* PLAGE 25 À 125 %, validée au banc d'essai le 30/08/2026.
+
+   AU-DESSUS DE 100, ELLE NE SERT À RIEN : une échelle supérieure
+   signifierait que la référence embrasse PLUS que le flux, donc qu'on a
+   dézoomé en photographiant. Personne ne dézoome pour un état des lieux.
+   On garde 125 pour absorber les écarts de position.
+
+   EN DESSOUS, IL EN FAUT PLUS : l'opérateur zoome souvent, et un zoom de
+   2× à la prise demande une échelle de 50 % — soit exactement l'ancienne
+   borne, d'où les échecs constatés. On descend à 25 %, ce qui couvre
+   jusqu'à un zoom de 4×.
+
+   POURQUOI PAS PLUS BAS. Une plage de 10 à 125 a été essayée : le zoom
+   s'est mis à bouger très fort. Douze fois plus d'échelles, c'est douze
+   fois plus d'endroits où deux images sans rapport se ressemblent par
+   hasard. Au-delà de 4×, la visée guidée ne s'applique pas — l'opérateur
+   reprend la photographie à vue. */
+const L_MIN = Math.log(25), L_MAX = Math.log(125);
 
 function sectionDoree(evaluer, precision, nAmorce, autour) {
   /* Amorce : quelques points régulièrement espacés en logarithme, pour
