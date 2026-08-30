@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Comparer deux fichiers</title>
+
+<!--
+  MODULE ISOLÉ. Ne touche à rien : ni à l'application, ni aux autres bancs
+  d'essai. Pas de caméra, pas de connexion, aucun envoi.
+
+  UNE SEULE QUESTION : la photographie qui passe par OneDrive est-elle la
+  même que celle de la pellicule ?
+
+  Le 30/08/2026, l'opérateur a établi que le banc de recalage donne un bon
+  résultat avec une photographie de la pellicule, et un mauvais avec la
+  MÊME photographie rapatriée de OneDrive. Le code étant identique dans les
+  deux cas, la différence est dans le fichier.
+
+  Ce module la mesure : dimensions, poids, écart pixel à pixel, contours.
+-->
+
+<style>
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; padding:calc(14px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom));
+    font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    color:#1a1a1a; background:#f7f6f3; }
+  h1 { font-size:19px; margin:0 0 2px; }
+  .sous { color:#6b6b6b; font-size:14px; margin:0 0 16px; }
+  .bloc { background:#fff; border:1px solid #e3e0da; border-radius:12px;
+    padding:14px; margin-bottom:12px; }
+  .bloc h2 { font-size:12px; text-transform:uppercase; letter-spacing:.07em;
+    color:#8a8a8a; margin:0 0 10px; font-weight:600; }
+  button { width:100%; padding:14px; font-size:16px; font-weight:600;
+    border:1px solid #2f7d63; border-radius:10px; background:#c9ecdb;
+    color:#12503d; margin-bottom:8px; -webkit-appearance:none; }
+  button.secondaire { background:#dbe9f7; color:#1a4a80; border-color:#7fa9d4; }
+  .note { font-size:13px; color:#6b6b6b; margin:6px 0; }
+  .ko { color:#b03a2e; } .ok { color:#1f7a4d; } .attention { color:#8a5a12; }
+  .cache { display:none; }
+
+  table { width:100%; border-collapse:collapse; font-size:14px;
+    font-variant-numeric:tabular-nums; }
+  th { text-align:left; font-size:11px; text-transform:uppercase;
+    letter-spacing:.06em; color:#8a8a8a; padding:6px 4px;
+    border-bottom:1px solid #e3e0da; }
+  th:not(:first-child), td:not(:first-child) { text-align:right; }
+  td { padding:8px 4px; border-bottom:1px solid #f0eeea; }
+  tr.ecart td { background:#fdf0ee; font-weight:600; }
+  tr.ecart td:first-child { color:#b03a2e; }
+
+  .verdict { font-size:16px; font-weight:600; line-height:1.45;
+    padding:14px; border-radius:10px; margin-top:4px; }
+  .verdict.pareil { background:#e6f4ec; color:#12503d; }
+  .verdict.different { background:#fbe9e6; color:#8d2b2b; }
+
+  .vues { display:flex; gap:8px; margin-top:10px; }
+  .vues figure { flex:1; margin:0; }
+  .vues img { width:100%; border-radius:8px; display:block; background:#f0eeea; }
+  .vues figcaption { font-size:12px; color:#8a8a8a; text-align:center;
+    margin-top:4px; }
+</style>
+</head>
+<body>
+
+<h1>Comparer deux fichiers</h1>
+<p class="sous">La photo de OneDrive est-elle la même que celle de la pellicule ? · <strong id="version"></strong></p>
+
+<div class="bloc">
+  <h2>Marche à suivre</h2>
+  <p class="note">1. Charge ci-dessous la photographie <strong>telle qu'elle est
+  dans ta pellicule</strong>.</p>
+  <p class="note">2. Télécharge la <strong>même</strong> photographie depuis
+  OneDrive — appui long, « Enregistrer dans les photos » — et charge-la comme
+  seconde image.</p>
+  <p class="note">3. Lis le tableau. Aucune caméra, aucun cadrage : la
+  comparaison est immédiate.</p>
+</div>
+
+<div class="bloc">
+  <h2>1. Photographie de la pellicule</h2>
+  <button class="secondaire" id="btn-a">Choisir la première</button>
+  <input type="file" accept="image/*" id="fichier-a" class="cache">
+  <p class="note" id="etat-a">Aucune image chargée.</p>
+</div>
+
+<div class="bloc">
+  <h2>2. Photographie venant de OneDrive</h2>
+  <button class="secondaire" id="btn-b">Choisir la seconde</button>
+  <input type="file" accept="image/*" id="fichier-b" class="cache">
+  <p class="note" id="etat-b">Aucune image chargée.</p>
+</div>
+
+<div class="bloc cache" id="bloc-resultat">
+  <h2>3. Ce qui diffère</h2>
+  <table id="tableau"></table>
+  <div class="verdict" id="verdict"></div>
+  <div class="vues">
+    <figure><img id="vue-a" alt=""><figcaption>Pellicule</figcaption></figure>
+    <figure><img id="vue-b" alt=""><figcaption>OneDrive</figcaption></figure>
+  </div>
+</div>
+
+<div class="bloc">
+  <h2>4. Journal</h2>
+  <p class="note" id="journal">En attente.</p>
+</div>
+
+<script>
+const VERSION = "comparer 1.0";
+const $ = (id) => document.getElementById(id);
+const TAILLE = 96;
+
+let A = null, B = null;
+
+function noter(t, c) {
+  const j = $("journal");
+  j.innerHTML = `<span class="${c||""}">${new Date().toLocaleTimeString("fr-BE")} — ${t}</span><br>` + j.innerHTML;
+}
+
+/* ---- Mesures sur une image ------------------------------------------- */
+
+/* Réduction à une taille de travail, exactement comme le banc de recalage :
+   c'est sur cette image réduite que tout se joue. */
+function reduire(src, cote) {
+  const L = src.naturalWidth || src.width;
+  const H = src.naturalHeight || src.height;
+  const f = Math.min(1, cote / Math.max(L, H));
+  const c = document.createElement("canvas");
+  c.width = Math.round(L * f);
+  c.height = Math.round(H * f);
+  c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+  return c;
+}
+
+/* Niveaux de gris à TAILLE×TAILLE, comme l'analyse de la visée. */
+function gris(src) {
+  const c = document.createElement("canvas");
+  c.width = TAILLE; c.height = TAILLE;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(src, 0, 0, TAILLE, TAILLE);
+  const p = ctx.getImageData(0, 0, TAILLE, TAILLE).data;
+  const g = new Float32Array(TAILLE * TAILLE);
+  for (let i = 0; i < TAILLE * TAILLE; i++) {
+    g[i] = 0.299 * p[i*4] + 0.587 * p[i*4+1] + 0.114 * p[i*4+2];
+  }
+  return g;
+}
+
+/* Amplitude du gradient, dilatée — le même calcul que la visée. */
+function contours(g) {
+  const T = TAILLE;
+  const c = new Float32Array(T * T);
+  for (let y = 1; y < T - 1; y++) for (let x = 1; x < T - 1; x++) {
+    const i = y * T + x;
+    const gx = -g[i-T-1] - 2*g[i-1] - g[i+T-1] + g[i-T+1] + 2*g[i+1] + g[i+T+1];
+    const gy = -g[i-T-1] - 2*g[i-T] - g[i-T+1] + g[i+T-1] + 2*g[i+T] + g[i+T+1];
+    c[i] = Math.sqrt(gx*gx + gy*gy);
+  }
+  const d = new Float32Array(T * T);
+  for (let y = 1; y < T - 1; y++) for (let x = 1; x < T - 1; x++) {
+    const i = y * T + x;
+    let m = c[i];
+    [i-T-1,i-T,i-T+1,i-1,i+1,i+T-1,i+T,i+T+1].forEach(k => { if (c[k] > m) m = c[k]; });
+    d[i] = m;
+  }
+  return d;
+}
+
+function mesurer(img, fichier) {
+  const L = img.naturalWidth, H = img.naturalHeight;
+  const petite = reduire(img, 512);
+  const g = gris(petite);
+  const c = contours(g);
+  let n = 0, somme = 0, lum = 0;
+  for (let i = 0; i < c.length; i++) { somme += c[i]; if (c[i] > 40) n++; }
+  for (let i = 0; i < g.length; i++) lum += g[i];
+  return {
+    L, H, poids: fichier.size, type: fichier.type || "inconnu",
+    rapport: L / H,
+    contours: n / c.length,
+    gradientMoyen: somme / c.length,
+    luminance: lum / g.length,
+    gris: g, cont: c,
+  };
+}
+
+/* ---- Chargement ------------------------------------------------------- */
+function brancher(bouton, champ, etat, quel) {
+  $(bouton).onclick = () => $(champ).click();
+  $(champ).onchange = () => {
+    const f = $(champ).files && $(champ).files[0];
+    if (!f) return;
+    const url = URL.createObjectURL(f);
+    const img = new Image();
+    img.onload = () => {
+      const m = mesurer(img, f);
+      m.url = url;
+      if (quel === "a") { A = m; $("vue-a").src = url; }
+      else { B = m; $("vue-b").src = url; }
+      $(etat).textContent = m.L + "×" + m.H + " · " +
+        Math.round(m.poids / 1024) + " Ko · " + m.type;
+      $(etat).className = "note ok";
+      noter((quel === "a" ? "Pellicule" : "OneDrive") + " : " + m.L + "×" + m.H +
+        ", " + Math.round(m.poids / 1024) + " Ko, " +
+        (m.contours * 100).toFixed(1) + " % de contours.", "ok");
+      comparer();
+    };
+    img.onerror = () => {
+      $(etat).textContent = "Image illisible.";
+      $(etat).className = "note ko";
+      noter("Image illisible.", "ko");
+    };
+    img.src = url;
+  };
+}
+brancher("btn-a", "fichier-a", "etat-a", "a");
+brancher("btn-b", "fichier-b", "etat-b", "b");
+
+/* ---- La comparaison ---------------------------------------------------- */
+function comparer() {
+  if (!A || !B) return;
+  $("bloc-resultat").classList.remove("cache");
+
+  /* Écart pixel à pixel sur les images réduites : c'est la mesure qui dit
+     si les deux fichiers portent la même information, indépendamment de
+     leur taille et de leur compression. */
+  let ecartMax = 0, ecartSomme = 0;
+  for (let i = 0; i < A.gris.length; i++) {
+    const e = Math.abs(A.gris[i] - B.gris[i]);
+    ecartSomme += e;
+    if (e > ecartMax) ecartMax = e;
+  }
+  const ecartMoyen = ecartSomme / A.gris.length;
+
+  /* Corrélation des contours : la mesure que la visée emploie. Deux
+     fichiers portant la même image doivent donner 100 %. */
+  let sa = 0, sb = 0, sab = 0, saa = 0, sbb = 0, n = 0;
+  for (let i = 0; i < A.cont.length; i++) {
+    const a = A.cont[i], b = B.cont[i];
+    sa += a; sb += b; sab += a*b; saa += a*a; sbb += b*b; n++;
+  }
+  const num = sab - sa*sb/n;
+  const den = Math.sqrt((saa - sa*sa/n) * (sbb - sb*sb/n));
+  const corr = den > 0 ? num / den : 0;
+
+  const lignes = [
+    ["Dimensions", A.L + "×" + A.H, B.L + "×" + B.H, A.L !== B.L || A.H !== B.H],
+    ["Proportions", A.rapport.toFixed(4), B.rapport.toFixed(4),
+      Math.abs(A.rapport - B.rapport) > 0.001],
+    ["Poids", Math.round(A.poids/1024) + " Ko", Math.round(B.poids/1024) + " Ko",
+      Math.abs(A.poids - B.poids) / A.poids > 0.05],
+    ["Format", A.type.replace("image/", ""), B.type.replace("image/", ""),
+      A.type !== B.type],
+    ["Luminance moyenne", A.luminance.toFixed(1), B.luminance.toFixed(1),
+      Math.abs(A.luminance - B.luminance) > 3],
+    ["Contours", (A.contours*100).toFixed(1) + " %", (B.contours*100).toFixed(1) + " %",
+      Math.abs(A.contours - B.contours) > 0.02],
+    ["Gradient moyen", A.gradientMoyen.toFixed(1), B.gradientMoyen.toFixed(1),
+      Math.abs(A.gradientMoyen - B.gradientMoyen) / A.gradientMoyen > 0.1],
+  ];
+
+  $("tableau").innerHTML =
+    "<tr><th>Mesure</th><th>Pellicule</th><th>OneDrive</th></tr>" +
+    lignes.map(([l, a, b, ec]) =>
+      `<tr class="${ec ? "ecart" : ""}"><td>${l}</td><td>${a}</td><td>${b}</td></tr>`).join("") +
+    `<tr class="${ecartMoyen > 2 ? "ecart" : ""}"><td>Écart pixel moyen</td>` +
+    `<td colspan="2">${ecartMoyen.toFixed(2)} sur 255</td></tr>` +
+    `<tr class="${ecartMax > 30 ? "ecart" : ""}"><td>Écart pixel maximum</td>` +
+    `<td colspan="2">${ecartMax.toFixed(0)} sur 255</td></tr>` +
+    `<tr class="${corr < 0.98 ? "ecart" : ""}"><td>Concordance des contours</td>` +
+    `<td colspan="2">${(corr*100).toFixed(1)} %</td></tr>`;
+
+  /* LE VERDICT. Deux fichiers portant la même image, même recompressés,
+     donnent une concordance de contours supérieure à 98 % et un écart
+     pixel moyen de moins de 2. Au-delà, l'image a été transformée. */
+  const identiques = corr >= 0.98 && ecartMoyen < 2 &&
+                     A.L === B.L && A.H === B.H;
+  const v = $("verdict");
+  if (identiques) {
+    v.className = "verdict pareil";
+    v.textContent = "Les deux fichiers portent la même image. OneDrive ne " +
+      "transforme rien : la différence de comportement vient d'ailleurs.";
+  } else {
+    const causes = [];
+    if (A.L !== B.L || A.H !== B.H) causes.push("les dimensions changent");
+    if (Math.abs(A.rapport - B.rapport) > 0.001) causes.push("les proportions changent — recadrage");
+    if (Math.abs(A.luminance - B.luminance) > 3) causes.push("la luminance change — profil colorimétrique");
+    if (Math.abs(A.gradientMoyen - B.gradientMoyen) / A.gradientMoyen > 0.1)
+      causes.push("les contours sont atténués — recompression");
+    if (corr < 0.98) causes.push("la concordance des contours tombe à " + (corr*100).toFixed(0) + " %");
+    v.className = "verdict different";
+    v.textContent = "Les deux fichiers ne portent PAS la même image : " +
+      (causes.length ? causes.join(", ") : "les pixels diffèrent") +
+      ". C'est la cause du mauvais comportement dans l'application.";
+  }
+  noter("Comparaison : concordance des contours " + (corr*100).toFixed(1) +
+    " %, écart pixel moyen " + ecartMoyen.toFixed(2) + ".",
+    identiques ? "ok" : "ko");
+}
+
+$("version").textContent = VERSION;
+document.title = "Comparer — " + VERSION;
+noter(VERSION + " — prêt. Charge les deux photographies.");
+</script>
+</body>
+</html>
