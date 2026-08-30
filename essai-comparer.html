@@ -38,6 +38,8 @@
   .note { font-size:13px; color:#6b6b6b; margin:6px 0; }
   .ko { color:#b03a2e; } .ok { color:#1f7a4d; } .attention { color:#8a5a12; }
   .cache { display:none; }
+  input[type=text] { width:100%; padding:11px; font-size:15px;
+    border:1px solid #d0ccc4; border-radius:8px; }
 
   table { width:100%; border-collapse:collapse; font-size:14px;
     font-variant-numeric:tabular-nums; }
@@ -86,8 +88,19 @@
 
 <div class="bloc">
   <h2>2. Photographie venant de OneDrive</h2>
-  <button class="secondaire" id="btn-b">Choisir la seconde</button>
+  <button class="secondaire" id="btn-b">Choisir dans la pellicule</button>
   <input type="file" accept="image/*" id="fichier-b" class="cache">
+
+  <p class="note"><strong>Attention :</strong> une photographie choisie dans la
+  pellicule est convertie en JPEG par iOS avant d'être remise à la page, même
+  si elle est enregistrée en HEIF. Les deux voies passent alors par le MÊME
+  convertisseur, et la comparaison ne prouve rien.</p>
+
+  <p class="note">Pour recevoir ce que l'application reçoit vraiment, colle
+  ci-dessous un lien de partage OneDrive : ouvre la photographie dans OneDrive,
+  appui long, « Partager », « Copier le lien ».</p>
+  <input type="text" id="lien" placeholder="https://1drv.ms/…" inputmode="url">
+  <button class="secondaire" id="btn-lien" style="margin-top:8px">Charger depuis le lien</button>
   <p class="note" id="etat-b">Aucune image chargée.</p>
 </div>
 
@@ -107,7 +120,7 @@
 </div>
 
 <script>
-const VERSION = "comparer 1.0";
+const VERSION = "comparer 1.1";
 const $ = (id) => document.getElementById(id);
 const TAILLE = 96;
 
@@ -248,8 +261,9 @@ function comparer() {
     ["Dimensions", A.L + "×" + A.H, B.L + "×" + B.H, A.L !== B.L || A.H !== B.H],
     ["Proportions", A.rapport.toFixed(4), B.rapport.toFixed(4),
       Math.abs(A.rapport - B.rapport) > 0.001],
-    ["Poids", Math.round(A.poids/1024) + " Ko", Math.round(B.poids/1024) + " Ko",
-      Math.abs(A.poids - B.poids) / A.poids > 0.05],
+    ["Poids", Math.round(A.poids/1024) + " Ko",
+      B.poids ? Math.round(B.poids/1024) + " Ko" : "inconnu",
+      B.poids ? Math.abs(A.poids - B.poids) / A.poids > 0.05 : false],
     ["Format", A.type.replace("image/", ""), B.type.replace("image/", ""),
       A.type !== B.type],
     ["Luminance moyenne", A.luminance.toFixed(1), B.luminance.toFixed(1),
@@ -274,7 +288,10 @@ function comparer() {
   /* LE VERDICT. Deux fichiers portant la même image, même recompressés,
      donnent une concordance de contours supérieure à 98 % et un écart
      pixel moyen de moins de 2. Au-delà, l'image a été transformée. */
-  const identiques = corr >= 0.98 && ecartMoyen < 2 &&
+  /* SEUIL DE 3 ET NON DE 2. Un écart moyen de 2,16 avait été signalé à
+     tort le 30/08 alors que la concordance des contours atteignait 99,6 % :
+     c'était la simple recompression, pas une transformation. */
+  const identiques = corr >= 0.98 && ecartMoyen < 3 &&
                      A.L === B.L && A.H === B.H;
   const v = $("verdict");
   if (identiques) {
@@ -298,6 +315,47 @@ function comparer() {
     " %, écart pixel moyen " + ecartMoyen.toFixed(2) + ".",
     identiques ? "ok" : "ko");
 }
+
+/* CHARGEMENT PAR LIEN DE PARTAGE.
+
+   C'est la seule voie qui reçoive ce que l'application reçoit. Tout ce qui
+   passe par le sélecteur de fichiers est converti en JPEG par iOS avant
+   d'atteindre la page — établi le 30/08/2026 : une photographie enregistrée
+   en HEIF arrive en JPEG, plus lourde de trente pour cent.
+
+   Un lien de partage OneDrive ouvre normalement une page web, pas l'image.
+   Le suffixe download=1 demande le fichier lui-même. Rien ne garantit que
+   Microsoft l'autorise depuis une autre origine — si le chargement échoue,
+   le journal le dira. */
+$("btn-lien").onclick = () => {
+  const brut = $("lien").value.trim();
+  if (!brut) return noter("Colle d'abord un lien.", "ko");
+  const url = brut + (brut.includes("?") ? "&" : "?") + "download=1";
+  noter("Chargement depuis le lien…");
+
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => {
+    /* Le poids et le type ne sont pas connus par cette voie : on ne mesure
+       que ce que le navigateur a réellement décodé. */
+    const m = mesurer(img, { size: 0, type: "par lien" });
+    m.url = url;
+    B = m;
+    $("vue-b").src = url;
+    $("etat-b").textContent = m.L + "×" + m.H + " · reçu par lien";
+    $("etat-b").className = "note ok";
+    noter("Reçu par lien : " + m.L + "×" + m.H + ", " +
+      (m.contours * 100).toFixed(1) + " % de contours.", "ok");
+    comparer();
+  };
+  img.onerror = () => {
+    $("etat-b").textContent = "Lien refusé par OneDrive.";
+    $("etat-b").className = "note ko";
+    noter("Lien refusé. Microsoft n'autorise pas la lecture depuis une " +
+      "autre origine, ou le lien n'est pas un lien de partage direct.", "ko");
+  };
+  img.src = url;
+};
 
 $("version").textContent = VERSION;
 document.title = "Comparer — " + VERSION;
