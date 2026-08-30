@@ -489,7 +489,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 3.7";
+const VERSION = "essai 3.8";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -509,6 +509,20 @@ $("fichier").onchange = async (e) => {
   if (!f) return;
   await poserReferenceDepuis(f);
 };
+
+/* Réduit la référence à une taille de travail, en gardant ses proportions.
+   Rend un canevas, que drawImage accepte comme une image. */
+function reduireSource(src, cote) {
+  const L = src.naturalWidth || src.width;
+  const H = src.naturalHeight || src.height;
+  const f = Math.min(1, cote / Math.max(L, H));
+  if (f >= 1) return src;
+  const c = document.createElement("canvas");
+  c.width = Math.round(L * f);
+  c.height = Math.round(H * f);
+  c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+  return c;
+}
 
 /* CHARGEMENT DE LA RÉFÉRENCE, AVEC REDRESSEMENT.
 
@@ -560,7 +574,19 @@ async function poserReferenceDepuis(fichier) {
   $("calque").src = url; $("vue-ref").src = url;
   $("scene").style.aspectRatio = refL + " / " + refH;
 
-  imageRefChargee = source;
+  /* LA RÉFÉRENCE EST RÉDUITE UNE SEULE FOIS.
+
+     Chaque essai d'échelle redécoupait l'image d'origine — 4284 × 5712,
+     soit vingt-quatre millions de pixels. La section dorée en essaie une
+     douzaine par analyse, avec des valeurs fractionnaires qui ne tombent
+     jamais deux fois pareil : la mise en réserve ne servait à rien et on
+     refaisait douze fois ce découpage géant. Mesuré sur le terrain :
+     574 ms par analyse, deux images par seconde au lieu de dix.
+
+     Tout finissant en 48 × 48 ou 96 × 96, une réduction préalable à 512
+     pixels ne coûte aucune précision et divise le travail par cent
+     vingt-quatre. */
+  imageRefChargee = reduireSource(source, 512);
   refContours = contoursRef(100, TAILLE);
 
   const d = densiteContours(refContours);
@@ -923,8 +949,12 @@ function analyser() {
     noter("Échelle figée à " + pc + " % — le score mesure désormais le " +
       "seul alignement.", "ok");
   }
-  echecs = (m.score < 0.35) ? echecs + 1 : 0;
-  if (echelleFigee && echecs >= 15) {
+  /* « Alignement perdu » revenait trois fois en quarante secondes : le
+     seuil de 0,35 est vite franchi dès que l'opérateur bouge, et chaque
+     remise à zéro relance un balayage complet. On exige donc un alignement
+     franchement mauvais, et plus longtemps. */
+  echecs = (m.score < 0.22) ? echecs + 1 : 0;
+  if (echelleFigee && echecs >= 40) {
     echelleFigee = null; echelleRetenue = null; echecs = 0;
     noter("Alignement perdu : nouvelle recherche d'échelle.", "attention");
   }
