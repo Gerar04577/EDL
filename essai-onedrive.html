@@ -166,6 +166,7 @@
   <div class="ligne"><span>Temps par analyse</span><span id="d-ms">—</span></div>
   <div class="ligne"><span>Détail du temps</span><span id="d-detail">—</span></div>
   <div class="ligne"><span>Essais d'échelle</span><span id="d-essais">—</span></div>
+  <div class="ligne"><span>Échelle figée</span><span id="d-figee">non</span></div>
 </div>
 
 <div class="bloc">
@@ -183,7 +184,7 @@
 <script src="recalage.js"></script>
 
 <script>
-const VERSION = "onedrive 1.3";
+const VERSION = "onedrive 1.4";
 
 /* L'adresse de redirection est ramenée à celle de l'application — la seule
    que Microsoft accepte. Elle n'est pas employée puisque le banc n'ouvre
@@ -441,6 +442,7 @@ async function choisirPhoto(p) {
 
   V = { photo: p, url, L, H };
   echMin = 999; echMax = 0;
+  echelleFigee = null; echelleRetenue = null; echecs = 0;
   $("calque").src = url;
   $("scene").style.aspectRatio = L + " / " + H;
 
@@ -553,6 +555,24 @@ function analyser() {
   const msMes = performance.now() - tMes;
   sommeRech += msRech; sommeMes += msMes; sommeEssais += essaisEchelle;
 
+  /* LE FIGEAGE, comme dans l'application.
+
+     Il manquait ici : mon banc refaisait onze essais d'échelle à chaque
+     image, indéfiniment — 274 ms sur les 306 mesurées le 30/08. Une fois
+     l'échelle convaincante, la recherche doit s'arrêter : le score
+     redevient alors une mesure de l'alignement seul, et le coût tombe.
+
+     Elle se libère si l'alignement s'effondre durablement. */
+  if (!echelleFigee && m.score >= 0.65) {
+    echelleFigee = pc;
+    noter("Échelle figée à " + pc.toFixed(1) + " % — la recherche s'arrête.", "ok");
+  }
+  echecs = (m.score < 0.22) ? echecs + 1 : 0;
+  if (echelleFigee && echecs >= 40) {
+    echelleFigee = null; echelleRetenue = null; echecs = 0;
+    noter("Alignement perdu : nouvelle recherche d'échelle.", "attention");
+  }
+
   const p = Math.max(0, Math.round(m.score * 100));
   const bon = p >= 68;
   $("verdict").textContent = p + " % — " + (bon ? "aligné" : conseil(m)) +
@@ -581,6 +601,7 @@ function analyser() {
       "d-detail": "échelle " + (sommeRech / compteur).toFixed(0) + " ms  ·  " +
         "mesure " + (sommeMes / compteur).toFixed(0) + " ms",
       "d-essais": (sommeEssais / compteur).toFixed(1) + " par analyse",
+      "d-figee": echelleFigee ? "oui — " + echelleFigee.toFixed(1) + " %" : "non",
     });
     compteur = 0; sommeMs = 0; sommeRech = 0; sommeMes = 0; sommeEssais = 0;
     dernier = Date.now();
