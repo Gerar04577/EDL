@@ -181,7 +181,7 @@
 <script src="recalage.js"></script>
 
 <script>
-const VERSION = "onedrive 1.1";
+const VERSION = "onedrive 1.2";
 
 /* L'adresse de redirection est ramenée à celle de l'application — la seule
    que Microsoft accepte. Elle n'est pas employée puisque le banc n'ouvre
@@ -378,13 +378,31 @@ async function choisirPhoto(p) {
     return maj({ "d-voie": "échec" });
   }
 
-  const blob = a.blob || null;
-  const url = a.url || a;
+  /* LE BANC SE DÉBROUILLE QUELLE QUE SOIT LA VERSION EN PLACE.
+
+     apercuBlobEntree a changé de forme au fil des jours : elle rendait une
+     simple adresse, elle rend maintenant le couple adresse-blob. Le banc
+     charge les fichiers du dépôt, qui peuvent être d'une version ou de
+     l'autre — il doit fonctionner avec les deux, sinon il mesure la
+     version déposée au lieu de mesurer le problème.
+
+     Sans le blob, pas de createImageBitmap : le décodage retombe sur la
+     balise et le diagnostic devient faux. On le rapatrie donc soi-même. */
+  let blob = a && a.blob ? a.blob : null;
+  const url = (a && a.url) ? a.url : a;
+  let voieBlob = blob ? "rendu par l'application" : "—";
+
+  if (!blob && url) {
+    try {
+      const r = await fetch(url);
+      if (r.ok) { blob = await r.blob(); voieBlob = "rapatrié par le banc"; }
+    } catch (_) { /* on restera sur la balise */ }
+  }
   maj({
     "d-poids": blob ? Math.round(blob.size / 1024) + " Ko" : "inconnu",
     "d-type": blob ? (blob.type || "inconnu") : "inconnu",
-    "d-voie": /\.(jpe?g|png|webp)$/i.test(p.nom_fichier)
-      ? "fichier d'origine" : "aperçu Microsoft",
+    "d-voie": (/\.(jpe?g|png|webp)$/i.test(p.nom_fichier)
+      ? "fichier d'origine" : "aperçu Microsoft") + " · blob " + voieBlob,
   });
 
   /* Décodage : le même que le banc de recalage. */
@@ -401,7 +419,20 @@ async function choisirPhoto(p) {
   }
 
   const L = src.naturalWidth || src.width, H = src.naturalHeight || src.height;
-  poserReference(src);
+
+  /* RÉDUCTION FAITE ICI, pour la même raison : la version déposée de
+     recalage.js ne la fait pas forcément, et sans elle chaque essai
+     d'échelle redécoupe vingt-quatre millions de pixels — 315 ms par
+     analyse au lieu de 40. */
+  let reduite = src;
+  if (Math.max(L, H) > 512) {
+    const f = 512 / Math.max(L, H);
+    const c2 = document.createElement("canvas");
+    c2.width = Math.round(L * f); c2.height = Math.round(H * f);
+    c2.getContext("2d").drawImage(src, 0, 0, c2.width, c2.height);
+    reduite = c2;
+  }
+  poserReference(reduite);
   const c = contoursRef(100, TAILLE);
   const d = densiteContoursT(c, TAILLE);
 
@@ -411,7 +442,7 @@ async function choisirPhoto(p) {
   $("scene").style.aspectRatio = L + " / " + H;
 
   maj({
-    "d-dim": L + "×" + H,
+    "d-dim": L + "×" + H + (reduite === src ? "" : " → 512 px"),
     "d-decodeur": decodeur,
     "d-contours": (d.part * 100).toFixed(1) + " %",
   });
