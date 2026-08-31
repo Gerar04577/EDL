@@ -152,7 +152,11 @@ async function ajouterPhoto(visite, rattachement, fichier, extra, dejaCompressee
        réseau ici : l'image doit être à l'abri avant tout échange avec
        Microsoft. Les visites antérieures à la 2.5.0 n'ont pas de
        sous-dossier : elles continuent de déposer au niveau du dessus. */
-    parent_id: visite.bien.dossier_photos_item_id ||
+    /* LE SOUS-DOSSIER DE LA PIÈCE, s'il a pu être créé. Sinon « Photos »,
+       comme avant : une photographie mal rangée vaut mieux qu'une
+       photographie perdue. */
+    parent_id: dossierPourRattachement(visite, rattachement) ||
+               visite.bien.dossier_photos_item_id ||
                visite.bien.dossier_cible_item_id,
   };
   await mettreEnFile(element);
@@ -182,6 +186,77 @@ async function empreinteBlob(blob) {
    Jamais pendant la visite : voir ajouterPhoto. */
 
 var _echecEnvoi = null;           // raison du dernier échec d'envoi de photo
+
+/* NOM DE DOSSIER SÛR.
+
+   Les accents passent sur OneDrive, mais pas partout ensuite : un dossier
+   « Séjour » se retrouve « Se%CC%81jour » dans certaines adresses, et
+   « Sejour » ailleurs, selon la façon dont l'accent est codé. On les retire
+   donc à la source.
+
+   Les espaces sont conservés : « Salle de bain » reste lisible, et
+   OneDrive les accepte. Seuls les caractères que Microsoft refuse —
+   \ / : * ? " < > | — deviennent des tirets. */
+function nomDossierSur(libelle) {
+  return String(libelle || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")   /* accents */
+    .replace(/[\\/:*?"<>|#%]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[.\s]+|[.\s]+$/g, "")                   /* OneDrive refuse */
+    .slice(0, 50) || "Sans nom";
+}
+
+/* Résout un sous-dossier par son nom : le retrouve, ou le crée.
+   resoudreDossierPhotos n'en est qu'un cas particulier. */
+async function resoudreSousDossier(driveId, parentId, nom) {
+  if (!parentId) return { ok: false, message: "Dossier de destination inconnu." };
+  const cible = nomDossierSur(nom);
+  const base = driveId ? `/drives/${driveId}/items/${parentId}`
+                       : `/me/drive/items/${parentId}`;
+  const chercher = async () => {
+    const res = await appelGraph(base + "/children");
+    if (!res.ok) return { erreur: "Lecture du dossier refusée : " + (await detailErreur(res)) };
+    const contenu = await res.json();
+    const trouve = (contenu.value || []).find(
+      x => x.folder && String(x.name).toLowerCase() === cible.toLowerCase());
+    return { id: trouve ? trouve.id : null };
+  };
+
+  try {
+    const lu = await chercher();
+    if (lu.erreur) return { ok: false, message: lu.erreur };
+    if (lu.id) return { ok: true, id: lu.id, cree: false, nom: cible };
+
+    const cree = await appelGraph(base + "/children", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: cible, folder: {},
+        "@microsoft.graph.conflictBehavior": "fail",
+      }),
+    });
+    if (cree.ok) {
+      const item = await cree.json();
+      if (item && item.id) {
+        await journaliser("sous_dossier_cree", { parent: parentId, nom: cible });
+        return { ok: true, id: item.id, cree: true, nom: cible };
+      }
+    }
+    if (cree.status === 409) {
+      const relu = await chercher();
+      if (relu.id) return { ok: true, id: relu.id, cree: false, nom: cible };
+    }
+    const message = "Microsoft a refusé la création de « " + cible + "  » : " +
+      (await detailErreur(cree));
+    await journaliser("sous_dossier_echoue", message);
+    return { ok: false, message };
+  } catch (e) {
+    const message = String((e && e.message) || e);
+    await journaliser("sous_dossier_echoue", message);
+    return { ok: false, message };
+  }
+}
 
 async function resoudreDossierPhotos(driveId, parentId) {
   if (!parentId) return { ok: false, message: "Dossier de destination inconnu." };
@@ -274,6 +349,55 @@ async function preparerDepot(refCible) {
   const lien = await creerLienPhotos(refCible.driveId, dossier.id);
   if (!lien.ok) return { ok: false, etape: "lien de partage", message: lien.message };
   return { ok: true, id: dossier.id, lien: lien.lien };
+}
+
+/* PRÉPARE UN SOUS-DOSSIER PAR PIÈCE, plus « Annexe ».
+
+   Appelé à la validation de la liste des pièces, avant que la visite ne
+   commence, et de nouveau quand une pièce est ajoutée en cours de route.
+
+   Les identifiants obtenus sont conservés dans la visite : une photographie
+   mise en file connaît ainsi sa destination sans nouvel appel.
+
+   SI UN DOSSIER NE PEUT PAS ÊTRE CRÉÉ, la photographie ira dans « Photos »
+   à la racine. Une visite ne s'interrompt pas pour un sous-dossier : mieux
+   vaut une photographie mal rangée qu'une photographie perdue. */
+async function preparerSousDossiers(visite, surProgres) {
+  const b = visite.bien || {};
+  const parent = b.dossier_photos_item_id;
+  if (!parent) return { ok: false, message: "Dossier Photos inconnu." };
+
+  const aFaire = (visite.pieces || []).map(p => ({ cle: p.piece_id, nom: p.libelle }));
+  aFaire.push({ cle: "annexe", nom: "Annexe" });
+
+  visite.dossiers_pieces = visite.dossiers_pieces || {};
+  const echecs = [];
+  let n = 0;
+
+  for (const d of aFaire) {
+    n++;
+    if (surProgres) surProgres(n, aFaire.length, d.nom);
+    if (visite.dossiers_pieces[d.cle]) continue;   /* déjà créé */
+    const r = await resoudreSousDossier(b.drive_id, parent, d.nom);
+    if (r.ok) visite.dossiers_pieces[d.cle] = r.id;
+    else echecs.push(d.nom);
+  }
+
+  return { ok: echecs.length === 0, echecs,
+           message: echecs.length
+             ? "Dossiers non créés : " + echecs.join(", ") +
+               ". Ces photographies iront dans « Photos »."
+             : "" };
+}
+
+/* Où déposer une photographie : le sous-dossier de sa pièce, « Annexe »
+   pour ce qui n'est rattaché à aucune, « Photos » si rien n'a pu être
+   créé. */
+function dossierPourRattachement(visite, rattachement) {
+  const d = (visite && visite.dossiers_pieces) || {};
+  if (rattachement && d[rattachement]) return d[rattachement];
+  if (!rattachement && d.annexe) return d.annexe;
+  return (visite.bien && visite.bien.dossier_photos_item_id) || null;
 }
 
 /* Téléversement d'un élément de la file. */

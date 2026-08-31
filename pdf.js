@@ -65,12 +65,80 @@ function creerPlume(doc) {
     return false;
   };
 
+  /* La palette. Fond très clair, filet soutenu, texte sombre de la même
+     famille : le titre reste lisible sur le fond, y compris imprimé en
+     nuances de gris. */
+  const TEINTES = [
+    { fond: [220, 233, 245], filet: [ 74, 127, 168], texte: [ 27,  58,  82], droite: [ 47,  90, 120] },
+    { fond: [228, 239, 220], filet: [107, 148,  85], texte: [ 46,  69,  34], droite: [ 71,  99,  47] },
+    { fond: [245, 228, 220], filet: [181, 118,  79], texte: [ 92,  53,  32], droite: [125,  74,  44] },
+    { fond: [237, 228, 240], filet: [138, 107, 153], texte: [ 64,  47,  73], droite: [ 90,  66, 102] },
+    { fond: [245, 239, 216], filet: [168, 145,  63], texte: [ 78,  67,  24], droite: [110,  94,  34] },
+  ];
+  let iTeinte = 0;
+
+  const HAUT_BANDEAU = 11;
+
+  function poserBandeau(t, texte, droite) {
+    /* Un bandeau ne doit jamais se trouver seul en bas de page, séparé de
+       ce qu'il annonce : on réserve de quoi loger deux lignes avec lui. */
+    place(HAUT_BANDEAU + 14);
+    const l = PDF_LARGEUR - 2 * PDF_MARGE;
+
+    doc.setFillColor(t.fond[0], t.fond[1], t.fond[2]);
+    doc.rect(PDF_MARGE, y, l, HAUT_BANDEAU, "F");
+    doc.setFillColor(t.filet[0], t.filet[1], t.filet[2]);
+    doc.rect(PDF_MARGE, y, 1.6, HAUT_BANDEAU, "F");
+
+    doc.setFont("helvetica", "bold"); doc.setFontSize(15);
+    doc.setTextColor(t.texte[0], t.texte[1], t.texte[2]);
+    doc.text(String(texte), PDF_MARGE + 4.5, y + 7.8);
+
+    if (droite) {
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
+      doc.setTextColor(t.droite[0], t.droite[1], t.droite[2]);
+      doc.text(String(droite), PDF_LARGEUR - PDF_MARGE - 3, y + 7.6, { align: "right" });
+    }
+
+    doc.setTextColor(0);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10);
+    y += HAUT_BANDEAU + 5;
+  }
+
   return {
     get y() { return y; },
+    /* Remet la palette à sa première teinte : les pièces repartent du bleu
+       à chaque procès-verbal. */
+    reprendreTeintes() { iTeinte = 0; },
     set y(v) { y = v; },
     get page() { return page; },
 
     saut(h) { place(h || 0); y += (h || 4); },
+
+    /* BANDEAUX PASTEL.
+
+       Un procès-verbal de dix pièces devient illisible en colonne
+       uniforme : on cherche une pièce et on relit tout. Un bandeau de
+       couleur, sur toute la largeur, permet de la trouver en feuilletant.
+
+       Cinq teintes qui TOURNENT DANS L'ORDRE, sans lien avec la nature de
+       la pièce : deux pièces voisines ne se ressemblent jamais, et la règle
+       n'a rien à connaître des libellés. Chacune a un fond très clair et un
+       filet plus soutenu à gauche.
+
+       La droite du bandeau reçoit l'état général — bon état, propre — là où
+       l'œil le cherche une fois la pièce repérée. */
+    bandeau(texte, droite) {
+      const t = TEINTES[iTeinte % TEINTES.length];
+      iTeinte++;
+      poserBandeau(t, texte, droite);
+    },
+
+    /* Même bandeau, teinte imposée : pour les sections qui ne sont pas des
+       pièces et qu'on veut distinguer d'un coup d'œil. */
+    bandeauFixe(indice, texte, droite) {
+      poserBandeau(TEINTES[indice % TEINTES.length], texte, droite);
+    },
 
     titre(texte) {
       place(14);
@@ -186,21 +254,21 @@ async function genererPV(visite) {
   p.saut(6);
 
   // --- 4. Constatations ---------------------------------------------------
-  p.titre("Constatations");
+  p.bandeauFixe(0, "Constatations");
+  p.reprendreTeintes();
   V.pieces.forEach(piece => {
     const photos = V.photos.filter(x => x.rattachement === piece.piece_id);
-    p.sousTitre(piece.libelle);
 
     /* L'état général de la pièce est une appréciation d'ensemble, distincte
-       des constatations rattachées aux photographies. Il figure en tête. */
+       des constatations rattachées aux photographies. Il passe À DROITE DU
+       BANDEAU, là où l'œil le cherche une fois la pièce repérée. */
     const eg = piece.etat_general || {};
     const general = [libelleEtat(eg.etat), libelleProprete(eg.proprete)]
       .filter(Boolean).join(", ");
-    if (general || eg.commentaire) {
-      if (general) p.paragraphe("État général : " + general, { retrait: 2, gras: true });
-      if (eg.commentaire) p.paragraphe(eg.commentaire, { retrait: 2 });
-      p.saut(2);
-    }
+
+    p.bandeau(piece.libelle, general);
+
+    if (eg.commentaire) { p.paragraphe(eg.commentaire, { retrait: 2 }); p.saut(2); }
 
     if (piece.constatations.length === 0 && photos.length === 0 &&
         !general && !eg.commentaire) {
@@ -234,11 +302,11 @@ async function genererPV(visite) {
           "  (voir annexe)", { retrait: 2, taille: 8 });
       }
     }
-    p.saut(4);
+    p.saut(7);
   });
 
   // --- 5. Compteurs -------------------------------------------------------
-  p.titre("Relevé des compteurs");
+  p.bandeauFixe(1, "Relevé des compteurs");
   const c = V.compteurs || {};
   if (c.electricite) {
     p.sousTitre("Électricité");
@@ -277,7 +345,7 @@ async function genererPV(visite) {
   p.saut(6);
 
   // --- 6. Équipements, clés, état général ---------------------------------
-  p.titre("Équipements, clés et état général");
+  p.bandeauFixe(2, "Équipements, clés et état général");
   const e = V.equipements || {};
   p.ligne("Sonnette", e.sonnette && e.sonnette.etat === "fonctionnelle" ? "fonctionnelle"
         : e.sonnette && e.sonnette.etat === "hors_service" ? "hors service" : null);
@@ -312,7 +380,7 @@ async function genererPV(visite) {
 
   // --- 6 ter. Version antérieure ------------------------------------------
   if (V.version_precedente) {
-    p.titre("Version antérieure");
+    p.bandeauFixe(3, "Version antérieure");
     p.paragraphe("Le présent document est la version " + (V.version_doc || "V2") +
       " de l'état des lieux référencé ci-dessus. Il rectifie la version " +
       V.version_precedente.version + ", signée le " +
@@ -327,7 +395,7 @@ async function genererPV(visite) {
   }
 
   // --- 6 bis. Observations et réserves ------------------------------------
-  p.titre("Observations et réserves");
+  p.bandeauFixe(4, "Observations et réserves");
   const reserves = V.reserves || [];
   if (reserves.length === 0) {
     p.paragraphe("Le preneur, invité à faire consigner ses observations et réserves " +
@@ -347,7 +415,7 @@ async function genererPV(visite) {
 
   // --- 7. Chiffrage -------------------------------------------------------
   if (V.options && V.options.chiffrage_actif && V.chiffrage) {
-    p.titre("Chiffrage");
+    p.bandeauFixe(2, "Chiffrage");
     const ch = V.chiffrage;
     if (ch.total_degats != null) p.ligne("Dégâts", euro(ch.total_degats));
     if (ch.estimation_nettoyage_heures != null)
@@ -375,7 +443,7 @@ async function genererPV(visite) {
        sa force — le preneur signerait au bas d'une page en n'en ayant lu
        que la moitié. */
     if (p.y + 56 > PDF_HAUTEUR - PDF_MARGE) { doc.addPage(); p.y = PDF_MARGE; }
-    p.titre("Photographies non déposées à ce jour");
+    p.bandeauFixe(4, "Photographies non déposées à ce jour");
     p.paragraphe("À l'instant de la présente signature, " +
       (enAttente.length + echouees.length) + " photographie(s) sur " +
       V.photos.length + " n'avaient pas été transmises au dossier informatique.");
@@ -410,7 +478,7 @@ async function genererPV(visite) {
   const hauteurBloc = 40 + Math.ceil(signataires / 2) * 34;
   if (p.y + hauteurBloc > PDF_HAUTEUR - PDF_MARGE) { doc.addPage(); p.y = PDF_MARGE; }
 
-  p.titre("Signatures");
+  p.bandeauFixe(0, "Signatures");
   p.paragraphe("LU ET APPROUVÉ", { gras: true, taille: 12 });
   p.saut(2);
   p.paragraphe("Chaque signataire confirme avoir participé contradictoirement à l'état " +
@@ -482,7 +550,8 @@ async function genererPV(visite) {
   // --- 10. Annexe : les photographies ------------------------------------
   if (V.photos.length) {
     doc.addPage(); p.y = PDF_MARGE;
-    p.titre("ANNEXE — PHOTOGRAPHIES");
+    p.bandeauFixe(3, "ANNEXE — PHOTOGRAPHIES");
+    p.reprendreTeintes();
     p.paragraphe(
       "Chaque photographie a été prise au cours de la visite et présentée aux parties. " +
       "Sa date, son heure et son empreinte SHA-256 ont été établies sur l'appareil au " +
@@ -494,7 +563,7 @@ async function genererPV(visite) {
     V.pieces.forEach(piece => {
       const lot = V.photos.filter(x => x.rattachement === piece.piece_id);
       if (!lot.length) return;
-      p.sousTitre(piece.libelle);
+      p.bandeau(piece.libelle);
       lot.forEach(x => ligneAnnexe(p, x));
       p.saut(2);
     });
@@ -503,7 +572,7 @@ async function genererPV(visite) {
     const idPieces = V.pieces.map(x => x.piece_id);
     const hors = V.photos.filter(x => !idPieces.includes(x.rattachement));
     if (hors.length) {
-      p.sousTitre("Compteurs et divers");
+      p.bandeau("Compteurs et divers");
       hors.forEach(x => ligneAnnexe(p, x));
     }
   }

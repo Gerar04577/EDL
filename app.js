@@ -731,7 +731,26 @@ async function lancerVisite() {
   b.operateur = nomUtilisateur();
   try {
     const visite = await creerVisite(b);
+
+    /* UN SOUS-DOSSIER PAR PIÈCE, plus « Annexe », créés MAINTENANT — avant
+       que la visite ne commence, pendant que le réseau est encore
+       disponible et que l'opérateur attend de toute façon.
+
+       Les créer à la volée, au fil des prises, obligerait à un appel
+       Microsoft au pire moment : celui où l'on photographie.
+
+       Un échec n'interrompt pas la visite : les photographies concernées
+       iront dans « Photos », et le message le dit. */
+    vue(`<p class="note">Préparation des dossiers…</p>
+         <p class="note" id="progres-dossiers"></p>`);
+    const r = await preparerSousDossiers(visite, (n, total, nom) => {
+      const e = $("progres-dossiers");
+      if (e) e.textContent = n + " sur " + total + " — " + nom;
+    });
+    await enregistrerVisite(visite);
+
     ecranVisiteReprise(visite);
+    if (!r.ok && r.message) messageBref(r.message);
   } catch (e) {
     erreurEcran("Création impossible : " + e.message, () => ecranOptions());
   }
@@ -923,6 +942,16 @@ function dessinerModifComposition(message) {
       return dessinerModifComposition("Modification impossible : " + e.message);
     }
     E.compoTravail = null; E.reglagesTravail = null; E.chiffrageTravail = undefined;
+
+    /* LES PIÈCES AJOUTÉES EN COURS DE VISITE ont besoin de leur dossier.
+       preparerSousDossiers saute celles qui en ont déjà un : seules les
+       nouvelles donnent lieu à un appel. */
+    try {
+      const r = await preparerSousDossiers(VISITE);
+      await enregistrerVisite(VISITE);
+      if (!r.ok && r.message) messageBref(r.message);
+    } catch (_) { /* une visite ne s'interrompt pas pour un dossier */ }
+
     programmerDepot();
     ecranVisiteReprise(VISITE);
   };
