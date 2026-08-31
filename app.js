@@ -4113,6 +4113,11 @@ function allerAPhotoGardee() {
    Le compte par mur figure dessous, en clair : un zéro qui persiste se
    voit. C'est lui qui déclenche l'avertissement à la sortie de la pièce.
 
+   ELLE SE TROUVE JUSTE AU-DESSUS DE « RETOUR AUX PIÈCES », en bas de
+   l'écran. C'est là que l'opérateur a l'œil quand il vient de photographier
+   et qu'il s'apprête à changer de mur ou à quitter la pièce — plus haut,
+   elle disparaissait dès qu'il faisait défiler.
+
    LES WC N'ONT PAS DE MURS distingués : quatre faces dans deux mètres
    carrés n'apprennent rien à personne. */
 function murCourant(pieceId) {
@@ -4182,8 +4187,6 @@ function dessinerPiece(message) {
 
   vue(`<div class="barre" id="barre-attente">…</div>
     ${message ? `<div class="succes">${echapper(message)}</div>` : ""}
-
-    ${barreMurs(piece)}
 
     <div class="bloc"><h2>État général de la pièce</h2>
       <p class="note">Une appréciation d'ensemble, distincte des constatations
@@ -4282,6 +4285,8 @@ function dessinerPiece(message) {
       <input type="file" accept="image/*" capture="environment" id="appareil" class="cache">
       <button id="btn-photo">Prendre une photo</button>
     </div>
+
+    ${barreMurs(piece)}
 
     <button class="secondaire" id="btn-retour">Retour aux pièces</button>`);
 
