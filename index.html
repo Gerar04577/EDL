@@ -138,6 +138,27 @@
     background:#e6f4ec; color:#12503d; padding:3px 10px; border-radius:8px; }
   /* Celles qui sont déjà décrites reculent, sans devenir illisibles. */
   .constat.traitee { opacity:.72; }
+
+  /* LA BARRE DES MURS.
+     Le bouton actif est vert, les suivants gris clair : l'ordre du géomètre
+     est rappelé en permanence, sans écran ni message. */
+  .murs { display:flex; gap:6px; margin:8px 0 6px; }
+  .murs .mur { flex:1; margin:0; padding:11px 2px; font-size:13px;
+    font-weight:600; border-radius:9px;
+    background:#f0eeea; border:1px solid #ddd8d0; color:#6b6b6b; }
+  .murs .mur.actif { background:#2f7d63; border-color:#2f7d63; color:#fff; }
+  .comptes { font-variant-numeric:tabular-nums; letter-spacing:.02em; }
+  .comptes .vide { color:#b03a2e; font-weight:700; }
+
+  /* LE RAPPEL DES MURS, pour les deux premières pièces. */
+  .rappel { background:#fff; border-radius:16px; padding:26px 22px;
+    max-width:340px; margin:auto; text-align:center; }
+  .rappel-piece { margin:0; font-size:20px; font-weight:700; }
+  .rappel-rang { margin:2px 0 22px; font-size:13px; color:#8a8a8a; }
+  .rappel-ordre { margin:0 0 22px; font-size:27px; font-weight:800;
+    line-height:1.45; letter-spacing:.04em; color:#12503d; }
+  .rappel-regle { margin:0 0 20px; font-size:13px; line-height:1.5;
+    color:#6b6b6b; }
   /* Les boutons « mini » se posaient à côté des curseurs et en masquaient
      la moitié droite : la poignée du zoom, au milieu de sa course, paraissait
      à gauche. Sur leur propre ligne, ils ne recouvrent plus rien. */

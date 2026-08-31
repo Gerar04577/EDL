@@ -204,24 +204,94 @@ function memoriserReglages(immeubleId, designation, composition, reglages) {
 }
 
 /* Construit la liste des pièces à partir de la composition. */
+/* L'ORDRE DU GÉOMÈTRE.
+
+   Un expert géomètre consulté le 30/08/2026 visite dans cet ordre :
+   chambres, salle de bain, WC, cuisine, séjour. Ce n'est pas une habitude
+   personnelle mais une méthode : on commence par le privé et le calme, on
+   finit par les pièces de vie où l'on discute.
+
+   L'intérêt pour nous est juridique autant que pratique : un procès-verbal
+   lu dans l'ordre où l'on a marché est plus difficile à contester qu'une
+   liste arbitraire, et l'opérateur n'oublie pas de pièce.
+
+   Ce qui n'entre dans aucune de ces catégories — hall, cave, terrasse —
+   vient à la fin. */
 function construirePieces(composition) {
   const pieces = [];
   let n = 0;
   const ajouter = (libelle) => pieces.push({ piece_id: "p" + (++n), libelle, constatations: [] });
 
-  if (composition.hall) ajouter("Hall");
-  if (composition.sejour) ajouter("Séjour");
-  if (composition.cuisine) ajouter("Cuisine");
   for (let i = 1; i <= composition.nb_chambres; i++)
     ajouter(composition.nb_chambres === 1 ? "Chambre" : "Chambre " + i);
   for (let i = 1; i <= composition.nb_salles_de_bain; i++)
     ajouter(composition.nb_salles_de_bain === 1 ? "Salle de bain - WC" : "Salle de bain " + i);
+  if (composition.cuisine) ajouter("Cuisine");
+  if (composition.sejour) ajouter("Séjour");
+
+  /* Le reste, dans l'ordre où on le rencontre en général. */
+  if (composition.hall) ajouter("Hall");
   if (composition.buanderie) ajouter("Buanderie");
   if (composition.cave) ajouter("Cave");
   if (composition.grenier) ajouter("Grenier");
   if (composition.terrasse) ajouter("Terrasse / Jardin");
   if (composition.garage) ajouter("Garage");
   return pieces;
+}
+
+/* ---- Abréviations ------------------------------------------------------
+
+   Elles figurent dans le NOM DU FICHIER, qui survit à tout : même sorties
+   de l'application, les photographies restent lisibles.
+
+   Les chiffres sont conservés — CH1, CH2, WC1 — pour que deux pièces du
+   même type ne se confondent jamais. */
+const ABREVIATIONS_PIECES = [
+  [/^chambre/i,            "CH"],
+  [/^salle de bain.*wc/i,  "SDB"],   /* avant SDB seule et avant WC */
+  [/^salle de bain/i,      "SDB"],
+  [/^salle d.eau/i,        "SDE"],
+  [/^wc|^toilette/i,       "WC"],
+  [/^cuisine/i,            "CUI"],
+  [/^s[ée]jour|^salon|^living/i, "SEJ"],
+  [/^hall|^entr[ée]e|^couloir/i, "HAL"],
+  [/^buanderie/i,          "BUA"],
+  [/^cave/i,               "CAV"],
+  [/^grenier/i,            "GRE"],
+  [/^terrasse|^jardin|^balcon/i, "TER"],
+  [/^garage/i,             "GAR"],
+];
+
+function abregerPiece(libelle) {
+  const t = String(libelle || "").trim();
+  for (const [motif, abrev] of ABREVIATIONS_PIECES) {
+    if (motif.test(t)) {
+      const chiffre = (t.match(/\d+/) || [""])[0];
+      return abrev + chiffre;
+    }
+  }
+  /* Pièce d'un type imprévu : trois premières lettres, sans accent. */
+  return t.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase() || "DIV";
+}
+
+/* ---- Les murs ----------------------------------------------------------
+
+   L'ordre est celui du géomètre : on entre, on se tourne à gauche, et on
+   fait le tour. GAUCHE ET DROITE S'ENTENDENT DEPUIS L'EMBRASURE, dos à la
+   porte, en regardant vers l'intérieur — c'est la seule définition qui ne
+   dépende pas d'où l'on se trouve dans la pièce. */
+const MURS = [
+  { cle: "G",   libelle: "Gauche" },
+  { cle: "F",   libelle: "En face" },
+  { cle: "D",   libelle: "Droite" },
+  { cle: "E",   libelle: "Entrée" },
+  { cle: "DIV", libelle: "Autre" },
+];
+
+/* Les WC n'ont pas quatre murs qui vaillent la peine d'être distingués. */
+function pieceSansMurs(libelle) {
+  return /^wc|^toilette/i.test(String(libelle || "").trim());
 }
 
 /* Création de la visite. Les identifiants sont générés localement,

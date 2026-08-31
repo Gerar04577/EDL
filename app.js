@@ -2588,6 +2588,66 @@ async function deposerPdf(visite, nom, donnees) {
 
 // --- Écran d'une pièce ---------------------------------------------------
 
+/* AVERTISSEMENT À LA SORTIE D'UNE PIÈCE.
+
+   L'application ne sait pas qu'on quitte physiquement une pièce — mais elle
+   sait qu'on en sélectionne une autre, ou qu'on touche « Retour ». C'est le
+   seul moment où l'oubli peut encore être réparé sans revenir sur place.
+
+   L'avertissement ne bloque pas : un mur peut être une baie vitrée, une
+   armoire encastrée, ou n'avoir rien à constater. Mais il ne doit pas être
+   discret non plus — c'est tout son intérêt. */
+async function quitterPiece(suite) {
+  const oublies = E.piece ? mursOublies(E.piece) : [];
+  if (!oublies.length) return suite();
+
+  const piece = (VISITE.pieces || []).find(p => p.piece_id === E.piece);
+  const ok = await confirmer(
+    oublies.length > 1 ? oublies.length + " murs sans photographie"
+                       : "Un mur sans photographie",
+    (piece ? piece.libelle + " — " : "") + oublies.join(", ") +
+      (oublies.length > 1 ? " n'ont" : " n'a") + " aucune photographie.",
+    "Quitter quand même");
+  if (ok) suite();
+}
+
+/* LE RAPPEL PLEIN ÉCRAN, pour les DEUX PREMIÈRES PIÈCES seulement.
+
+   Un rappel qui revient à chaque pièce devient un geste machinal : on
+   touche « J'ai compris » sans lire. Après deux pièces, l'ordre est acquis,
+   et la barre des murs le rappelle en permanence.
+
+   Pas de rappel pour les WC : quatre faces dans deux mètres carrés
+   n'apprennent rien à personne. */
+function rappelMurs(piece, rang, total) {
+  return new Promise(resoudre => {
+    const fond = document.createElement("div");
+    fond.className = "voile";
+    fond.innerHTML = `<div class="rappel">
+      <p class="rappel-piece">${echapper(piece.libelle)}</p>
+      <p class="rappel-rang">${rang}<sup>${rang === 1 ? "re" : "e"}</sup> pièce sur ${total}</p>
+      <p class="rappel-ordre">GAUCHE<br>EN FACE<br>DROITE<br>ENTRÉE</p>
+      <p class="rappel-regle">Gauche et droite se comptent depuis l'embrasure,
+      dos à la porte, en regardant vers l'intérieur de la pièce.</p>
+      <button id="rappel-ok">J'ai compris</button>
+    </div>`;
+    document.body.appendChild(fond);
+    fond.querySelector("#rappel-ok").onclick = () => {
+      fond.remove();
+      resoudre();
+    };
+  });
+}
+
+/* Faut-il montrer le rappel ? Les deux premières pièces avec murs, et une
+   seule fois chacune. */
+function rappelNecessaire(piece) {
+  if (pieceSansMurs(piece.libelle)) return false;
+  E.rappelsVus = E.rappelsVus || [];
+  if (E.rappelsVus.includes(piece.piece_id)) return false;
+  return E.rappelsVus.length < 2;
+}
+
 async function ecranPiece(pieceId) {
   /* Filet : quitter la visée sans passer par son bouton — retour arrière,
      navigation — laisserait la caméra allumée et la boucle d'analyse en
@@ -2622,6 +2682,14 @@ async function ecranPiece(pieceId) {
   const piece = VISITE.pieces.find(p => p.piece_id === pieceId);
   titre(piece.libelle, VISITE.bien.unite_source);
   dessinerPiece();
+
+  /* Le rappel, après le dessin : l'opérateur voit derrière lui l'écran de
+     la pièce, ce qui lui dit où il est. */
+  if (!memePiece && rappelNecessaire(piece)) {
+    E.rappelsVus.push(pieceId);
+    const rang = VISITE.pieces.findIndex(p => p.piece_id === pieceId) + 1;
+    await rappelMurs(piece, rang, VISITE.pieces.length);
+  }
 }
 
 /* ---- Description d'un groupe de photographies ---------------------------
@@ -3717,6 +3785,7 @@ async function garderVisee() {
        sous-dossier Photos. Trois champs de plus la rattachent à sa
        référence et conservent la qualité du cadrage. */
     photoId = await ajouterPhoto(VISITE, E.piece, p.blob, {
+      mur: murCourant(E.piece),
       photo_entree_id: V.ref.onedrive_item_id,
       photo_entree_nom: V.ref.nom_fichier,
       score_alignement: p.score,
@@ -4031,6 +4100,66 @@ function allerAPhotoGardee() {
   });
 }
 
+/* ---- LA BARRE DES MURS -------------------------------------------------
+
+   Cinq boutons dans l'ordre du géomètre : Gauche, En face, Droite, Entrée,
+   Autre. Le bouton actif est vert, les suivants gris clair : l'ordre est
+   donc rappelé en permanence, sans écran ni message.
+
+   GAUCHE EST PRÉSÉLECTIONNÉ à l'entrée de chaque pièce, puisque c'est
+   toujours par là qu'on commence. L'opérateur qui suit l'ordre n'a rien à
+   faire ; celui qui s'en écarte touche un bouton.
+
+   Le compte par mur figure dessous, en clair : un zéro qui persiste se
+   voit. C'est lui qui déclenche l'avertissement à la sortie de la pièce.
+
+   LES WC N'ONT PAS DE MURS distingués : quatre faces dans deux mètres
+   carrés n'apprennent rien à personne. */
+function murCourant(pieceId) {
+  E.murs = E.murs || {};
+  if (!E.murs[pieceId]) E.murs[pieceId] = "G";   /* Gauche par défaut */
+  return E.murs[pieceId];
+}
+
+function comptesParMur(pieceId) {
+  const c = {};
+  MURS.forEach(m => { c[m.cle] = 0; });
+  (VISITE.photos || []).forEach(p => {
+    if (p.rattachement !== pieceId) return;
+    const m = p.mur || "DIV";
+    if (c[m] !== undefined) c[m]++;
+  });
+  return c;
+}
+
+function barreMurs(piece) {
+  if (pieceSansMurs(piece.libelle)) return "";
+  const actif = murCourant(piece.piece_id);
+  const c = comptesParMur(piece.piece_id);
+  return `<div class="bloc" id="bloc-murs"><h2>Mur photographié</h2>
+    <p class="note">Gauche et droite se comptent depuis l'embrasure, dos à la
+    porte, en regardant vers l'intérieur.</p>
+    <div class="murs">${MURS.map(m =>
+      `<button class="mur${m.cle === actif ? " actif" : ""}" data-mur="${m.cle}"
+        >${echapper(m.libelle)}</button>`).join("")}</div>
+    <p class="note comptes">${MURS.filter(m => m.cle !== "DIV")
+      .map(m => `<span class="${c[m.cle] ? "" : "vide"}">${m.cle} ${c[m.cle]}</span>`)
+      .join(" · ")}${c.DIV ? ` · <span>autre ${c.DIV}</span>` : ""}</p>
+  </div>`;
+}
+
+/* Les murs restés à zéro, pour l'avertissement de sortie. */
+function mursOublies(pieceId) {
+  const piece = (VISITE.pieces || []).find(p => p.piece_id === pieceId);
+  if (!piece || pieceSansMurs(piece.libelle)) return [];
+  /* Une pièce sans aucune photographie n'a pas été commencée : on ne
+     reproche rien. */
+  const total = (VISITE.photos || []).filter(p => p.rattachement === pieceId).length;
+  if (!total) return [];
+  const c = comptesParMur(pieceId);
+  return MURS.filter(m => m.cle !== "DIV" && !c[m.cle]).map(m => m.libelle);
+}
+
 function dessinerPiece(message) {
   const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
   const photos = VISITE.photos.filter(p => p.rattachement === E.piece);
@@ -4053,6 +4182,8 @@ function dessinerPiece(message) {
 
   vue(`<div class="barre" id="barre-attente">…</div>
     ${message ? `<div class="succes">${echapper(message)}</div>` : ""}
+
+    ${barreMurs(piece)}
 
     <div class="bloc"><h2>État général de la pièce</h2>
       <p class="note">Une appréciation d'ensemble, distincte des constatations
@@ -4200,6 +4331,13 @@ function dessinerPiece(message) {
   });
 
   // --- ajouter au constat ---
+  /* Les boutons de mur : le choix vaut pour toutes les prises suivantes. */
+  $("vue").querySelectorAll("[data-mur]").forEach(b => b.onclick = () => {
+    E.murs = E.murs || {};
+    E.murs[E.piece] = b.getAttribute("data-mur");
+    dessinerPiece();
+  });
+
   $("vue").querySelectorAll("[data-ajouter]").forEach(b => b.onclick = async () => {
     const id = b.getAttribute("data-ajouter");
     const zone = $("vue").querySelector('[data-brouillon="' + id + '"]');
@@ -4363,7 +4501,7 @@ function dessinerPiece(message) {
     $("btn-photo").disabled = true;
     $("btn-photo").textContent = "Enregistrement…";
     try {
-      await ajouterPhoto(VISITE, E.piece, fichier);
+      await ajouterPhoto(VISITE, E.piece, fichier, { mur: murCourant(E.piece) });
     } catch (e) {
       avert(`<div class="erreur"><strong>Photo non enregistrée</strong>${echapper(e.message)}</div>`);
     }
@@ -4371,12 +4509,13 @@ function dessinerPiece(message) {
     dessinerPiece();
   };
 
-  $("btn-retour").onclick = async () => {
+  /* Quitter la pièce passe par l'avertissement des murs oubliés. */
+  $("btn-retour").onclick = () => quitterPiece(async () => {
     E.brouillons = {}; E.etat = undefined; E.proprete = undefined;
     E.commentaireGeneral = undefined; E.indexEdition = null;
     await deposerMaintenant(VISITE);
     ecranVisiteReprise(VISITE);
-  };
+  });
 
   brancherGroupe(piece, photos);
   majCompteurAttente(VISITE.photos.length);

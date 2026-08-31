@@ -54,12 +54,23 @@ function nettoyerLibelle(s) {
 
 /* Le code de visite est inclus dans le nom : deux états des lieux du même
    type, le même jour, dans le même dossier ne peuvent pas s'écraser. */
-function nomFichierPhoto(visite, rattachement, numero) {
+function nomFichierPhoto(visite, rattachement, numero, mur) {
   const date = visite.date_debut.slice(0, 10);
   const piece = visite.pieces.find(p => p.piece_id === rattachement);
   const etiquette = piece ? nettoyerLibelle(piece.libelle) : nettoyerLibelle(rattachement);
   const code = (visite.edl_id || visite.visit_id).split("_").pop();
-  return `${visite.type}_${date}_${etiquette}_${String(numero).padStart(3, "0")}_${code}.jpg`;
+
+  /* L'ABRÉVIATION DE PIÈCE ET LE MUR, dans le nom du fichier.
+
+     Le nom survit à tout : sorti de l'application, déposé ailleurs,
+     imprimé, il reste lisible. « CH1-G » se comprend sans rien d'autre.
+
+     Le libellé complet est conservé à côté — l'abréviation le résume, elle
+     ne le remplace pas. */
+  const abrev = piece ? abregerPiece(piece.libelle) : "";
+  const marque = abrev ? "_" + abrev + (mur ? "-" + mur : "") : "";
+
+  return `${visite.type}_${date}_${etiquette}${marque}_${String(numero).padStart(3, "0")}_${code}.jpg`;
 }
 
 /* Ajout d'une photo : identifiant local, compression, enregistrement,
@@ -73,6 +84,8 @@ function nomFichierPhoto(visite, rattachement, numero) {
    l'application : la visée guidée sort du canevas au bon format et à la
    bonne qualité, la repasser à la moulinette ne ferait que dégrader. */
 async function ajouterPhoto(visite, rattachement, fichier, extra, dejaCompressee) {
+  /* Le mur voyage dans `extra` : les appels qui l'ignorent ne changent pas. */
+  const mur = (extra && extra.mur) || null;
   const photoId = nouvelIdentifiant("ph");
   let blob = fichier, largeur = null, hauteur = null;
   if (!dejaCompressee) {
@@ -97,7 +110,7 @@ async function ajouterPhoto(visite, rattachement, fichier, extra, dejaCompressee
   catch (e) { await journaliser("empreinte_photo_echouee", String(e && e.message)); }
 
   const entree = {
-    photo_id: photoId, nom_fichier: null, rattachement,
+    photo_id: photoId, nom_fichier: null, rattachement, mur,
     empreinte_sha256: empreinte,
     onedrive_item_id: null, taille_octets: blob.size || null,
     statut_transfert: "en_attente", tentatives: 0,
@@ -122,7 +135,7 @@ async function ajouterPhoto(visite, rattachement, fichier, extra, dejaCompressee
     }
     const numero = v.photo_seq[rattachement] + 1;
     v.photo_seq[rattachement] = numero;
-    entree.nom_fichier = nomFichierPhoto(v, rattachement, numero);
+    entree.nom_fichier = nomFichierPhoto(v, rattachement, numero, mur);
     v.photos.push(entree);
   });
   if (aJour) visite.photos = aJour.photos;
@@ -130,7 +143,7 @@ async function ajouterPhoto(visite, rattachement, fichier, extra, dejaCompressee
     if (!visite.photo_seq) visite.photo_seq = {};
     const numero = (visite.photo_seq[rattachement] || 0) + 1;
     visite.photo_seq[rattachement] = numero;
-    entree.nom_fichier = nomFichierPhoto(visite, rattachement, numero);
+    entree.nom_fichier = nomFichierPhoto(visite, rattachement, numero, mur);
     visite.photos.push(entree);
     await enregistrerVisite(visite);
   }
