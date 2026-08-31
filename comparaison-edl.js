@@ -120,9 +120,26 @@ function numeroDuNom(nom) {
   return m ? m[1] : null;
 }
 
+/* La pièce, lue dans le nom du fichier. DEUX GABARITS COEXISTENT :
+
+     EDLS_CH1-G_2026-08-30_012_ab12.jpg        depuis la 2.27.1
+     EDLS_2026-08-30_chambre-1_012_ab12.jpg    avant
+
+   Le premier place l'abréviation en tête — l'iPhone écrase le milieu des
+   noms trop longs, ce qui compte doit donc venir d'abord. Le second est
+   conservé pour les visites déjà déposées. */
 function pieceDuNom(nom) {
-  const m = String(nom || "").match(/^[A-Z]+_\d{4}-\d{2}-\d{2}_(.+?)_\d{3}_/);
-  return m ? m[1].replace(/-/g, " ") : null;
+  const t = String(nom || "");
+  const neuf = t.match(/^[A-Z]+_([A-Z]{2,3}\d*)(?:-[A-Z]+)?_\d{4}-\d{2}-\d{2}_\d{3}_/);
+  if (neuf) return neuf[1];
+  const ancien = t.match(/^[A-Z]+_\d{4}-\d{2}-\d{2}_(.+?)_\d{3}_/);
+  return ancien ? ancien[1].replace(/-/g, " ") : null;
+}
+
+/* Le mur, quand le nom le porte. Rien avant la 2.27.0. */
+function murDuNom(nom) {
+  const m = String(nom || "").match(/^[A-Z]+_[A-Z]{2,3}\d*-([A-Z]+)_\d{4}-\d{2}-\d{2}_/);
+  return m ? m[1] : null;
 }
 
 /* Les états des lieux antérieurs à l'application ont été photographiés

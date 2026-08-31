@@ -57,20 +57,23 @@ function nettoyerLibelle(s) {
 function nomFichierPhoto(visite, rattachement, numero, mur) {
   const date = visite.date_debut.slice(0, 10);
   const piece = visite.pieces.find(p => p.piece_id === rattachement);
-  const etiquette = piece ? nettoyerLibelle(piece.libelle) : nettoyerLibelle(rattachement);
   const code = (visite.edl_id || visite.visit_id).split("_").pop();
 
-  /* L'ABRÉVIATION DE PIÈCE ET LE MUR, dans le nom du fichier.
+  /* L'ABRÉVIATION ET LE MUR VIENNENT EN TÊTE, juste après le type.
 
-     Le nom survit à tout : sorti de l'application, déposé ailleurs,
-     imprimé, il reste lisible. « CH1-G » se comprend sans rien d'autre.
+     L'iPhone écrase le milieu des noms de fichiers longs à l'affichage :
+     ce qui compte doit donc figurer AU DÉBUT. « EDLS_CH1-G… » reste
+     lisible même tronqué, et suffit à identifier la photographie.
 
-     Le libellé complet est conservé à côté — l'abréviation le résume, elle
-     ne le remplace pas. */
-  const abrev = piece ? abregerPiece(piece.libelle) : "";
-  const marque = abrev ? "_" + abrev + (mur ? "-" + mur : "") : "";
+     Dans un dossier trié par nom, les photographies se groupent en outre
+     par pièce et par mur, au lieu de se mêler par date.
 
-  return `${visite.type}_${date}_${etiquette}${marque}_${String(numero).padStart(3, "0")}_${code}.jpg`;
+     Le libellé complet — « chambre-1 » — disparaît : CH1 porte la même
+     information en trois caractères, et le nom reste court. */
+  const abrev = piece ? abregerPiece(piece.libelle) : nettoyerLibelle(rattachement);
+  const marque = abrev + (mur ? "-" + mur : "");
+
+  return `${visite.type}_${marque}_${date}_${String(numero).padStart(3, "0")}_${code}.jpg`;
 }
 
 /* Ajout d'une photo : identifiant local, compression, enregistrement,

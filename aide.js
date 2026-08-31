@@ -152,6 +152,67 @@ var AIDE = [
       "appréciations t'appartiennent. Tu peux les écrire toi-même dans le cadre.",
   },
   {
+    titre: "4 ter. L'ordre de visite et les abréviations",
+    corps: [
+      "L'ORDRE DES PIÈCES est celui d'un expert géomètre : les CHAMBRES " +
+      "d'abord, puis la SALLE DE BAIN, les WC, la CUISINE et le SÉJOUR. Le " +
+      "reste — hall, cave, terrasse, garage — vient à la fin. L'application " +
+      "présente les pièces dans cet ordre, et le procès-verbal aussi : le " +
+      "document se lit dans l'ordre où tu as marché, ce qui est plus " +
+      "difficile à contester qu'une liste au hasard.",
+
+      "L'ORDRE DES MURS, dans chaque pièce : GAUCHE, EN FACE, DROITE, " +
+      "ENTRÉE. Toujours le même, pour ne rien oublier.",
+
+      "GAUCHE ET DROITE SE COMPTENT DEPUIS L'EMBRASURE. Tiens-toi dans " +
+      "l'encadrement de la porte, dos au couloir, en regardant vers " +
+      "l'intérieur : ta gauche est le mur « Gauche », ta droite le mur " +
+      "« Droite », celui d'en face est « En face », et le mur où se trouve " +
+      "la porte est « Entrée ». Cette règle ne dépend pas de l'endroit où tu " +
+      "te places ensuite dans la pièce.",
+
+      "CINQ BOUTONS sous le titre de la pièce : Gauche, En face, Droite, " +
+      "Entrée, Autre. Celui qui est vert est le mur en cours ; toutes tes " +
+      "photographies porteront ce mur jusqu'à ce que tu en touches un autre. " +
+      "GAUCHE est choisi d'avance à l'entrée de chaque pièce, puisque c'est " +
+      "par là qu'on commence.",
+
+      "« AUTRE » sert au sol, au plafond, à un radiateur au milieu, à une " +
+      "vue d'ensemble — tout ce qui ne se rattache à aucun mur.",
+
+      "LE COMPTE PAR MUR est affiché sous les boutons : G 4 · F 0 · D 0 · " +
+      "E 0. Un zéro apparaît en rouge. En quittant la pièce, l'application " +
+      "t'avertit s'il reste un mur sans photographie — elle ne t'empêche pas " +
+      "de partir, mais elle te le dit.",
+
+      "LES WC N'ONT PAS DE MURS distingués : quatre faces dans deux mètres " +
+      "carrés n'apprennent rien à personne. Ni boutons, ni avertissement.",
+
+      "UN RAPPEL EN GRAND s'affiche à l'entrée des DEUX PREMIÈRES pièces, " +
+      "puis ne revient plus. Ensuite, la couleur des boutons suffit.",
+
+      "LES ABRÉVIATIONS FIGURENT EN TÊTE du nom du fichier, juste après le " +
+      "type d'état des lieux. C'est voulu : l'iPhone écrase le milieu des " +
+      "noms trop longs, donc ce qui compte doit venir d'abord. Même tronqué, " +
+      "« EDLS_CH1-G… » suffit à reconnaître la photographie.",
+
+      "AUTRE AVANTAGE : dans un dossier trié par nom, les photographies se " +
+      "groupent par pièce et par mur, au lieu de se mêler par date.",
+
+      "PIÈCES — CH chambre · SDB salle de bain · SDE salle d'eau · WC · " +
+      "CUI cuisine · SEJ séjour · HAL hall ou entrée · BUA buanderie · " +
+      "CAV cave · GRE grenier · TER terrasse ou jardin · GAR garage. Le " +
+      "chiffre suit quand il y en a plusieurs : CH1, CH2, WC2.",
+
+      "MURS — G gauche · F en face · D droite · E entrée · DIV autre.",
+
+      "EXEMPLE — EDLS_CH1-G_2026-08-30_012_ab12.jpg se lit : état des lieux " +
+      "de sortie, chambre 1, mur de gauche, 30 août 2026, douzième " +
+      "photographie de la pièce.",
+    ],
+  },
+
+  {
     titre: "5. Compteurs, clés, état général",
     corps: [
       "Bouton « Compteurs, clés et état général » sur l'écran des pièces.",
