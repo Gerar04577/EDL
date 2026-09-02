@@ -527,7 +527,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 4.5";
+const VERSION = "essai 4.6";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -720,6 +720,37 @@ $("reg-qualite").oninput = (e) => {
 const fluxChoisi = () => FLUX[Number($("reg-flux").value)];
 const qualiteChoisie = () => QUALITES[Number($("reg-qualite").value)].q;
 
+/* Ce que la piste dit de l'objectif employé, et la liste de ceux que
+   l'appareil propose. Les libellés ne sont lisibles qu'après une
+   autorisation accordée : avant, ils sont vides. */
+async function diagnostiquerObjectif(piste) {
+  try {
+    const r = piste.getSettings ? piste.getSettings() : {};
+    const c = piste.getCapabilities ? piste.getCapabilities() : {};
+    const morceaux = [];
+    morceaux.push("libellé « " + (piste.label || "vide") + " »");
+    if (r.deviceId) morceaux.push("id " + String(r.deviceId).slice(0, 8) + "…");
+    if (r.zoom !== undefined) morceaux.push("zoom déclaré " + Number(r.zoom).toFixed(2));
+    if (r.facingMode) morceaux.push("face " + r.facingMode);
+    if (r.frameRate) morceaux.push(Math.round(r.frameRate) + " im/s");
+    noter("Objectif de la visée : " + morceaux.join(", ") + ".", "ok");
+
+    /* Le champ de vision, quand la piste le déclare : c'est la seule
+       grandeur directement comparable à la focale de la référence. */
+    if (c && c.focusDistance) {
+      noter("Mise au point réglable de " + c.focusDistance.min + " à " +
+        c.focusDistance.max + ".", "ok");
+    }
+
+    const tous = (await navigator.mediaDevices.enumerateDevices())
+      .filter(d => d.kind === "videoinput");
+    noter("Caméras vues par le navigateur : " + tous.length + " — " +
+      tous.map(d => (d.label || "sans libellé")).join(" | "), "ok");
+  } catch (e) {
+    noter("Diagnostic d'objectif impossible : " + e.message, "attention");
+  }
+}
+
 /* ---- Caméra ---- */
 $("btn-camera").onclick = async () => {
   if (!refContours) return noter("Charge d'abord une référence.", "ko");
@@ -747,6 +778,24 @@ $("btn-camera").onclick = async () => {
        pas, et Safari moins que les autres. */
     const p0 = fluxCamera.getVideoTracks()[0];
     const cap = p0.getCapabilities ? p0.getCapabilities() : {};
+
+    /* QUEL OBJECTIF LE NAVIGATEUR UTILISE-T-IL ?
+
+       La documentation consultée le 02/09 établit que le flux n'est pas
+       géométriquement identique à la photographie native, pour trois
+       raisons : iOS bascule entre les modules grand-angle, ultra grand-
+       angle et téléobjectif même quand on impose deviceId et zoom ; un
+       bogue WebKit sélectionne l'ultra grand-angle pour facingMode
+       environment ; et le champ vidéo est rogné d'environ 10 % pour la
+       stabilisation.
+
+       Deux modules distants d'un centimètre voient un objet proche sous
+       deux angles différents. Si la référence vient du principal et que
+       la visée se fait à l'ultra grand-angle, les deux images ne sont pas
+       superposables et aucun zoom n'y changera rien.
+
+       On note donc ce que la piste déclare d'elle-même. */
+    await diagnostiquerObjectif(p0);
     if (cap && cap.zoom) {
       $("zoom-cam").disabled = false;
       $("zoom-cam").min = Math.round(cap.zoom.min * 100);
