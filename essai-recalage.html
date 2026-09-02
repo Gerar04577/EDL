@@ -527,7 +527,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 4.6";
+const VERSION = "essai 4.7";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -1540,13 +1540,34 @@ function prendre() {
   if (ch > v.videoHeight) { ch = v.videoHeight; cl = Math.round(v.videoHeight * rapport); }
   const dx = Math.round((v.videoWidth - cl) / 2), dy = Math.round((v.videoHeight - ch) / 2);
 
-  /* Même rognage qu'à l'analyse : la photographie prise doit cadrer comme
-     la référence zoomée, pas comme le flux brut. */
-  const zc = Number($("zoom-ref").value) / 100;
+  /* LE ROGNAGE PARTAIT DANS LE MAUVAIS SENS.
+
+     L'ancienne formule faisait pl = cl / zc pour toute échelle. Or au-
+     dessus de 100 %, c'est la RÉFÉRENCE qu'il faut rogner, pas le flux :
+     l'analyse le fait déjà correctement — contoursRef rogne la référence,
+     contoursFluxT rogne le flux en miroir — mais la prise, elle, rognait
+     le flux dans les deux sens.
+
+     Constaté le 02/09 à 22:45 : étendue observée 100 à 125 %, et la
+     photographie prise sortait plus serrée que la référence. À 125 %, zc
+     valait 1,25 et la fenêtre tombait à 80 % du flux.
+
+     La prise reproduit désormais ce que l'analyse a mesuré : au-dessus de
+     100 %, le flux entier ; en dessous seulement, on le rogne. */
+  const pc = Number($("zoom-ref").value);
+  const zc = Math.max(1, 100 / pc);
   const pl = Math.round(cl / zc), ph = Math.round(ch / zc);
   const ox = dx + Math.round((cl - pl) / 2), oy = dy + Math.round((ch - ph) / 2);
 
-  const f = Math.min(1, 1600 / Math.max(pl, ph));
+  /* PLUS DE PLAFOND À 1600.
+
+     Math.min(1, 1600 / max) réduisait toute capture à 1600 pixels sur son
+     grand côté — d'où les 1200×1600 du 02/09 alors que le flux donne
+     3024×4032 et que la largeur du flux était réglée au maximum. Ce
+     plafond avait un sens quand la prise servait de vignette ; il n'en a
+     plus si elle doit documenter un dégât. Le poids se tient par la
+     qualité JPEG, pas en jetant les pixels. */
+  const f = 1;
   const fin = document.createElement("canvas");
   fin.width = Math.round(pl * f); fin.height = Math.round(ph * f);
   fin.getContext("2d").drawImage(v, ox, oy, pl, ph, 0, 0, fin.width, fin.height);
