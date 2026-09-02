@@ -195,7 +195,7 @@
 <script src="recalage.js"></script>
 
 <script>
-const VERSION = "onedrive 1.6";
+const VERSION = "onedrive 1.7";
 
 /* L'adresse de redirection est ramenée à celle de l'application — la seule
    que Microsoft accepte. Elle n'est pas employée puisque le banc n'ouvre
@@ -331,6 +331,43 @@ async function chargerPhotos() {
   try { enfants = await enfantsDeRef(courant.ref); }
   catch (e) { return noter("Lecture impossible : " + e.message, "ko"); }
 
+  /* LA FACETTE PHOTO SE DEMANDE.
+
+     graph.js liste les enfants avec un $select restreint à
+     id,name,folder,file,remoteItem,webUrl,size,lastModifiedDateTime.
+     Avec un $select explicite, Graph ne renvoie QUE ces champs : photo
+     n'y étant pas, focalLength ne pouvait pas arriver — l'absence
+     constatée le 02/09 sur 345 photographies ne disait rien de OneDrive,
+     seulement de ma requête.
+
+     Ce banc refait donc la lecture pour son propre compte, en réclamant
+     photo. Il n'y touche pas dans graph.js : tant que la mesure n'est pas
+     concluante, l'application n'a pas à changer. */
+  async function enfantsAvecPhoto(ref) {
+    const champs = "id,name,file,remoteItem,photo,image";
+    let url = ref && ref.driveId
+      ? `/drives/${ref.driveId}/items/${ref.id}/children?$top=200&$select=${champs}`
+      : (ref && ref.id
+          ? `/me/drive/items/${ref.id}/children?$top=200&$select=${champs}`
+          : `/me/drive/root/children?$top=200&$select=${champs}`);
+    /* appelGraph rend une réponse HTTP, pas un objet : c'est la même
+       mécanique que le listage de graph.js, reprise à l'identique. */
+    const tous = [];
+    while (url) {
+      const res = await appelGraph(url);
+      if (!res.ok) {
+        if (res.status === 404) return tous;
+        throw new Error("Listage avec photo : " + res.status);
+      }
+      const data = await res.json();
+      tous.push(...(data.value || []));
+      url = data["@odata.nextLink"]
+        ? data["@odata.nextLink"].replace(/^https:\/\/graph\.microsoft\.com\/v1\.0/, "")
+        : null;
+    }
+    return tous;
+  }
+
   /* Le sous-dossier Photos des visites récentes, sinon le niveau courant. */
   const sous = enfants.find(e => (e.folder || e.remoteItem) &&
     String(e.name || "").toLowerCase() === "photos");
@@ -338,6 +375,16 @@ async function chargerPhotos() {
   if (sous) {
     refPhotos = refDe(sous, courant.ref.driveId);
     try { liste = await enfantsDeRef(refPhotos); } catch (_) {}
+  }
+
+  /* Seconde lecture, avec la facette photo, fusionnée par identifiant. */
+  let parId = {};
+  try {
+    (await enfantsAvecPhoto(refPhotos)).forEach(e => { parId[e.id] = e; });
+    noter("Relecture avec la facette photo : " + Object.keys(parId).length +
+      " élément(s).", "ok");
+  } catch (e) {
+    noter("Relecture avec photo impossible : " + e.message, "ko");
   }
 
   photos = liste
@@ -351,7 +398,10 @@ async function chargerPhotos() {
          C'est la focale qui nous intéresse : elle dit avec quel objectif
          la photographie a été prise, donc quel zoom la caméra du
          navigateur doit adopter pour retrouver le même cadrage. */
-      const ph = e.photo || (e.remoteItem && e.remoteItem.photo) || null;
+      const bis = parId[e.id] || {};
+      const ph = e.photo || bis.photo ||
+                 (e.remoteItem && e.remoteItem.photo) ||
+                 (bis.remoteItem && bis.remoteItem.photo) || null;
       return { nom_fichier: e.name, onedrive_item_id: r.id, drive_id: r.driveId,
                photo: ph };
     })
