@@ -527,7 +527,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 4.4";
+const VERSION = "essai 4.5";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -1036,6 +1036,56 @@ async function poserZoomCamera(z, motif) {
   }
 }
 
+/* APPROCHE EN PLUSIEURS PASSES.
+
+   Un seul coup ne suffit pas quand l'écart de cadrage est grand. Mesure
+   du 02/09 : référence prise à 5×, caméra à 1×. La vraie échelle vaut
+   20 %, l'estimation en a trouvé 37 et a posé 2,71 × au lieu de 5,00.
+
+   La raison tient à ce qu'on compare : la référence entière contre un
+   rognage au cinquième du flux. Deux images très pauvres, dont la
+   ressemblance est plate autour du maximum — la mesure se pose quelque
+   part entre la vraie valeur et 100 %, toujours du côté de 100.
+
+   Le remède est de recommencer depuis le nouveau cadrage. À 2,71 ×, il
+   ne reste qu'un facteur 1,8 à trouver, et là la mesure est fiable.
+   Chaque passe part d'un flux plus proche, donc d'une mesure meilleure.
+
+   AMORTISSEMENT. La mesure tirant vers 100 %, la correction dépasse la
+   cible au tour suivant. On n'applique donc que 85 % de l'écart, en
+   logarithme : on approche par en dessous plutôt que d'osciller. */
+async function approcherZoom(v, dx, dy, cl, ch) {
+  /* Six passes, bande d'arrêt 95–105 %. Simulé sur le biais mesuré le
+     02/09 : le cas le plus dur — référence 5×, caméra 1× — converge à
+     4,83 × en cinq passes ; le cas 0,5× atteint 0,51 × en trois. */
+  for (let passe = 1; passe <= 6; passe++) {
+    const e = estimerEchelleLarge(v, dx, dy, cl, ch);
+    if (e.v < 0.25) {
+      noter("Passe " + passe + " : mesure trop faible (échelle " +
+        Math.round(e.pc) + " %, score " + Math.round(e.v * 100) +
+        " %) — on s'arrête là.", "attention");
+      zoomCamPose = false;              /* on retentera */
+      return;
+    }
+    if (e.pc >= 95 && e.pc <= 105) {
+      noter("Passe " + passe + " : échelle " + Math.round(e.pc) + " % — zoom " +
+        zoomCamValeur.toFixed(2) + " × retenu.", "ok");
+      return;
+    }
+    const vise = zoomCamValeur * Math.pow(100 / e.pc, 0.85);
+    noter("Passe " + passe + " : échelle " + Math.round(e.pc) + " % (score " +
+      Math.round(e.v * 100) + " %) — de " + zoomCamValeur.toFixed(2) +
+      " × vers " + vise.toFixed(2) + " ×.", "ok");
+    const bouge = await poserZoomCamera(vise, "Passe " + passe);
+    if (!bouge) return;
+    /* Laisser l'exposition et la mise au point se refaire : mesurer sur
+       une image encore en transition fausse la passe suivante. */
+    await new Promise(r => setTimeout(r, 350));
+  }
+  noter("Approche terminée à " + zoomCamValeur.toFixed(2) +
+    " × — l'affinage lent prend le relais.", "ok");
+}
+
 /* Le pilote, appelé à chaque analyse. Il ne fait rien la plupart du
    temps — c'est voulu. */
 function piloterZoomCamera(v, dx, dy, cl, ch, echelle, score) {
@@ -1061,23 +1111,8 @@ function piloterZoomCamera(v, dx, dy, cl, ch, echelle, score) {
      score de l'estimation est faible, la mesure ne veut rien dire — on
      n'y touche pas au zoom et on retentera à l'analyse suivante. */
   if (!zoomCamPose) {
-    const e = estimerEchelleLarge(v, dx, dy, cl, ch);
-    const vise = zoomCamValeur * (100 / e.pc);
-    zoomCamEssais++;
-    if (e.v < 0.25) {
-      if (zoomCamEssais % 10 === 1) {
-        noter("Estimation trop faible (échelle " + Math.round(e.pc) + " %, score " +
-          Math.round(e.v * 100) + " %) — on ne bouge pas le zoom. Essai " +
-          zoomCamEssais + ".", "attention");
-      }
-      return;
-    }
     zoomCamPose = true;
-    noter("Estimation : échelle " + Math.round(e.pc) + " % (score " +
-      Math.round(e.v * 100) + " %) — zoom visé " + vise.toFixed(2) + " × " +
-      "(depuis " + zoomCamValeur.toFixed(2) + " ×, " + zoomCamEssais + " essai" +
-      (zoomCamEssais > 1 ? "s" : "") + ").", "ok");
-    poserZoomCamera(vise, "Estimation initiale");
+    approcherZoom(v, dx, dy, cl, ch);
     return;
   }
 
@@ -1086,9 +1121,12 @@ function piloterZoomCamera(v, dx, dy, cl, ch, echelle, score) {
      les deux secondes. Corriger sur du bruit ferait osciller l'objectif
      sous le doigt de l'opérateur. */
   if (performance.now() - zoomCamDernier < 2000) return;
-  if (score < 0.35) return;
+  /* Le seuil était à 0,35 : trop haut. Un score bas est justement la
+     conséquence du cadrage faux qu'on veut corriger — l'affinage ne
+     partait donc jamais là où il servait le plus. */
+  if (score < 0.20) return;
   if (echelle >= 92 && echelle <= 108) return;
-  poserZoomCamera(zoomCamValeur * (100 / echelle), "Affinage");
+  poserZoomCamera(zoomCamValeur * Math.pow(100 / echelle, 0.85), "Affinage");
 }
 
 function analyser() {
