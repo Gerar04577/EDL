@@ -527,7 +527,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 4.3";
+const VERSION = "essai 4.4";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -553,6 +553,8 @@ let zoomCamOccupe = false;    // un applyConstraints est en cours
 let zoomCamValeur = 1;        // dernière valeur appliquée
 let zoomCamBornes = null;     // { min, max } de l'appareil
 let zoomCamDernier = 0;       // horodatage du dernier ajustement
+let zoomCamEssais = 0;        // tentatives d'estimation depuis la coche
+let zoomCamPlainte = false;   // le refus a-t-il déjà été signalé
 
 function noter(t, c) {
   const j = $("journal");
@@ -1037,17 +1039,44 @@ async function poserZoomCamera(z, motif) {
 /* Le pilote, appelé à chaque analyse. Il ne fait rien la plupart du
    temps — c'est voulu. */
 function piloterZoomCamera(v, dx, dy, cl, ch, echelle, score) {
-  if (!zoomCamAuto || !zoomCamBornes || zoomCamOccupe) return;
+  if (!zoomCamAuto) return;
 
-  /* PREMIER TEMPS — une estimation large, une seule fois. On en déduit le
-     zoom voulu : une référence deux fois plus serrée que le flux donne une
-     échelle de 50 %, donc un zoom de 2. */
+  /* CHAQUE REFUS SE DIT. Un pilote qui ne fait rien en silence est
+     indébogable à distance : on ne sait pas s'il n'a pas été appelé, s'il
+     a été bloqué, ou s'il a jugé qu'il n'y avait rien à faire. */
+  if (!zoomCamBornes) {
+    if (!zoomCamPlainte) {
+      zoomCamPlainte = true;
+      noter("Recherche du zoom : bornes inconnues — rallume la caméra.", "ko");
+    }
+    return;
+  }
+  if (zoomCamOccupe) return;
+
+  /* PREMIER TEMPS — une estimation large. On en déduit le zoom voulu :
+     une référence deux fois plus serrée que le flux donne une échelle de
+     50 %, donc un zoom de 2.
+
+     ELLE PEUT ÉCHOUER, et elle ne doit pas se latcher sur un échec. Si le
+     score de l'estimation est faible, la mesure ne veut rien dire — on
+     n'y touche pas au zoom et on retentera à l'analyse suivante. */
   if (!zoomCamPose) {
-    zoomCamPose = true;
     const e = estimerEchelleLarge(v, dx, dy, cl, ch);
     const vise = zoomCamValeur * (100 / e.pc);
+    zoomCamEssais++;
+    if (e.v < 0.25) {
+      if (zoomCamEssais % 10 === 1) {
+        noter("Estimation trop faible (échelle " + Math.round(e.pc) + " %, score " +
+          Math.round(e.v * 100) + " %) — on ne bouge pas le zoom. Essai " +
+          zoomCamEssais + ".", "attention");
+      }
+      return;
+    }
+    zoomCamPose = true;
     noter("Estimation : échelle " + Math.round(e.pc) + " % (score " +
-      Math.round(e.v * 100) + " %) — zoom visé " + vise.toFixed(2) + " ×.", "ok");
+      Math.round(e.v * 100) + " %) — zoom visé " + vise.toFixed(2) + " × " +
+      "(depuis " + zoomCamValeur.toFixed(2) + " ×, " + zoomCamEssais + " essai" +
+      (zoomCamEssais > 1 ? "s" : "") + ").", "ok");
     poserZoomCamera(vise, "Estimation initiale");
     return;
   }
@@ -1312,9 +1341,16 @@ $("zoom-cam-auto").onchange = () => {
   zoomCamAuto = $("zoom-cam-auto").checked;
   zoomCamPose = false;
   zoomCamDernier = 0;
-  noter(zoomCamAuto
-    ? "Recherche du zoom caméra activée — estimation à la prochaine analyse."
-    : "Recherche du zoom caméra arrêtée.", "ok");
+  zoomCamEssais = 0;
+  zoomCamPlainte = false;
+  if (!zoomCamAuto) return noter("Recherche du zoom caméra arrêtée.", "ok");
+  noter("Recherche du zoom activée — caméra " + (fluxCamera ? "allumée" : "ÉTEINTE") +
+    ", bornes " + (zoomCamBornes
+      ? zoomCamBornes.min.toFixed(2) + " à " + zoomCamBornes.max.toFixed(2) + " ×"
+      : "INCONNUES") +
+    ", départ " + zoomCamValeur.toFixed(2) + " ×, référence " +
+    (refContours ? "chargée" : "ABSENTE") + ".",
+    (fluxCamera && zoomCamBornes && refContours) ? "ok" : "ko");
 };
 
 /* ZOOM DE LA CAMÉRA — la voie propre quand l'appareil l'accepte : c'est
