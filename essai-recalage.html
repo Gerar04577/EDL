@@ -185,6 +185,13 @@
   </div>
 
   <div id="sous-image" class="cache">
+    <div class="ligne"><span>Zoom de la CAMÉRA</span>
+      <span id="val-zoom-cam">—</span></div>
+    <input type="range" id="zoom-cam" min="50" max="1000" step="5" value="100" disabled>
+    <p class="note" id="etat-zoom-cam">À tester une fois la caméra allumée.</p>
+    <div class="ligne"><span>Flux pendant le zoom</span>
+      <span id="res-zoom">—</span></div>
+
     <label class="bascule">
       <input type="checkbox" id="echelle-auto" checked>
       <span>Échelle automatique</span>
@@ -237,13 +244,9 @@
       <span id="val-stab">1.2 s</span></div>
     <input type="range" id="stab" min="0" max="3000" step="100" value="1200">
 
-    <p class="note">Le zoom de la référence et l'échelle automatique se
-    règlent juste sous l'image, à portée de pouce.</p>
-
-    <div class="ligne" style="margin-top:10px"><span>Zoom de la CAMÉRA</span>
-      <span id="val-zoom-cam">—</span></div>
-    <input type="range" id="zoom-cam" min="100" max="300" step="5" value="100" disabled>
-    <p class="note" id="etat-zoom-cam">À tester une fois la caméra allumée.</p>
+    <p class="note">Le zoom de la caméra, le zoom de la référence et
+    l'échelle automatique se règlent tous les trois juste sous l'image, à
+    portée de pouce.</p>
     <button id="btn-auto">Activer le déclenchement automatique</button>
     <p class="note" id="etat-auto">Automatique arrêté.</p>
     <button id="btn-prendre" class="principal">Prendre la photo</button>
@@ -520,13 +523,14 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 4.1";
+const VERSION = "essai 4.2";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
 let boucle = null, auto = false, dernierScore = 0;
 let compteur = 0, dernierRelevé = Date.now(), sommeDurees = 0;
 let priseURL = null;
+let referencePixels = 0;
 
 function noter(t, c) {
   const j = $("journal");
@@ -723,6 +727,11 @@ $("btn-camera").onclick = async () => {
       $("zoom-cam").disabled = false;
       $("zoom-cam").min = Math.round(cap.zoom.min * 100);
       $("zoom-cam").max = Math.round(cap.zoom.max * 100);
+      /* Résolution de départ, sans zoom : c'est l'étalon auquel se
+         comparent toutes les mesures faites ensuite. */
+      referencePixels = (r.width || 0) * (r.height || 0);
+      $("res-zoom").textContent = obtenu + "  (départ)";
+      $("res-zoom").className = "ok";
       /* AUCUN ZOOM IMPOSÉ.
 
          Ce module forçait le zoom à 1,30 × dès l'allumage, valeur retenue
@@ -1187,7 +1196,30 @@ $("zoom-cam").oninput = async () => {
   try {
     await piste.applyConstraints({ advanced: [{ zoom: z }] });
     $("val-zoom-cam").textContent = z.toFixed(2) + " ×";
-    noter("Zoom caméra à " + z.toFixed(2) + " ×.", "ok");
+
+    /* LA RÉSOLUTION APRÈS ZOOM — c'est la mesure qui manquait.
+
+       Le banc ne lisait getSettings() qu'à l'allumage. Or le 30/08, un
+       zoom de 1,30 imposé au démarrage faisait retomber Safari de
+       3024×4032 à 1440×1920. Si le même effondrement se produit en cours
+       de route, une visée à 5× rendrait une photographie plus pauvre que
+       la référence, et la comparaison perdrait son objet.
+
+       On relit donc les réglages APRÈS chaque changement, et on écrit la
+       résolution à côté du facteur. Un délai court laisse à la piste le
+       temps de se reconfigurer : lue dans la foulée, elle renvoie encore
+       l'ancienne valeur. */
+    await new Promise(r => setTimeout(r, 250));
+    const s2 = piste.getSettings();
+    const res = (s2.width || 0) + "×" + (s2.height || 0);
+    const pixels = (s2.width || 0) * (s2.height || 0);
+    const perte = referencePixels && pixels
+      ? Math.round((1 - pixels / referencePixels) * 100) : 0;
+    $("res-zoom").textContent = res + (perte > 2 ? "  (−" + perte + " %)" : "");
+    $("res-zoom").className = perte > 2 ? "attention" : "ok";
+    noter("Zoom caméra à " + z.toFixed(2) + " × — flux " + res +
+      (perte > 2 ? ", soit " + perte + " % de pixels en moins" : ", pleine résolution") + ".",
+      perte > 2 ? "attention" : "ok");
   } catch (err) {
     $("val-zoom-cam").textContent = "refusé";
     noter("Zoom caméra refusé : " + err.name, "ko");
