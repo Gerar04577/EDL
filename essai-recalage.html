@@ -190,7 +190,7 @@
     <input type="range" id="zoom-cam" min="50" max="1000" step="5" value="100" disabled>
     <label class="bascule">
       <input type="checkbox" id="zoom-cam-auto">
-      <span>Chercher le zoom automatiquement</span>
+      <span>Balayer le zoom caméra, puis relais à 45 %</span>
     </label>
     <p class="note" id="etat-zoom-cam">À tester une fois la caméra allumée.</p>
     <div class="ligne"><span>Flux pendant le zoom</span>
@@ -527,7 +527,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 4.7";
+const VERSION = "essai 5.0";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -555,6 +555,21 @@ let zoomCamBornes = null;     // { min, max } de l'appareil
 let zoomCamDernier = 0;       // horodatage du dernier ajustement
 let zoomCamEssais = 0;        // tentatives d'estimation depuis la coche
 let zoomCamPlainte = false;   // le refus a-t-il déjà été signalé
+
+/* UN SEUL MÉCANISME À LA FOIS.
+
+   Le zoom caméra et le zoom de la référence corrigent le même écart par
+   deux moyens différents : l'un change le champ capté, l'autre la taille
+   de l'image affichée. Actifs ensemble, ils se compensent — la recherche
+   d'échelle rattrape ce que le zoom vient de corriger, et le zoom
+   rattrape ce que l'échelle vient de faire. D'où les allers-retours du
+   02/09 et l'étendue 25 à 125 %, butée à butée.
+
+   Deux phases exclusives, donc. En phase « caméra », l'échelle est figée
+   à 100 % et seul l'objectif bouge. Passé 45 % de superposition, le zoom
+   caméra se fige et la référence prend le relais. */
+let phaseVisee = "camera";
+let balayageEnCours = false, balayageFait = false;
 
 function noter(t, c) {
   const j = $("journal");
@@ -961,6 +976,10 @@ function chercherEchelle(v, dx, dy, cl, ch) {
      La case reste, pour constater la différence en basculant. */
   if (!$("recherche-echelle").checked) return 100;
 
+  /* Phase caméra : l'échelle ne bouge pas, sinon les deux mécanismes se
+     compensent au lieu de se relayer. */
+  if (zoomCamAuto && phaseVisee === "camera") return 100;
+
   if (!$("echelle-auto").checked) return Number($("zoom-ref").value);
   if (echelleFigee) return echelleFigee;
 
@@ -1085,6 +1104,83 @@ async function poserZoomCamera(z, motif) {
   }
 }
 
+/* Pose le zoom sans rien écrire : le balayage en fait seize d'affilée,
+   un journal par pose serait illisible. */
+async function poserZoomBrut(z) {
+  const b = zoomCamBornes || { min: 1, max: 1 };
+  const cible = Math.min(b.max, Math.max(b.min, z));
+  const piste = fluxCamera && fluxCamera.getVideoTracks()[0];
+  if (!piste) return false;
+  try {
+    await piste.applyConstraints({ advanced: [{ zoom: cible }] });
+    /* La piste met un quart de seconde à se reconfigurer, et l'exposition
+       un peu plus : mesurer trop tôt note une image en transition. */
+    await new Promise(r => setTimeout(r, 300));
+    zoomCamValeur = cible;
+    $("zoom-cam").value = Math.round(cible * 100);
+    $("val-zoom-cam").textContent = cible.toFixed(2) + " ×";
+    return true;
+  } catch (e) { return false; }
+}
+
+/* BALAYAGE ALLER-RETOUR, ET ON GARDE LE MEILLEUR.
+
+   L'approche itérative du 02/09 suivait la mesure d'échelle, qui se
+   contredit dès que l'écart dépasse un facteur 3 : 18 % à 1,53 × puis
+   222 % à 6,48 ×, avec des scores équivalents. Elle se laissait donc
+   conduire par des faux maximums.
+
+   Ici on ne suit rien : on parcourt toute la plage de l'objectif, on note
+   le score à chaque palier, et on retient le meilleur rencontré. Un aller
+   large pour situer, un retour resserré autour du meilleur pour affiner —
+   dans l'autre sens, de sorte qu'un écart dû à l'exposition qui se refait
+   ne biaise pas les deux passes du même côté.
+
+   L'échelle est figée à 100 % pendant tout le balayage : c'est bien le
+   cadrage de l'objectif qu'on mesure, rien d'autre. */
+async function balayerZoom(v, dx, dy, cl, ch) {
+  balayageEnCours = true;
+  const b = zoomCamBornes;
+  const lo = Math.log(b.min), hi = Math.log(b.max);
+  const mesurer = () => {
+    const r = contoursRef(100, TAILLE_ECH);
+    if (!r) return 0;
+    return chercherT(r, contoursFluxT(v, dx, dy, cl, ch, 100, TAILLE_ECH),
+                     TAILLE_ECH).score;
+  };
+  let best = { z: zoomCamValeur, s: -1 };
+
+  const N = 9;
+  noter("Balayage : aller en " + N + " paliers, de " + b.min.toFixed(2) +
+    " à " + b.max.toFixed(2) + " ×.", "ok");
+  for (let i = 0; i < N; i++) {
+    const z = Math.exp(lo + (hi - lo) * i / (N - 1));
+    if (!(await poserZoomBrut(z))) continue;
+    const sc = mesurer();
+    noter("Aller " + (i + 1) + "/" + N + " — zoom " + z.toFixed(2) + " × : " +
+      Math.round(sc * 100) + " %.", "ok");
+    if (sc > best.s) best = { z, s: sc };
+  }
+
+  const M = 7;
+  const l2 = Math.max(lo, Math.log(best.z) - Math.log(1.6));
+  const h2 = Math.min(hi, Math.log(best.z) + Math.log(1.6));
+  noter("Retour resserré autour de " + best.z.toFixed(2) + " ×.", "ok");
+  for (let i = M - 1; i >= 0; i--) {
+    const z = Math.exp(l2 + (h2 - l2) * i / (M - 1));
+    if (!(await poserZoomBrut(z))) continue;
+    const sc = mesurer();
+    noter("Retour " + (M - i) + "/" + M + " — zoom " + z.toFixed(2) + " × : " +
+      Math.round(sc * 100) + " %.", "ok");
+    if (sc > best.s) best = { z, s: sc };
+  }
+
+  await poserZoomBrut(best.z);
+  noter("Meilleur cadrage retenu : zoom " + best.z.toFixed(2) + " × à " +
+    Math.round(best.s * 100) + " %.", "ok");
+  balayageFait = true; balayageEnCours = false;
+}
+
 /* APPROCHE EN PLUSIEURS PASSES.
 
    Un seul coup ne suffit pas quand l'écart de cadrage est grand. Mesure
@@ -1159,11 +1255,15 @@ function piloterZoomCamera(v, dx, dy, cl, ch, echelle, score) {
      ELLE PEUT ÉCHOUER, et elle ne doit pas se latcher sur un échec. Si le
      score de l'estimation est faible, la mesure ne veut rien dire — on
      n'y touche pas au zoom et on retentera à l'analyse suivante. */
-  if (!zoomCamPose) {
-    zoomCamPose = true;
-    approcherZoom(v, dx, dy, cl, ch);
+  /* Phase référence : l'objectif est figé, on ne le touche plus. */
+  if (phaseVisee !== "camera") return;
+  if (balayageEnCours) return;
+
+  if (!balayageFait) {
+    balayerZoom(v, dx, dy, cl, ch);
     return;
   }
+  return;
 
   /* SECOND TEMPS — affinage lent. On ne corrige que si l'écart persiste,
      que l'alignement est déjà crédible, et jamais plus d'une fois toutes
@@ -1237,6 +1337,30 @@ function analyser() {
 
   /* Le zoom de l'objectif se règle ici, à partir de l'échelle mesurée. */
   piloterZoomCamera(v, dx, dy, cl, ch, pc, m.score);
+
+  /* LE RELAIS À 45 %.
+
+     Tant que la superposition est mauvaise, c'est le cadrage qui est en
+     cause : seul l'objectif peut y faire quelque chose. Passé 45 %, le
+     gros de l'écart est absorbé et il ne reste que quelques pourcents —
+     c'est le domaine de la recherche d'échelle, qui y est fiable.
+
+     Le retour en arrière existe aussi : si l'alignement s'effondre
+     durablement, c'est que l'opérateur a changé de sujet ou de place, et
+     le balayage doit reprendre depuis l'objectif. */
+  if (zoomCamAuto && phaseVisee === "camera" && balayageFait && !balayageEnCours
+      && m.score >= 0.45) {
+    phaseVisee = "reference";
+    echelleFigee = null; echelleRetenue = null; echecs = 0;
+    noter("Superposition à " + Math.round(m.score * 100) + " % — le zoom de " +
+      "la RÉFÉRENCE prend le relais ; l'objectif reste à " +
+      zoomCamValeur.toFixed(2) + " ×.", "ok");
+  } else if (zoomCamAuto && phaseVisee === "reference" && echecs >= 40) {
+    phaseVisee = "camera"; balayageFait = false;
+    echelleFigee = null; echelleRetenue = null; echecs = 0;
+    noter("Superposition perdue — retour au zoom de la CAMÉRA, nouveau " +
+      "balayage.", "attention");
+  }
   const pourcent = Math.max(0, Math.round(m.score * 100));
   dernierScore = pourcent;
 
@@ -1430,6 +1554,8 @@ $("zoom-cam-auto").onchange = () => {
   zoomCamDernier = 0;
   zoomCamEssais = 0;
   zoomCamPlainte = false;
+  phaseVisee = "camera";
+  balayageFait = false; balayageEnCours = false;
   if (!zoomCamAuto) return noter("Recherche du zoom caméra arrêtée.", "ok");
   noter("Recherche du zoom activée — caméra " + (fluxCamera ? "allumée" : "ÉTEINTE") +
     ", bornes " + (zoomCamBornes
