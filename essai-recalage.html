@@ -150,6 +150,15 @@
   <h2>1. Photographie de référence</h2>
   <button id="btn-pellicule">Choisir dans la pellicule</button>
   <input type="file" accept="image/*" id="fichier" class="cache">
+  <button id="btn-onedrive" class="secondaire">Charger depuis OneDrive</button>
+  <p class="note" id="etat-onedrive">La pellicule passe par le convertisseur
+  d'iOS ; OneDrive rend le fichier tel qu'il est stocké. Pour éprouver ce
+  que reçoit l'application, c'est OneDrive qu'il faut.</p>
+  <div id="bloc-od" class="cache">
+    <div class="ligne"><span id="od-chemin">—</span>
+      <button class="mini secondaire" id="od-remonter">Remonter</button></div>
+    <div id="od-liste"></div>
+  </div>
   <p class="note" id="etat-ref">Aucune référence chargée.</p>
   <div id="diag-ref" class="cache">
     <div class="ligne"><span>Contours détectés</span><span id="densite">—</span></div>
@@ -222,6 +231,23 @@
     </label>
 
     <label class="bascule">
+      <input type="checkbox" id="normaliser" checked>
+      <span>Normaliser le contraste des deux images</span>
+    </label>
+    <p class="note">Les vues de sortie sont systématiquement plus claires
+    que celles d'entrée, et le gradient suit le contraste : des arêtes qui
+    coïncident à l'œil sortaient à 35 %. On étale les deux images sur toute
+    la plage avant de chercher les contours. Décoche pour comparer.</p>
+
+    <div class="ligne"><span>Accentuation de la RÉFÉRENCE</span>
+      <span id="val-accent">1,00 ×</span></div>
+    <input type="range" id="accent" min="100" max="300" step="5" value="100">
+    <p class="note">Accentue le contraste de la seule photographie de
+    référence, autour de sa valeur moyenne. À 1,00 elle n'est pas touchée.
+    Le score se lit en direct : monte le curseur et regarde s'il progresse
+    ou s'il baisse.</p>
+
+    <label class="bascule">
       <input type="checkbox" id="recherche-echelle" checked>
       <span>Chercher l'échelle</span>
     </label>
@@ -282,6 +308,11 @@
   <p class="note" id="journal">En attente.</p>
 </div>
 
+<script src="msal-browser.min.js"></script>
+<script src="config.js"></script>
+<script src="db.js"></script>
+<script src="auth.js"></script>
+<script src="graph.js"></script>
 <script>
 /* ================= NOYAU DE RECALAGE ================= */
 /* Deux tailles de travail : une petite pour CHERCHER l'échelle, une plus
@@ -305,7 +336,75 @@ function reduireT(rgba, L, H, T) {
       g[y * T + x] = 0.299 * rgba[i] + 0.587 * rgba[i+1] + 0.114 * rgba[i+2];
     }
   }
-  return g;
+  return NORMALISER ? normaliserContraste(g) : g;
+}
+
+/* ACCENTUATION DU CONTRASTE, SUR LA SEULE RÉFÉRENCE.
+
+   Chaque valeur est écartée de la moyenne de l'image dans le rapport
+   demandé : à 1,50, un pixel qui dépassait la moyenne de 20 la dépasse de
+   30. Les zones claires s'éclaircissent, les sombres s'assombrissent, et
+   le gradient de Sobel — qui suit le contraste local — s'élève d'autant.
+
+   Réglable de 1,00 à 3,00 pour que l'effet se mesure au lieu de se
+   supposer. À 1,00, l'image n'est pas touchée. */
+function accentuerContraste(g, facteur) {
+  if (!(facteur > 1.001)) return g;
+  const n = g.length;
+  let somme = 0;
+  for (let i = 0; i < n; i++) somme += g[i];
+  const moy = somme / n;
+  const r = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    r[i] = Math.max(0, Math.min(255, moy + (g[i] - moy) * facteur));
+  }
+  return r;
+}
+
+/* NORMALISATION DU CONTRASTE, APPLIQUÉE AUX DEUX IMAGES.
+
+   Mesuré et consigné : les photographies de sortie sont systématiquement
+   plus claires que celles d'entrée — même lumière, même position, deux
+   minutes d'écart, et l'écart demeure. Le traitement d'image d'Apple ne
+   s'applique pas au flux du navigateur, et aucun réglage n'y remédie.
+
+   Conséquence sur le score : le gradient de Sobel est proportionnel au
+   contraste local. Une image plus claire et plus plate rend des contours
+   plus faibles, et la comparaison les compte comme absents. C'est une
+   partie du 35 % du 03/09, alors que les arêtes coïncidaient à l'œil.
+
+   On étale donc chaque image sur toute la plage avant de chercher les
+   contours. ATTENTION : appliqué aux DEUX, jamais à une seule — accentuer
+   la référence seule lui donnerait un caractère de contours que le flux
+   n'a pas, et le score baisserait au lieu de monter.
+
+   L'étalement se fait sur les centiles 2 et 98, pas sur le minimum et le
+   maximum : un seul pixel brûlé ou un seul point noir suffirait sinon à
+   ruiner l'échelle. */
+function normaliserContraste(g) {
+  const n = g.length;
+  const hist = new Int32Array(256);
+  for (let i = 0; i < n; i++) hist[Math.max(0, Math.min(255, g[i] | 0))]++;
+  const bas = Math.round(n * 0.02), haut = Math.round(n * 0.98);
+  let acc = 0, p2 = 0, p98 = 255;
+  for (let v = 0; v < 256; v++) {
+    acc += hist[v];
+    if (acc >= bas) { p2 = v; break; }
+  }
+  acc = 0;
+  for (let v = 0; v < 256; v++) {
+    acc += hist[v];
+    if (acc >= haut) { p98 = v; break; }
+  }
+  /* Une image sans contraste du tout : on la laisse telle quelle plutôt
+     que d'amplifier son seul bruit. */
+  if (p98 - p2 < 12) return g;
+  const k = 255 / (p98 - p2);
+  const r = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    r[i] = Math.max(0, Math.min(255, (g[i] - p2) * k));
+  }
+  return r;
 }
 
 /* Amplitude du gradient (Sobel). On compare des CONTOURS, pas des teintes :
@@ -335,6 +434,8 @@ function contoursT(g, T) {
    contours passent à cinq ou sept pixels d'épaisseur. Le sommet s'élargit
    d'autant, et la mesure devient monotone sur une plage utile. */
 var DILATATION = true;
+var NORMALISER = true;
+var ACCENT = 1;
 
 function dilater(c, T) {
   const d = new Float32Array(T * T);
@@ -527,7 +628,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 5.1";
+const VERSION = "essai 5.3";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -593,6 +694,160 @@ function noter(t, c) {
 }
 
 /* ---- Référence ---- */
+/* ---- Chargement depuis OneDrive ---------------------------------------
+
+   POURQUOI CE CHEMIN EXISTE.
+
+   Le sélecteur de fichiers passe par le convertisseur d'iOS : une
+   photographie choisie dans la pellicule est remise au navigateur en
+   JPEG, 4,8 Mo au lieu de 3,5 Mo en HEIF. Ce n'est PAS ce que reçoit
+   l'application, qui lit dans OneDrive.
+
+   Un banc qui ne reçoit pas ce que reçoit l'application ne prouve rien.
+   Tous les essais faits depuis la pellicule portent donc sur des fichiers
+   que l'application ne verra jamais.
+
+   LA TAILLE DEMANDÉE. Mesuré sur un HEIC réel de l'exploitation :
+     source      refusée
+     c1920x1920  1440×1920, 317 Ko   <- cinq fois plus de pixels
+     large        600×800,   68 Ko
+     medium       132×176,    6 Ko
+
+   « large » ne rend pas 1920 malgré la documentation : deux signalements
+   ouverts depuis 2021, clos sans correction. Et le « c » n'est pas un
+   recadrage — c'est le suffixe _crop qui recadre ; les proportions sont
+   conservées, mesuré.
+
+   Le banc demande donc c1920x1920 en premier. Il n'emploie PAS
+   apercuPhotoEntree de l'application, qui demande large : le banc doit
+   éprouver la bonne taille sans que l'application soit touchée.
+
+   Un JPEG n'a pas besoin d'aperçu du tout : Safari sait l'afficher, et le
+   fichier d'origine vaut mieux que n'importe quelle vignette. */
+let odPile = [];
+
+async function odApercu(element, driveId) {
+  const r = refDe(element, driveId);
+  const base = r.driveId ? `/drives/${r.driveId}/items/${r.id}`
+                         : `/me/drive/items/${r.id}`;
+  /* JPEG et PNG : le fichier entier, sans passer par une vignette. */
+  if (/\.(jpe?g|png|webp)$/i.test(element.name || "")) {
+    const res = await appelGraph(base);
+    if (res.ok) {
+      const item = await res.json();
+      const lien = item["@microsoft.graph.downloadUrl"] || item["@content.downloadUrl"];
+      if (lien) return { url: lien, via: "fichier d'origine" };
+    }
+  }
+  for (const t of ["c1920x1920", "large", "medium"]) {
+    try {
+      const res = await appelGraph(`${base}/thumbnails/0/${t}`);
+      if (!res.ok) continue;
+      const v = await res.json();
+      if (v && v.url) return { url: v.url, via: t };
+    } catch (_) { /* taille suivante */ }
+  }
+  throw new Error("Aucun aperçu pour " + (element.name || "ce fichier"));
+}
+
+function odEstImage(e) {
+  return (e.file || (e.remoteItem && e.remoteItem.file)) &&
+         /\.(jpe?g|png|heic|heif|webp)$/i.test(e.name || "");
+}
+
+async function odAfficher() {
+  const courant = odPile[odPile.length - 1];
+  $("od-chemin").textContent = odPile.map(x => x.nom).join(" / ");
+  $("od-liste").innerHTML = "<p class=\"note\">Lecture…</p>";
+  let enfants;
+  try { enfants = await enfantsDeRef(courant.ref); }
+  catch (e) { return noter("Lecture impossible : " + e.message, "ko"); }
+
+  const dossiers = enfants.filter(e => e.folder || e.remoteItem)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const images = enfants.filter(odEstImage)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+  $("od-liste").innerHTML = "";
+  for (const d of dossiers) {
+    const b = document.createElement("button");
+    b.className = "mini secondaire";
+    b.style.cssText = "width:100%;text-align:left;margin:0 0 4px";
+    b.textContent = "📁 " + d.name;
+    b.onclick = async () => {
+      odPile.push({ ref: refDe(d, courant.ref.driveId), nom: d.name });
+      await odAfficher();
+    };
+    $("od-liste").appendChild(b);
+  }
+  for (const im of images) {
+    const b = document.createElement("button");
+    b.className = "mini";
+    b.style.cssText = "width:100%;text-align:left;margin:0 0 4px";
+    b.textContent = im.name;
+    b.onclick = () => odChoisir(im, courant.ref.driveId);
+    $("od-liste").appendChild(b);
+  }
+  if (!dossiers.length && !images.length) {
+    $("od-liste").innerHTML = "<p class=\"note\">Dossier vide.</p>";
+  }
+  noter(dossiers.length + " dossier(s), " + images.length +
+    " photographie(s) ici.", "ok");
+}
+
+async function odChoisir(element, driveId) {
+  try {
+    noter("Chargement de « " + element.name + " »…", "ok");
+    const a = await odApercu(element, driveId);
+    const rep = await fetch(a.url);
+    if (!rep.ok) throw new Error("téléchargement " + rep.status);
+    const blob = await rep.blob();
+    await poserReferenceDepuis(blob);
+    $("etat-onedrive").textContent =
+      element.name + " — chargée par " + a.via + ".";
+    $("etat-onedrive").className = "note ok";
+    noter("Référence OneDrive : " + element.name + " — " + a.via +
+      ", " + Math.round(blob.size / 1024) + " Ko.", "ok");
+  } catch (e) {
+    $("etat-onedrive").textContent = "Échec : " + e.message;
+    $("etat-onedrive").className = "note ko";
+    noter("Chargement OneDrive impossible : " + e.message, "ko");
+  }
+}
+
+$("od-remonter").onclick = async () => {
+  if (odPile.length <= 1) return noter("Déjà à la racine.", "attention");
+  odPile.pop();
+  await odAfficher();
+};
+
+$("btn-onedrive").onclick = async () => {
+  const b = $("btn-onedrive");
+  b.disabled = true;
+  try {
+    await initAuth();
+    if (!estConnecte()) {
+      $("etat-onedrive").textContent =
+        "Aucune session. Ouvre l'application, connecte-toi, puis reviens.";
+      $("etat-onedrive").className = "note attention";
+      noter("Aucune session dans le stockage local.", "attention");
+      return;
+    }
+    const racine = await obtenirRefRacineImmobilier();
+    odPile = [{ ref: racine, nom: CONFIG.onedrive.dossier_racine }];
+    $("bloc-od").classList.remove("cache");
+    $("etat-onedrive").textContent = "Session reprise — " + (nomUtilisateur() || "");
+    $("etat-onedrive").className = "note ok";
+    await odAfficher();
+  } catch (e) {
+    $("etat-onedrive").textContent = "Échec : " + e.message;
+    $("etat-onedrive").className = "note ko";
+    noter("OneDrive : " + e.message, "ko");
+  } finally {
+    b.disabled = false;
+  }
+};
+
 $("btn-pellicule").onclick = () => $("fichier").click();
 $("fichier").onchange = async (e) => {
   const f = e.target.files && e.target.files[0];
@@ -929,7 +1184,13 @@ var imageRefChargee = null;
 /* Contours de la référence à une échelle donnée, mis en réserve. */
 var reserve = {};                 // clé : taille + "|" + pourcent
 function contoursRef(pc, T) {
-  const cle = T + "|" + Math.round(pc * 10);
+  /* LA RÉSERVE DOIT DISTINGUER LES RÉGLAGES.
+
+     Sans cela, bouger le curseur ne changerait rien à l'écran : on
+     resservirait l'image mise en réserve avant l'accentuation, et le banc
+     mesurerait un effet qu'il n'applique pas. */
+  const cle = T + "|" + Math.round(pc * 10) + "|" + Math.round(ACCENT * 100) +
+              "|" + (NORMALISER ? 1 : 0);
   if (reserve[cle]) return reserve[cle];
   if (!imageRefChargee) return null;
   const c = document.createElement("canvas");
@@ -953,7 +1214,9 @@ function contoursRef(pc, T) {
   const sw = iw / z, sh = ih / z;
   ctx.drawImage(imageRefChargee, (iw - sw) / 2, (ih - sh) / 2, sw, sh, 0, 0, T, T);
   const d = ctx.getImageData(0, 0, T, T).data;
-  const r = contoursT(reduireT(d, T, T, T), T);
+  /* L'accentuation ne touche QUE la référence : c'est ici, et nulle part
+     ailleurs. Le flux passe par contoursFluxT, qui n'y a pas accès. */
+  const r = contoursT(accentuerContraste(reduireT(d, T, T, T), ACCENT), T);
   reserve[cle] = r;
   return r;
 }
@@ -1503,7 +1766,24 @@ $("recherche-echelle").onchange = () => {
 $("dilatation").onchange = () => {
   DILATATION = $("dilatation").checked;
   /* Les contours mis en réserve ont été calculés avec l'autre réglage. */
-  reserve = {}; echelleRetenue = null; echelleFigee = null; echecs = 0;
+  reserve = {};
+
+$("accent").oninput = () => {
+  ACCENT = Number($("accent").value) / 100;
+  $("val-accent").textContent = ACCENT.toFixed(2).replace(".", ",") + " ×";
+  /* La réserve distingue déjà l'accentuation par sa clé ; on la vide tout
+     de même pour ne pas la laisser gonfler à chaque cran du curseur. */
+  reserve = {};
+  echelleFigee = null; echelleRetenue = null; echecs = 0;
+};
+
+$("normaliser").onchange = () => {
+  NORMALISER = $("normaliser").checked;
+  reserve = {}; echelleFigee = null; echelleRetenue = null; echecs = 0;
+  phaseVisee = "camera"; balayageFait = false;
+  noter(NORMALISER ? "Contraste normalisé sur les deux images."
+                   : "Normalisation du contraste arrêtée.", "ok");
+}; echelleRetenue = null; echelleFigee = null; echecs = 0;
   if (imageRefChargee) refContours = contoursRef(100, TAILLE);
   noter(DILATATION ? "Contours dilatés — sommet élargi."
                    : "Contours d'un pixel — sommet étroit.", "ok");
