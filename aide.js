@@ -435,6 +435,45 @@ var AIDE = [
       "incontestable.",
   },
   {
+    titre: "10. Un dégât découvert après la sortie",
+    corps: [
+      "Constate tant que le logement est encore vide, avant l'entrée du suivant. " +
+      "Photographie la pièce entière, puis le détail : un gros plan seul ne prouve " +
+      "ni l'endroit ni la date. L'application horodate et empreinte chaque photo, " +
+      "c'est exactement à cela que ça sert.",
+      "Passe ensuite trois filtres, dans cet ordre. Le dégât figure-t-il déjà à " +
+      "l'état des lieux d'entrée ? S'il y est, rien n'est dû. Relève-t-il de la " +
+      "vétusté ou de la force majeure ? Le décret wallon les met à charge du " +
+      "bailleur. Relève-t-il des réparations locatives ? La liste wallonne, en bas " +
+      "de ce mode d'emploi, donne la répartition poste par poste. Ce qui survit aux " +
+      "trois filtres est imputable au locataire.",
+      "Chiffre sur devis ou sur facture, jamais de mémoire. Une estimation écrite à " +
+      "la main se conteste ; un devis d'entrepreneur beaucoup moins. C'est ce que " +
+      "permet la clause de chiffrage indicatif du procès-verbal : annoncer un ordre " +
+      "de grandeur à la sortie, arrêter le montant ensuite sur pièce.",
+      "Envoie une mise en demeure par recommandé, à l'adresse d'élection de domicile " +
+      "prévue au bail. Elle reprend la référence du bail et de l'état des lieux " +
+      "d'entrée, la constatation de sortie, le poste concerné, le montant justifié " +
+      "par le devis joint, et un délai de paiement — quinze jours est usuel. Joins " +
+      "les photographies.",
+      "Ne prends jamais la garantie d'autorité. Elle reste la propriété du locataire " +
+      "jusqu'à un accord écrit établi après la fin du bail, ou une décision de " +
+      "justice. C'est le point où les bailleurs se font sanctionner.",
+      "À défaut d'accord, le juge de paix du canton où se trouve l'immeuble. Requête " +
+      "écrite, pas d'avocat obligatoire. Tu produis l'état des lieux d'entrée, celui " +
+      "de sortie signé, les photographies horodatées, le devis et la mise en demeure. " +
+      "C'est le dossier que cette application fabrique.",
+      "Pour un vice qui n'était pas apparent le jour de la sortie, le chemin est le " +
+      "même, avec une difficulté de plus : il faut démontrer qu'il existait déjà et " +
+      "qu'il n'était pas décelable. La clause de réserve imprimée au procès-verbal " +
+      "sert à cela — elle empêche qu'on t'oppose ta propre signature.",
+    ],
+    attention: "La loi laisse dix ans pour agir, mais ce chiffre est trompeur. La " +
+      "fenêtre utile se ferme à l'entrée du locataire suivant : après elle, plus rien " +
+      "ne permet de démontrer que le dégât vient du sortant. C'est une question de " +
+      "preuve, pas de délai. Autrement dit : quelques jours, en pleine rentrée.",
+  },
+  {
     titre: "Si le réseau manque",
     corps: [
       "Continue normalement. Photographier, écrire les constats, relever les compteurs, " +

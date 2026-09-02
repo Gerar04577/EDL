@@ -382,6 +382,18 @@ async function creerVisite(param) {
       proprete: { propre: null, commentaire: "" },
     },
     divers: "",
+    /* Références du bail. Exigées au procès-verbal par le décret wallon du
+       15 mars 2018 : date de début à l'entrée (art. 27, §2, 3°), date du bail
+       et durée d'occupation à la sortie (art. 27, §5, 4°).
+       Facultatives : une date manquante ne doit jamais empêcher une visite
+       de démarrer, quitte à ce que la ligne s'imprime en tiret. */
+    bail: {
+      debut: param.bail_debut || null,
+      /* La fin de bail ne concerne que la sortie. Même logique que
+         chiffrage_actif ci-dessus : une valeur saisie puis devenue sans
+         objet ne doit pas rester dans la visite. */
+      fin: param.type === "EDLS" ? (param.bail_fin || null) : null,
+    },
     /* Observations et réserves du preneur, consignées AVANT signature.
        Sans cette possibilité, le caractère contradictoire de l'état des
        lieux peut être contesté — décret wallon du 15 mars 2018, art. 27. */

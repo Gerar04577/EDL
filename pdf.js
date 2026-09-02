@@ -44,6 +44,46 @@ function dateFr(iso) {
   return d.toLocaleDateString("fr-BE") + " à " + d.toLocaleTimeString("fr-BE");
 }
 
+function dateCourteFr(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d)) return null;
+  return d.toLocaleDateString("fr-BE");
+}
+
+/* Durée d'occupation — exigée au procès-verbal de sortie par l'article 27,
+   §5, 4°, du décret wallon.
+
+   ELLE SE COMPTE DEPUIS L'ÉTAT DES LIEUX D'ENTRÉE, PAS DEPUIS LE BAIL EN
+   COURS. Les étudiants signent un bail par an : compter depuis le bail
+   courant afficherait un an là où l'occupation dure depuis trois. C'est
+   l'occupation qui est demandée, pas la durée du dernier contrat.
+   Repli sur la date de début du bail quand aucun EDLE n'est connu. */
+function dureeOccupation(depuisIso, jusquIso) {
+  if (!depuisIso) return null;
+  const a = new Date(depuisIso), b = new Date(jusquIso || Date.now());
+  if (isNaN(a) || isNaN(b) || b < a) return null;
+  let mois = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+  if (b.getDate() < a.getDate()) mois--;
+  if (mois < 1) return "moins d'un mois";
+  const ans = Math.floor(mois / 12), reste = mois % 12;
+  const m = [];
+  if (ans) m.push(ans + (ans > 1 ? " ans" : " an"));
+  if (reste) m.push(reste + " mois");
+  return m.join(" et ");
+}
+
+/* Le bail est-il arrivé à son terme au jour de la signature ? Commande la
+   rédaction de la clause de libération de la garantie. Une date de fin
+   inconnue vaut « pas encore arrivé à terme » : c'est le cas prudent. */
+function bailArriveAuTerme(V) {
+  const fin = (V.bail || {}).fin;
+  if (!fin) return false;
+  const f = new Date(fin), j = new Date(V.date_signature || Date.now());
+  if (isNaN(f) || isNaN(j)) return false;
+  return j >= f;
+}
+
 function libelleEtat(v) {
   return ({ neuf: "état neuf", bon_etat: "bon état", usage: "usagé", degrade: "dégradé" })[v] || null;
 }
@@ -229,6 +269,21 @@ async function genererPV(visite) {
   p.filet();
   p.ligne("Date de la visite", dateFr(V.date_debut));
   p.ligne("Type", sortie ? "État des lieux de sortie" : "État des lieux d'entrée");
+
+  /* Références du bail — article 27, §2, 3°, à l'entrée et §5, 4°, à la
+     sortie. La date de l'état des lieux d'entrée n'est jamais saisie : elle
+     vient de la comparaison, qui l'a déjà retrouvée dans le dossier voisin. */
+  {
+    const bail = V.bail || {};
+    const edleDate = (V.comparaison || {}).edle_date || null;
+    p.ligne("Début du bail", dateCourteFr(bail.debut));
+    if (sortie) {
+      p.ligne("Fin du bail", dateCourteFr(bail.fin));
+      p.ligne("État des lieux d'entrée du", dateCourteFr(edleDate));
+      p.ligne("Durée d'occupation",
+        dureeOccupation(edleDate || bail.debut, V.date_debut));
+    }
+  }
 
   /* L'adresse de consultation est créée au démarrage de la visite : elle
      peut donc figurer au document signé. Elle ne donne accès qu'aux
@@ -428,7 +483,75 @@ async function genererPV(visite) {
       p.ligne("TOTAL TVAC", euro(ch.total_tvac));
       doc.setFont("helvetica", "normal");
     }
+    /* Le bail désigne un expert dont la décision « liera définitivement les
+       parties ». Le décret wallon du 15 mars 2018 répute non écrite toute
+       clause de décision obligatoire convenue avant la naissance du
+       différend : s'en tenir à l'indicatif ne coûte donc aucun droit, et
+       évite d'être enfermé dans un chiffre annoncé debout dans le logement. */
+    p.saut(3);
+    p.paragraphe("Les montants qui précèdent sont établis sur estimation, à titre " +
+      "indicatif. Le décompte définitif des sommes dues sera arrêté sur la base des " +
+      "devis ou factures des travaux effectivement réalisés, dont copie sera " +
+      "transmise au preneur.");
     p.saut(6);
+  }
+
+  // --- 7 bis. Portée du présent procès-verbal ------------------------------
+  /* Ces clauses décrivent la portée du constat ; elles n'ajoutent rien au
+     bail, ce qui les rend opposables sans avenant. Réservées d'un bloc :
+     coupées par un saut de page, elles seraient signées à moitié lues. */
+  {
+    const hauteurPortee = sortie ? 92 : 74;
+    if (p.y + hauteurPortee > PDF_HAUTEUR - PDF_MARGE) { doc.addPage(); p.y = PDF_MARGE; }
+    p.bandeauFixe(4, "Portée du présent procès-verbal");
+
+    p.paragraphe("Les constatations qui précèdent portent sur l'état apparent des " +
+      "lieux au jour de la visite. Elles ont été faites contradictoirement, en " +
+      "présence des parties, sur ce qui était visible et accessible. Elles ne valent " +
+      "ni renonciation ni quittance pour un vice ou une dégradation qui n'était ni " +
+      "apparent ni accessible à ce moment, notamment sous un revêtement, derrière un " +
+      "meuble ou un appareil.");
+    p.saut(2);
+
+    /* La dernière phrase n'est pas une précaution de style : sans elle, la
+       clause ressemblerait à une décharge des obligations de sécurité et de
+       salubrité, qui sont impératives et ne peuvent être écartées. */
+    p.paragraphe("Le présent procès-verbal est un constat d'état des lieux. Il ne " +
+      "constitue ni une expertise technique, ni un diagnostic de conformité des " +
+      "installations de gaz, d'électricité, d'eau ou de chauffage. Il ne modifie " +
+      "aucune des obligations que la loi met à charge de l'une ou l'autre partie.");
+    p.saut(2);
+
+    p.paragraphe("La signature du présent procès-verbal porte sur les constatations " +
+      "matérielles qu'il contient. Elle ne vaut pas solde de tout compte. Demeurent " +
+      "entiers et étrangers au présent document : le décompte des charges et " +
+      "consommations à intervenir, les loyers, indexations, taxes et primes " +
+      "d'assurance échus et impayés, ainsi que toute indemnité contractuelle.");
+    p.saut(2);
+
+    p.paragraphe("La répartition des réparations entre les parties s'opère " +
+      "conformément aux articles 8 et 28, §2, du décret du 15 mars 2018 relatif au " +
+      "bail d'habitation et à la liste non limitative des réparations locatives " +
+      "arrêtée par le Gouvernement wallon. Aucune grille de vétusté n'est annexée au " +
+      "bail ; la grille indicative régionale n'est donc pas applicable entre les " +
+      "parties.");
+
+    /* Clause de clôture : sortie uniquement. À l'entrée, elle annoncerait la
+       libération d'une garantie qui vient d'être constituée.
+       L'accord prend effet AU TERME DU BAIL et non au jour de la signature :
+       le décret exige un accord établi au plus tôt à la fin du contrat, or
+       l'état des lieux de sortie se dresse avant la remise des clés. */
+    if (sortie) {
+      p.saut(2);
+      const auTerme = bailArriveAuTerme(V);
+      p.paragraphe("Les parties reconnaissent que la mission de constat est achevée. " +
+        "Le bailleur marque son accord sur la libération de la garantie locative" +
+        (auTerme ? ", " : ", cet accord prenant effet au terme du contrat de bail, ") +
+        "sous déduction des sommes dues au titre du présent procès-verbal et sous " +
+        "réserve du décompte des charges visé ci-dessus, ainsi que des vices non " +
+        "apparents visés au premier alinéa de la présente section.");
+    }
+    p.saut(5);
   }
 
   // --- 8. Signatures ------------------------------------------------------

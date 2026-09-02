@@ -690,6 +690,23 @@ function dessinerOptions() {
         : `<p class="note">Propriétaire habituel de ${echapper(b.immeuble_nom)}.</p>`}
     </div>
 
+    <div class="bloc"><h2>Bail</h2>
+      <div class="ligne"><span>Début du bail</span>
+        <input type="date" id="bail-debut" value="${b.bail_debut || ""}"
+               style="width:auto;text-align:right"></div>
+      ${b.type === "EDLS"
+        ? `<div class="ligne"><span>Fin du bail</span>
+             <input type="date" id="bail-fin" value="${b.bail_fin || ""}"
+                    style="width:auto;text-align:right"></div>
+           <p class="note">Le décret wallon impose au procès-verbal de sortie la
+              référence à la date du bail et à la durée d'occupation. La date de
+              l'état des lieux d'entrée, elle, est reprise automatiquement de la
+              comparaison. Les deux dates peuvent rester vides : la visite
+              démarre quand même.</p>`
+        : `<p class="note">La date de début figure parmi les références du bail
+              attendues au procès-verbal d'entrée. Elle peut rester vide.</p>`}
+    </div>
+
     <div class="bloc"><h2>Options</h2>
       ${b.type === "EDLS" ? inter("chiffrage", "Chiffrage des dégâts", b.chiffrage)
         : `<p class="note">Le chiffrage ne concerne que les états des lieux de sortie.</p>`}
@@ -713,6 +730,15 @@ function dessinerOptions() {
     </div>
     <button id="btn-creer">Commencer la visite</button>
     <button class="secondaire" id="btn-retour">Retour</button>`);
+
+  /* Les dates s'enregistrent à la sortie du champ, SANS redessiner l'écran :
+     un redessin refermerait le sélecteur de date d'iOS en pleine saisie. */
+  const champDate = (id, cle) => {
+    const e = $(id);
+    if (e) e.onchange = () => { b[cle] = e.value || null; };
+  };
+  champDate("bail-debut", "bail_debut");
+  champDate("bail-fin", "bail_fin");
 
   $("vue").querySelectorAll("[data-bailleur]").forEach(x => x.onclick = () => {
     b.bailleur = trouverBailleur(x.getAttribute("data-bailleur"));
