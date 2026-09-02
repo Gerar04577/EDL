@@ -195,7 +195,7 @@
 <script src="recalage.js"></script>
 
 <script>
-const VERSION = "onedrive 1.7";
+const VERSION = "onedrive 1.8";
 
 /* L'adresse de redirection est ramenée à celle de l'application — la seule
    que Microsoft accepte. Elle n'est pas employée puisque le banc n'ouvre
@@ -344,7 +344,12 @@ async function chargerPhotos() {
      photo. Il n'y touche pas dans graph.js : tant que la mesure n'est pas
      concluante, l'application n'a pas à changer. */
   async function enfantsAvecPhoto(ref) {
-    const champs = "id,name,file,remoteItem,photo,image";
+    /* On demande large : l'assiette, si elle est exposée, ne l'est pas
+       sous un nom garanti. La facette photo d'Apple range l'inclinaison
+       dans des champs propriétaires que Graph n'expose pas toujours ;
+       location porte parfois un cap (heading) et une altitude. On prend
+       tout ce qui pourrait la contenir, et on regarde ce qui arrive. */
+    const champs = "id,name,file,remoteItem,photo,image,location";
     let url = ref && ref.driveId
       ? `/drives/${ref.driveId}/items/${ref.id}/children?$top=200&$select=${champs}`
       : (ref && ref.id
@@ -380,9 +385,29 @@ async function chargerPhotos() {
   /* Seconde lecture, avec la facette photo, fusionnée par identifiant. */
   let parId = {};
   try {
-    (await enfantsAvecPhoto(refPhotos)).forEach(e => { parId[e.id] = e; });
+    const avecPhoto = await enfantsAvecPhoto(refPhotos);
+    avecPhoto.forEach(e => { parId[e.id] = e; });
     noter("Relecture avec la facette photo : " + Object.keys(parId).length +
       " élément(s).", "ok");
+
+    /* INVENTAIRE DES CLÉS REÇUES.
+
+       Avant de chercher l'assiette sous un nom précis, on regarde ce que
+       Graph renvoie réellement. Une clé absente de cette liste n'existe
+       pas, et il ne sert à rien de bâtir dessus. */
+    const clesPhoto = new Set(), clesLieu = new Set();
+    avecPhoto.forEach(e => {
+      const ph = e.photo || (e.remoteItem && e.remoteItem.photo);
+      if (ph) Object.keys(ph).forEach(k => clesPhoto.add(k));
+      const lo = e.location || (e.remoteItem && e.remoteItem.location);
+      if (lo) Object.keys(lo).forEach(k => clesLieu.add(k));
+    });
+    noter("Champs de la facette photo : " +
+      ([...clesPhoto].sort().join(", ") || "aucun") + ".",
+      clesPhoto.size ? "ok" : "ko");
+    noter("Champs de la facette lieu : " +
+      ([...clesLieu].sort().join(", ") || "aucun") + ".",
+      clesLieu.size ? "ok" : "attention");
   } catch (e) {
     noter("Relecture avec photo impossible : " + e.message, "ko");
   }
