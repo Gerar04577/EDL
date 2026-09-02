@@ -188,6 +188,10 @@
     <div class="ligne"><span>Zoom de la CAMÉRA</span>
       <span id="val-zoom-cam">—</span></div>
     <input type="range" id="zoom-cam" min="50" max="1000" step="5" value="100" disabled>
+    <label class="bascule">
+      <input type="checkbox" id="zoom-cam-auto">
+      <span>Chercher le zoom automatiquement</span>
+    </label>
     <p class="note" id="etat-zoom-cam">À tester une fois la caméra allumée.</p>
     <div class="ligne"><span>Flux pendant le zoom</span>
       <span id="res-zoom">—</span></div>
@@ -523,7 +527,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 4.2";
+const VERSION = "essai 4.3";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -531,6 +535,24 @@ let boucle = null, auto = false, dernierScore = 0;
 let compteur = 0, dernierRelevé = Date.now(), sommeDurees = 0;
 let priseURL = null;
 let referencePixels = 0;
+/* RECHERCHE DU ZOOM CAMÉRA — état.
+
+   La recherche d'échelle et celle du zoom ne coûtent pas la même chose.
+   Un essai d'échelle est un calcul : 1,3 ms. Un essai de zoom est un
+   applyConstraints, qui demande environ un quart de seconde à la piste
+   pour se reconfigurer, plus le temps que l'exposition se refasse. Une
+   section dorée transposée telle quelle prendrait trois secondes, l'image
+   sautant à chaque palier pendant que l'opérateur tient l'appareil.
+
+   D'où deux temps : une estimation UNIQUE au démarrage, qui pose le zoom
+   d'un coup à la bonne valeur, puis un affinage LENT qui ne corrige que
+   si l'écart persiste. */
+let zoomCamAuto = false;      // la case est-elle cochée
+let zoomCamPose = false;      // l'estimation initiale a-t-elle eu lieu
+let zoomCamOccupe = false;    // un applyConstraints est en cours
+let zoomCamValeur = 1;        // dernière valeur appliquée
+let zoomCamBornes = null;     // { min, max } de l'appareil
+let zoomCamDernier = 0;       // horodatage du dernier ajustement
 
 function noter(t, c) {
   const j = $("journal");
@@ -730,6 +752,9 @@ $("btn-camera").onclick = async () => {
       /* Résolution de départ, sans zoom : c'est l'étalon auquel se
          comparent toutes les mesures faites ensuite. */
       referencePixels = (r.width || 0) * (r.height || 0);
+      zoomCamBornes = { min: cap.zoom.min, max: cap.zoom.max };
+      zoomCamValeur = p0.getSettings().zoom || 1;
+      zoomCamPose = false;
       $("res-zoom").textContent = obtenu + "  (départ)";
       $("res-zoom").className = "ok";
       /* AUCUN ZOOM IMPOSÉ.
@@ -944,6 +969,99 @@ function lancerBoucle() {
   boucle = setInterval(analyser, 100);
 }
 
+/* ESTIMATION LARGE, EN UN COUP.
+
+   La recherche courante balaie 25 à 125 % parce qu'elle tourne dix fois
+   par seconde et que trop large la faisait sauter. Ici c'est l'inverse :
+   une seule mesure, sur une image immobile, et il faut couvrir tout ce
+   que l'appareil natif sait faire — de 0,5× (référence 1,85 fois plus
+   large que le flux) à 6× (six fois plus serrée).
+
+   Balayage grossier en logarithme, puis affinage local. Une trentaine
+   d'essais à 1,3 ms : quarante millisecondes en tout. */
+function estimerEchelleLarge(v, dx, dy, cl, ch) {
+  const evaluer = (pc) => {
+    const r = contoursRef(pc, TAILLE_ECH);
+    if (!r) return 0;
+    return chercherT(r, contoursFluxT(v, dx, dy, cl, ch, pc, TAILLE_ECH),
+                     TAILLE_ECH).score;
+  };
+  const lo = Math.log(12), hi = Math.log(400);
+  let meilleur = { pc: 100, v: -1 };
+  for (let i = 0; i < 26; i++) {
+    const pc = Math.exp(lo + (hi - lo) * i / 25);
+    const val = evaluer(pc);
+    if (val > meilleur.v) meilleur = { pc, v: val };
+  }
+  const la = Math.log(meilleur.pc);
+  const l2 = Math.max(lo, la - Math.log(1.25));
+  const h2 = Math.min(hi, la + Math.log(1.25));
+  for (let i = 0; i < 9; i++) {
+    const pc = Math.exp(l2 + (h2 - l2) * i / 8);
+    const val = evaluer(pc);
+    if (val > meilleur.v) meilleur = { pc, v: val };
+  }
+  return meilleur;
+}
+
+/* Pose le zoom une fois, attend la reconfiguration, relit la résolution.
+   Toute pose invalide l'échelle figée : le champ vient de changer. */
+async function poserZoomCamera(z, motif) {
+  if (!fluxCamera || zoomCamOccupe) return false;
+  const b = zoomCamBornes || { min: 1, max: 1 };
+  const cible = Math.min(b.max, Math.max(b.min, z));
+  if (Math.abs(cible - zoomCamValeur) < 0.03) return false;
+  zoomCamOccupe = true;
+  const piste = fluxCamera.getVideoTracks()[0];
+  try {
+    await piste.applyConstraints({ advanced: [{ zoom: cible }] });
+    await new Promise(r => setTimeout(r, 250));
+    zoomCamValeur = cible;
+    $("zoom-cam").value = Math.round(cible * 100);
+    $("val-zoom-cam").textContent = cible.toFixed(2) + " ×";
+    const st = piste.getSettings();
+    const res = (st.width || 0) + "×" + (st.height || 0);
+    $("res-zoom").textContent = res;
+    echelleFigee = null; echelleRetenue = null; echecs = 0;
+    noter(motif + " : zoom caméra à " + cible.toFixed(2) + " × — flux " + res + ".", "ok");
+    return true;
+  } catch (err) {
+    noter("Zoom caméra refusé : " + err.name, "ko");
+    return false;
+  } finally {
+    zoomCamOccupe = false;
+    zoomCamDernier = performance.now();
+  }
+}
+
+/* Le pilote, appelé à chaque analyse. Il ne fait rien la plupart du
+   temps — c'est voulu. */
+function piloterZoomCamera(v, dx, dy, cl, ch, echelle, score) {
+  if (!zoomCamAuto || !zoomCamBornes || zoomCamOccupe) return;
+
+  /* PREMIER TEMPS — une estimation large, une seule fois. On en déduit le
+     zoom voulu : une référence deux fois plus serrée que le flux donne une
+     échelle de 50 %, donc un zoom de 2. */
+  if (!zoomCamPose) {
+    zoomCamPose = true;
+    const e = estimerEchelleLarge(v, dx, dy, cl, ch);
+    const vise = zoomCamValeur * (100 / e.pc);
+    noter("Estimation : échelle " + Math.round(e.pc) + " % (score " +
+      Math.round(e.v * 100) + " %) — zoom visé " + vise.toFixed(2) + " ×.", "ok");
+    poserZoomCamera(vise, "Estimation initiale");
+    return;
+  }
+
+  /* SECOND TEMPS — affinage lent. On ne corrige que si l'écart persiste,
+     que l'alignement est déjà crédible, et jamais plus d'une fois toutes
+     les deux secondes. Corriger sur du bruit ferait osciller l'objectif
+     sous le doigt de l'opérateur. */
+  if (performance.now() - zoomCamDernier < 2000) return;
+  if (score < 0.35) return;
+  if (echelle >= 92 && echelle <= 108) return;
+  poserZoomCamera(zoomCamValeur * (100 / echelle), "Affinage");
+}
+
 function analyser() {
   const v = $("flux");
   if (!v.videoWidth || !refContours) return;
@@ -1000,6 +1118,9 @@ function analyser() {
     echelleFigee = null; echelleRetenue = null; echecs = 0;
     noter("Alignement perdu : nouvelle recherche d'échelle.", "attention");
   }
+
+  /* Le zoom de l'objectif se règle ici, à partir de l'échelle mesurée. */
+  piloterZoomCamera(v, dx, dy, cl, ch, pc, m.score);
   const pourcent = Math.max(0, Math.round(m.score * 100));
   dernierScore = pourcent;
 
@@ -1187,11 +1308,29 @@ $("echelle-auto").onchange = () => {
              : "Échelle réglée à la main.", "ok");
 };
 
+$("zoom-cam-auto").onchange = () => {
+  zoomCamAuto = $("zoom-cam-auto").checked;
+  zoomCamPose = false;
+  zoomCamDernier = 0;
+  noter(zoomCamAuto
+    ? "Recherche du zoom caméra activée — estimation à la prochaine analyse."
+    : "Recherche du zoom caméra arrêtée.", "ok");
+};
+
 /* ZOOM DE LA CAMÉRA — la voie propre quand l'appareil l'accepte : c'est
    le champ du flux qu'on élargit, donc la cause qu'on corrige. */
 $("zoom-cam").oninput = async () => {
   if (!fluxCamera) return;
   const z = Number($("zoom-cam").value) / 100;
+  /* Toucher le curseur reprend la main : la recherche s'arrête là où
+     l'opérateur l'a laissée, elle ne lutte pas contre lui. */
+  if (zoomCamAuto) {
+    zoomCamAuto = false;
+    $("zoom-cam-auto").checked = false;
+    noter("Recherche du zoom arrêtée : réglage à la main.", "attention");
+  }
+  zoomCamValeur = z;
+  echelleFigee = null; echelleRetenue = null; echecs = 0;
   const piste = fluxCamera.getVideoTracks()[0];
   try {
     await piste.applyConstraints({ advanced: [{ zoom: z }] });
