@@ -3020,12 +3020,17 @@ function blocPhotosEntree() {
     .map(p => p.photo_entree_id).filter(Boolean))];
   const avecConstat = photosAvecConstat(e.photos, e.edle);
 
+  const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
+  const dePiece = photosEntreePourPiece(e.photos, piece && piece.libelle);
+
   return `<div class="bloc"><h2>Photos de l'entrée</h2>
-    <div class="duo">
+    <div class="trio">
       <button class="seg${E.triEntree === "constat" ? " actif" : ""}"
         id="tri-constat"${avecConstat ? "" : " disabled"}>Avec constat${
         avecConstat ? " — " + avecConstat.length : ""}</button>
-      <button class="seg${E.triEntree !== "constat" ? " actif" : ""}"
+      <button class="seg${!E.triEntree || E.triEntree === "piece" ? " actif" : ""}"
+        id="tri-piece">Cette pièce — ${dePiece.length}</button>
+      <button class="seg${E.triEntree === "toutes" ? " actif" : ""}"
         id="tri-toutes">Toutes — ${e.photos.length}</button>
     </div>
     ${avecConstat ? "" : `<p class="note">L'entrée n'a pas de fichier de
@@ -3069,13 +3074,27 @@ function libelleVignette(p) {
 
 /* La liste selon le tri choisi. Le tri par constat prime sur le filtre par
    pièce : un constat désigne déjà l'endroit. */
+/* TROIS MODES D'AFFICHAGE, et non plus deux.
+
+   « Toutes » appliquait en réalité le filtre par pièce : il n'existait
+   aucun moyen de voir l'état des lieux d'entrée en entier, ce qui est
+   nécessaire quand une pièce a été mal nommée à l'entrée ou qu'on cherche
+   une vue déposée ailleurs.
+
+     constat  — celles qui portent une constatation à l'entrée
+     piece    — celles de la pièce en cours (par défaut)
+     toutes   — l'état des lieux d'entrée en entier */
 function lotAffiche() {
   const e = E.photosEntree;
   if (!e || e.statut !== "ok") return [];
+
   if (E.triEntree === "constat") {
     const avec = photosAvecConstat(e.photos, e.edle);
     if (avec) return avec;
+    return e.photos;          /* pas de fichier de données : tout */
   }
+  if (E.triEntree === "toutes") return e.photos;
+
   const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
   return photosEntreePourPiece(e.photos, piece && piece.libelle);
 }
@@ -3904,6 +3923,10 @@ function brancherGroupe(piece, photos) {
 
   if ($("tri-constat")) $("tri-constat").onclick = () => {
     E.triEntree = "constat"; E.vignettesAffichees = TRANCHE_VIGNETTES;
+    dessinerPiece(); chargerLiensVisibles();
+  };
+  if ($("tri-piece")) $("tri-piece").onclick = () => {
+    E.triEntree = "piece"; E.vignettesAffichees = TRANCHE_VIGNETTES;
     dessinerPiece(); chargerLiensVisibles();
   };
   if ($("tri-toutes")) $("tri-toutes").onclick = () => {

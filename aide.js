@@ -199,6 +199,12 @@ var AIDE = [
       "AUTRE AVANTAGE : dans un dossier trié par nom, les photographies se " +
       "groupent par pièce et par mur, au lieu de se mêler par date.",
 
+      "TROIS FILTRES au-dessus des vignettes, à la sortie : AVEC CONSTAT " +
+      "montre les photographies qui portaient une constatation à l'entrée — " +
+      "les seules qui comptent vraiment ; CETTE PIÈCE montre celles de la " +
+      "pièce où tu te trouves ; TOUTES montre l'état des lieux d'entrée en " +
+      "entier, utile quand une pièce a été mal nommée à l'entrée.",
+
       "PIÈCES — CH chambre · SDB salle de bain · SDE salle d'eau · WC · " +
       "CUI cuisine · SEJ séjour · HAL hall ou entrée · BUA buanderie · " +
       "CAV cave · GRE grenier · TER terrasse ou jardin · GAR garage. Le " +

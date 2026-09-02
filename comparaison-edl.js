@@ -73,17 +73,43 @@ async function chargerPhotosEntree(visite) {
 
     ramasser(contenu, parent);
 
+    /* DESCENTE DANS TOUS LES SOUS-DOSSIERS.
+
+       On s'arrêtait au dossier « Photos ». Depuis la 2.26.0, les
+       photographies y sont rangées PAR PIÈCE — Photos / Salle de bain,
+       Photos / Cuisine, Photos / Annexe — donc un niveau plus bas : elles
+       devenaient invisibles à la sortie. Défaut constaté le 31/08/2026.
+
+       La descente est bornée à trois niveaux : la racine, « Photos », et
+       les pièces. Au-delà il n'y a rien, et une descente sans limite
+       exposerait à parcourir tout OneDrive si un raccourci pointait vers
+       un dossier parent.
+
+       Un sous-dossier illisible n'interrompt rien : on note et on
+       continue. */
+    const descendre = async (liste, ref, niveau) => {
+      if (niveau > 2) return;
+      const dossiers = liste.filter(e =>
+        (e.folder || e.remoteItem) && !(e.file || (e.remoteItem && e.remoteItem.file)));
+      for (const d of dossiers) {
+        const r = refDe(d, ref.driveId);
+        if (vus.has("dos:" + r.id)) continue;
+        vus.add("dos:" + r.id);
+        try {
+          const enfants = await enfantsDeRef(r);
+          ramasser(enfants, r);
+          await descendre(enfants, r, niveau + 1);
+        } catch (err) {
+          await journaliser("photos_entree_sous_dossier_illisible",
+            { dossier: d.name, message: String(err && err.message) });
+        }
+      }
+    };
+    await descendre(contenu, parent, 0);
+
     const sousDossier = contenu.find(e =>
       (e.folder || e.remoteItem) &&
       String(e.name || "").toLowerCase() === "photos");
-    if (sousDossier) {
-      const ref = refDe(sousDossier, parent.driveId);
-      try { ramasser(await enfantsDeRef(ref), ref); }
-      catch (err) {
-        await journaliser("photos_entree_sous_dossier_illisible",
-          String(err && err.message));
-      }
-    }
 
     if (!trouvees.length) {
       /* Dire CE QU'ON A VU : sans cela, « aucune photographie » ne permet
@@ -296,11 +322,33 @@ async function lienPhotoEntree(photo) {
    porte presque toutes les photographies : ce filtre n'allège donc guère,
    d'où le tri par constat ci-dessous. */
 function photosEntreePourPiece(photosEntree, libellePiece) {
-  const cible = nettoyerLibelle(libellePiece || "");
-  if (!cible) return photosEntree;
-  const exactes = photosEntree.filter(p =>
-    p.piece && nettoyerLibelle(p.piece) === cible);
-  return exactes.length ? exactes : photosEntree;
+  if (!libellePiece) return photosEntree;
+
+  /* ON COMPARE DES ABRÉVIATIONS, PAS DES LIBELLÉS.
+
+     Depuis la 2.27.1, le nom du fichier porte « SDB » et non plus
+     « salle-de-bain-wc » : comparer les libellés complets échouait
+     toujours, et l'écran montrait toutes les photographies quelle que
+     soit la pièce. Défaut constaté le 31/08/2026.
+
+     Les deux gabarits coexistent — pieceDuNom rend l'abréviation pour les
+     noms récents, le libellé pour les anciens — donc on essaie les deux. */
+  /* Comparaison faite ici plutôt que par nettoyerLibelle : cette dernière
+     vit dans photos.js, chargé APRÈS ce fichier. Cela fonctionne dans un
+     navigateur — l'appel n'a lieu qu'au clic — mais c'est une dépendance
+     fragile qu'il vaut mieux ne pas créer. */
+  const simplifier = (t) => String(t || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+  const abrev = abregerPiece(libellePiece);
+  const libelle = simplifier(libellePiece);
+
+  const exactes = photosEntree.filter(p => {
+    if (!p.piece) return false;
+    return p.piece === abrev || simplifier(p.piece) === libelle;
+  });
+  return exactes.length ? exactes : [];
 }
 
 /* Photographies rattachées à une constatation de l'entrée.
