@@ -80,6 +80,43 @@ var AIDE = [
       "L'application signale en rouge tout choix inhabituel.",
   },
   {
+    titre: "3 bis. Les références du bail",
+    corps: [
+      "Sur le même écran, le bloc encadré de rouge. Quatre champs qui " +
+      "commandent quatre lignes du procès-verbal, et que personne ne te " +
+      "réclamera pendant la visite : oubliés ici, ils manquent au document " +
+      "signé. C'est pour cela qu'ils sont en rouge.",
+
+      "DÉBUT DU BAIL — celui du bail en cours, pas celui de l'entrée dans " +
+      "les lieux. Les baux se renouvellent chaque année : un locataire de " +
+      "trois ans en est à son troisième.",
+
+      "FIN DU BAIL — à la sortie seulement. Elle décide de la rédaction de " +
+      "la clause de libération de la garantie : accord direct si le terme " +
+      "est atteint, accord prenant effet au terme sinon. Laissée vide, " +
+      "c'est la seconde qui s'imprime, la plus prudente.",
+
+      "AVENANT AU BAIL — oui ou non. L'avenant de charges joint au bail en " +
+      "est un. Le procès-verbal doit signaler qu'il en existe un, pas le " +
+      "reproduire.",
+
+      "AUTEUR DES CONSTATATIONS — dans le bloc du bailleur, prérempli à ton " +
+      "nom. Change-le si quelqu'un d'autre a fait la visite. Le décret " +
+      "demande l'identité et la qualité de celui qui dresse le constat, pas " +
+      "seulement le nom du représentant du propriétaire.",
+
+      "LA DURÉE D'OCCUPATION NE SE SAISIT PAS. Elle se calcule depuis " +
+      "l'état des lieux d'entrée, dont la date vient de la comparaison. " +
+      "Elle n'est jamais déduite de la date du bail : cela donnerait onze " +
+      "mois pour un locataire présent depuis trois ans.",
+    ],
+    attention: "Tant que la comparaison avec l'entrée n'est pas faite, la " +
+      "durée d'occupation reste vide au procès-verbal. L'écran des relevés " +
+      "te le rappelle avant la clôture. Ce rappel ne bloque rien, mais " +
+      "c'est la ligne qui commande la vétusté déductible : un locataire de " +
+      "trois ans a droit à trois ans d'usure.",
+  },
+  {
     titre: "4. Photographier et décrire",
     corps: [
       "Ouvre une pièce et prends les photos. Convention : depuis l'entrée, mur de face, " +
@@ -240,10 +277,24 @@ var AIDE = [
 
       "DEUX TRIS. « Avec constat » ne montre que les photographies rattachées à " +
       "une constatation de l'entrée — souvent une vingtaine sur deux cents, ce " +
-      "sont celles qui documentent quelque chose. « Toutes » les affiche par " +
-      "tranches de cinquante. Sur un état des lieux d'entrée fait avant " +
-      "l'application, il n'y a pas de fichier de données : seul « Toutes » " +
-      "fonctionne.",
+      "sont celles qui documentent quelque chose. Il se limite à la pièce où tu " +
+      "te trouves : dans la cuisine, tu ne vois plus les constatations de la " +
+      "chambre. « Toutes » les affiche par tranches de cinquante. Sur un état " +
+      "des lieux d'entrée fait avant l'application, il n'y a pas de fichier de " +
+      "données : seul « Toutes » fonctionne.",
+
+      "SOUS CHAQUE VIGNETTE, deux lignes : le numéro de la photographie, puis " +
+      "le mur en toutes lettres — gauche, en face, droite, entrée, autre. Les " +
+      "photographies des anciens états des lieux, et celles prises au bouton " +
+      "« Autre », portent « autre » : leur nom ne dit pas de quel mur il s'agit.",
+
+      "QUAND TU TOUCHES UN BOUTON DE MUR, les photographies de ce mur remontent " +
+      "en tête et leur mention passe sur fond vert. Les autres suivent, rien ne " +
+      "disparaît — c'est voulu : la vue que tu cherches est parfois mal nommée à " +
+      "l'entrée.",
+
+      "LE CADRE VERT ÉPAIS signale une photographie d'entrée déjà refaite. Il " +
+      "survit au rechargement de la vignette.",
 
       "LE NOM DU PRENEUR VIENT DU DOSSIER ONEDRIVE que tu choisis, jamais de " +
       "Gestion Loyers — les noms y changent au fil des baux. La mention " +

@@ -54,11 +54,11 @@ function dateCourteFr(iso) {
 /* Durée d'occupation — exigée au procès-verbal de sortie par l'article 27,
    §5, 4°, du décret wallon.
 
-   ELLE SE COMPTE DEPUIS L'ÉTAT DES LIEUX D'ENTRÉE, PAS DEPUIS LE BAIL EN
-   COURS. Les étudiants signent un bail par an : compter depuis le bail
-   courant afficherait un an là où l'occupation dure depuis trois. C'est
-   l'occupation qui est demandée, pas la durée du dernier contrat.
-   Repli sur la date de début du bail quand aucun EDLE n'est connu. */
+   ELLE SE COMPTE DEPUIS L'ÉTAT DES LIEUX D'ENTRÉE, ET DEPUIS RIEN D'AUTRE.
+   Les baux sont annuels et reconduits : la date du bail courant ne dit
+   rien de l'occupation. Un repli sur elle donnait onze mois là où le
+   locataire occupait depuis trois ans. Sans date d'entrée, la ligne reste
+   vide — c'est la comparaison entrée/sortie qui la renseigne. */
 function dureeOccupation(depuisIso, jusquIso) {
   if (!depuisIso) return null;
   const a = new Date(depuisIso), b = new Date(jusquIso || Date.now());
@@ -71,6 +71,18 @@ function dureeOccupation(depuisIso, jusquIso) {
   if (ans) m.push(ans + (ans > 1 ? " ans" : " an"));
   if (reste) m.push(reste + " mois");
   return m.join(" et ");
+}
+
+/* Durée du bail — le dernier jour est COMPRIS. Un bail du 1er septembre au
+   31 août couvre une année entière ; compté de date à date, il afficherait
+   « 11 mois », ce qu'aucun locataire ne reconnaîtrait. On compte donc
+   jusqu'au lendemain du terme. */
+function dureeBail(debutIso, finIso) {
+  if (!debutIso || !finIso) return null;
+  const f = new Date(finIso);
+  if (isNaN(f)) return null;
+  f.setDate(f.getDate() + 1);
+  return dureeOccupation(debutIso, f.toISOString());
 }
 
 /* Le bail est-il arrivé à son terme au jour de la signature ? Commande la
@@ -258,6 +270,15 @@ async function genererPV(visite) {
     const feminin = /^(S\.?A\.?|S\.?P\.?R\.?L|S\.?R\.?L|SC)/i.test(String(V.parties.bailleur).trim());
     p.ligne("Représenté" + (feminin ? "e" : "") + " par", V.parties.bailleur_represente_par);
   }
+  /* L'auteur des constatations est distinct du représentant : c'est
+     souvent la même personne, mais l'article 27, §5, 2°, exige l'identité
+     ET la qualité de celui qui dresse le constat. Repli sur le
+     représentant pour les visites créées avant que le champ n'existe. */
+  {
+    const auteur = V.parties.auteur_constatations ||
+      V.parties.bailleur_represente_par;
+    if (auteur) p.ligne("Auteur des constatations", auteur);
+  }
   (V.parties.preneurs || []).forEach((x, i) => {
     p.ligne("Preneur " + (i + 1), x.nom_complet);
     p.ligne("   Qualité", x.qualite || "Locataire");
@@ -277,11 +298,29 @@ async function genererPV(visite) {
     const bail = V.bail || {};
     const edleDate = (V.comparaison || {}).edle_date || null;
     p.ligne("Début du bail", dateCourteFr(bail.debut));
+    p.ligne("Avenant au bail", bail.avenant === true ? "oui" :
+      (bail.avenant === false ? "non" : null));
     if (sortie) {
       p.ligne("Fin du bail", dateCourteFr(bail.fin));
       p.ligne("État des lieux d'entrée du", dateCourteFr(edleDate));
+
+      /* DEUX NOTIONS DISTINCTES, ET LE DÉCRET LES ÉNUMÈRE SÉPARÉMENT.
+
+         L'article 27, §5, 4°, cite la date du bail ET la durée
+         d'occupation : la seconde n'est donc pas la durée du premier.
+
+         Les baux sont annuels et reconduits chaque année. Un locataire
+         sous son troisième bail occupe depuis trois ans, mais son bail
+         courant n'en fait qu'un. Calculer l'occupation depuis la date du
+         bail donnait « 11 mois » pour une occupation de trois ans —
+         inscrit dans un document signé, et précisément sous le champ qui
+         commande la vétusté déductible.
+
+         AUCUN REPLI : sans état des lieux d'entrée connu, un tiret. Un
+         tiret se voit et se corrige ; un chiffre faux se signe. */
+      p.ligne("Durée du bail en cours", dureeBail(bail.debut, bail.fin));
       p.ligne("Durée d'occupation",
-        dureeOccupation(edleDate || bail.debut, V.date_debut));
+        edleDate ? dureeOccupation(edleDate, V.date_debut) : null);
     }
   }
 

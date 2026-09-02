@@ -63,6 +63,17 @@
   /* Le numéro sur une ligne, le mur en dessous : à cette taille, une
      lettre ne se lit pas, un mot si. */
   .vignettes figcaption span { display:block; }
+  /* LE BLOC BAIL SE VOIT.
+     Ses champs commandent quatre mentions du procès-verbal et personne ne
+     les réclame pendant la visite : oubliés à l'écran de démarrage, ils
+     manquent au document signé. Rouge, gras, un cran plus grand. */
+  .bloc.bail { border:2px solid #c0392b; }
+  .bloc.bail h2 { color:#c0392b; font-size:17px; font-weight:700; }
+  .bloc.bail .ligne > span:first-child,
+  .bloc.bail .interrupteur > span:first-child {
+    color:#c0392b; font-weight:700; font-size:16px; }
+  .bloc.bail input { font-size:16px; font-weight:600; color:#c0392b; }
+
   .vig-num { font-weight:600; color:#5a5a5a; }
   .vig-mur { font-size:11px; color:#9a9a9a; text-transform:lowercase; }
   /* Le mur actif : le premier groupe de la grille se repère d'un coup

@@ -342,6 +342,11 @@ async function creerVisite(param) {
          connecté : le nom du compte Microsoft avait été pris pour un
          mandataire, ce qui donnait des mentions fausses au document. */
       bailleur_represente_par: (param.bailleur && param.bailleur.represente_par) || null,
+      /* Celui qui a dressé le constat, article 27, §5, 2°. Vidé à
+         l'écran, il retombe sur le nom par défaut : le procès-verbal ne
+         doit pas porter un champ vide sous ce libellé. */
+      auteur_constatations: (param.auteur_constatations || "").trim() ||
+        CONFIG.auteur_constatations_defaut || null,
       preneurs: (param.preneurs || []).map(nom => ({
         nom_complet: nom,
         qualite: "Locataire",
@@ -393,6 +398,10 @@ async function creerVisite(param) {
          chiffrage_actif ci-dessus : une valeur saisie puis devenue sans
          objet ne doit pas rester dans la visite. */
       fin: param.type === "EDLS" ? (param.bail_fin || null) : null,
+      /* Quatrième élément du 4° de l'article 27, §5 : « tout avenant ».
+         Une case à cocher suffit — le procès-verbal doit signaler qu'il
+         en existe un, pas le reproduire. */
+      avenant: param.bail_avenant === true,
     },
     /* Observations et réserves du preneur, consignées AVANT signature.
        Sans cette possibilité, le caractère contradictoire de l'état des

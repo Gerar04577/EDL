@@ -4,7 +4,7 @@
 
 var CONFIG = {
 
-  version_app: "2.30.0",
+  version_app: "2.31.0",
 
   /* Protocole de signature imprimé en page 1 du procès-verbal.
      TEXTE DÉFINITIF, validé par l'avocat le 25/08/2026. Toute modification
@@ -38,6 +38,12 @@ var CONFIG = {
   ],
 
   // Bailleur attendu pour chaque immeuble
+  /* Auteur des constatations, prérempli à l'écran de démarrage et
+     modifiable visite par visite. Exigé par l'article 27, §5, 2°, du
+     décret wallon, qui demande l'identité et la qualité de celui qui
+     dresse le constat. */
+  auteur_constatations_defaut: "Julien GERARD",
+
   bailleur_par_immeuble: {
     nimy: "jmg",
     "petite-guirlande": "jmg",

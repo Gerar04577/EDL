@@ -10,6 +10,13 @@ var E = {
 };
 
 function $(id) { return document.getElementById(id); }
+
+/* Celui qui dresse le constat. Julien fait presque toutes les visites ;
+   le champ reste modifiable pour les rares fois où ce n'est pas lui.
+   L'article 27, §5, 2°, du décret wallon exige l'identité ET la qualité
+   de l'auteur des constatations. */
+var AUTEUR_PAR_DEFAUT = (typeof CONFIG !== "undefined" &&
+  CONFIG.auteur_constatations_defaut) || "Julien GERARD";
 /* Les aperçus occupent de la mémoire jusqu'à leur libération. On libère
    ceux de l'écran précédent à CHAQUE changement d'écran, et non au seul
    retour : iOS ferme une application qui consomme trop, en pleine visite. */
@@ -688,23 +695,33 @@ function dessinerOptions() {
            ${echapper(b.immeuble_nom)} — normalement ${echapper(attendu.libelle)}.
            Vérifie avant de continuer.</p>`
         : `<p class="note">Propriétaire habituel de ${echapper(b.immeuble_nom)}.</p>`}
+      <div class="ligne"><span>Auteur des constatations</span>
+        <input type="text" id="auteur-constat" style="width:auto;text-align:right"
+               value="${echapper(b.auteur_constatations || AUTEUR_PAR_DEFAUT)}"></div>
+      <p class="note">Le décret demande l'identité et la qualité de celui qui
+         dresse le constat. C'est presque toujours Julien ; change-le si
+         quelqu'un d'autre a fait la visite.</p>
     </div>
 
-    <div class="bloc"><h2>Bail</h2>
+    <div class="bloc bail"><h2>Bail</h2>
       <div class="ligne"><span>Début du bail</span>
         <input type="date" id="bail-debut" value="${b.bail_debut || ""}"
                style="width:auto;text-align:right"></div>
       ${b.type === "EDLS"
         ? `<div class="ligne"><span>Fin du bail</span>
              <input type="date" id="bail-fin" value="${b.bail_fin || ""}"
-                    style="width:auto;text-align:right"></div>
-           <p class="note">Le décret wallon impose au procès-verbal de sortie la
-              référence à la date du bail et à la durée d'occupation. La date de
-              l'état des lieux d'entrée, elle, est reprise automatiquement de la
-              comparaison. Les deux dates peuvent rester vides : la visite
-              démarre quand même.</p>`
-        : `<p class="note">La date de début figure parmi les références du bail
-              attendues au procès-verbal d'entrée. Elle peut rester vide.</p>`}
+                    style="width:auto;text-align:right"></div>`
+        : ""}
+      ${inter("bail_avenant", "Avenant au bail", b.bail_avenant)}
+      ${b.type === "EDLS"
+        ? `<p class="note">Le décret wallon impose au procès-verbal de sortie la
+              référence à la date du bail, à tout avenant et à la durée
+              d'occupation. La date de l'état des lieux d'entrée, elle, est
+              reprise automatiquement de la comparaison. Tout peut rester vide :
+              la visite démarre quand même.</p>`
+        : `<p class="note">La date de début et l'existence d'un avenant figurent
+              parmi les références du bail attendues au procès-verbal d'entrée.
+              Elles peuvent rester vides.</p>`}
     </div>
 
     <div class="bloc"><h2>Options</h2>
@@ -739,6 +756,13 @@ function dessinerOptions() {
   };
   champDate("bail-debut", "bail_debut");
   champDate("bail-fin", "bail_fin");
+
+  /* Même principe pour l'auteur : on enregistre à la frappe, sans
+     redessiner. Vidé, il retombe sur le nom par défaut au moment de créer
+     la visite — le procès-verbal ne doit jamais porter un champ vide sous
+     « auteur des constatations ». */
+  const auteur = $("auteur-constat");
+  if (auteur) auteur.oninput = () => { b.auteur_constatations = auteur.value; };
 
   $("vue").querySelectorAll("[data-bailleur]").forEach(x => x.onclick = () => {
     b.bailleur = trouverBailleur(x.getAttribute("data-bailleur"));
