@@ -189,7 +189,7 @@
       <span id="val-zoom-cam">—</span></div>
     <input type="range" id="zoom-cam" min="50" max="1000" step="5" value="100" disabled>
     <label class="bascule">
-      <input type="checkbox" id="zoom-cam-auto">
+      <input type="checkbox" id="zoom-cam-auto" checked>
       <span>Balayer le zoom caméra, puis relais à 45 %</span>
     </label>
     <p class="note" id="etat-zoom-cam">À tester une fois la caméra allumée.</p>
@@ -241,8 +241,8 @@
     a rien à chercher. Coche pour faire revenir l'ancienne recherche — et le
     tremblement avec.</p>
 
-    <div class="ligne"><span>Seuil de déclenchement</span><span id="val-seuil">60 %</span></div>
-    <input type="range" id="seuil" min="30" max="95" value="60">
+    <div class="ligne"><span>Seuil de déclenchement</span><span id="val-seuil">45 %</span></div>
+    <input type="range" id="seuil" min="30" max="95" value="45">
 
     <div class="ligne"><span>Immobilité avant la prise</span>
       <span id="val-stab">1.2 s</span></div>
@@ -527,7 +527,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 5.0";
+const VERSION = "essai 5.1";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -547,7 +547,7 @@ let referencePixels = 0;
    D'où deux temps : une estimation UNIQUE au démarrage, qui pose le zoom
    d'un coup à la bonne valeur, puis un affinage LENT qui ne corrige que
    si l'écart persiste. */
-let zoomCamAuto = false;      // la case est-elle cochée
+let zoomCamAuto = true;       // cochée d'avance : rien à faire pour l'opérateur
 let zoomCamPose = false;      // l'estimation initiale a-t-elle eu lieu
 let zoomCamOccupe = false;    // un applyConstraints est en cours
 let zoomCamValeur = 1;        // dernière valeur appliquée
@@ -568,6 +568,22 @@ let zoomCamPlainte = false;   // le refus a-t-il déjà été signalé
    Deux phases exclusives, donc. En phase « caméra », l'échelle est figée
    à 100 % et seul l'objectif bouge. Passé 45 % de superposition, le zoom
    caméra se fige et la référence prend le relais. */
+/* LE SCORE N'EST PAS UNE NOTE DE SUPERPOSITION.
+
+   C'est un taux de contours communs. Mesure du 03/09 à 00:26 : les arêtes
+   du meuble coïncidaient nettement à l'œil, et le score affichait 35 %.
+
+   Deux causes, toutes deux hors de portée du cadrage. Le contenu de la
+   pièce a changé — la référence montrait des télécommandes, des câbles et
+   une tasse qui ne sont plus là, et ces contours-là comptent autant que
+   ceux du meuble. Et l'éclairage diffère, ce qui change le contraste des
+   veines du bois, donc les contours détectés.
+
+   Dans une pièce meublée qui a vécu, deux vues correctement alignées ne
+   dépasseront donc pas 50 à 60 %. Les seuils sont calés là-dessus, sur
+   une mesure et non sur une intuition. */
+const SEUIL_RELAIS = 0.30;
+
 let phaseVisee = "camera";
 let balayageEnCours = false, balayageFait = false;
 
@@ -1349,7 +1365,7 @@ function analyser() {
      durablement, c'est que l'opérateur a changé de sujet ou de place, et
      le balayage doit reprendre depuis l'objectif. */
   if (zoomCamAuto && phaseVisee === "camera" && balayageFait && !balayageEnCours
-      && m.score >= 0.45) {
+      && m.score >= SEUIL_RELAIS) {
     phaseVisee = "reference";
     echelleFigee = null; echelleRetenue = null; echecs = 0;
     noter("Superposition à " + Math.round(m.score * 100) + " % — le zoom de " +
