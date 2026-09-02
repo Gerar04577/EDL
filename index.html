@@ -59,7 +59,17 @@
   .vignettes img { width:100%; aspect-ratio:3/4; object-fit:cover;
     border-radius:8px; display:block; background:#f0eeea; }
   .vignettes figcaption { font-size:12px; color:#8a8a8a; text-align:center;
-    margin-top:3px; }
+    margin-top:3px; line-height:1.25; }
+  /* Le numéro sur une ligne, le mur en dessous : à cette taille, une
+     lettre ne se lit pas, un mot si. */
+  .vignettes figcaption span { display:block; }
+  .vig-num { font-weight:600; color:#5a5a5a; }
+  .vig-mur { font-size:11px; color:#9a9a9a; text-transform:lowercase; }
+  /* Le mur actif : le premier groupe de la grille se repère d'un coup
+     d'œil, sans lire chaque mot. Vert pâle, jamais criard — la vignette
+     reste ce qu'on regarde. */
+  .vig-mur.actif { background:#e8f3ec; color:#1f7a4d; font-weight:600;
+    border-radius:5px; padding:1px 0; }
   /* Emplacement réservé tant que le lien n'est pas arrivé : sans lui, la
      grille se réorganiserait à chaque image chargée. */
   .vignette-vide { width:100%; aspect-ratio:3/4; border-radius:8px;
@@ -175,8 +185,10 @@
     background:#f0eeea; }
   .cote-a-cote figcaption { font-size:12px; color:#8a8a8a; margin-top:4px;
     text-align:center; }
-  .vignette.reprise img { outline:3px solid #2f7d63; outline-offset:-3px; }
-  .vignette.reprise figcaption { color:#1f7a4d; font-weight:600; }
+  /* Quatre pixels et non un : à trois par ligne sur un écran d'iPhone,
+     un liseré fin ne se distingue pas du bord de l'image. */
+  .vignette.reprise img { outline:4px solid #2f7d63; outline-offset:-4px; }
+  .vignette.reprise .vig-num { color:#1f7a4d; font-weight:700; }
   .barre { position:sticky; top:0; z-index:5; margin:-6px -18px 12px; padding:9px 18px;
     font-size:13px; font-weight:600; text-align:center; }
   .barre-ok { background:#e8f3ec; color:#1f7a4d; }

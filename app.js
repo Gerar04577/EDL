@@ -3048,12 +3048,16 @@ function blocPhotosEntree() {
 
   const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
   const dePiece = photosEntreePourPiece(e.photos, piece && piece.libelle);
+  /* Le compte annoncé doit être celui qui s'affichera : le bouton portait
+     le total du logement alors que la grille ne montre que la pièce. */
+  const avecConstatPiece = avecConstat
+    ? avecConstat.filter(p => dePiece.includes(p)) : null;
 
   return `<div class="bloc"><h2>Photos de l'entrée</h2>
     <div class="trio">
       <button class="seg${E.triEntree === "constat" ? " actif" : ""}"
         id="tri-constat"${avecConstat ? "" : " disabled"}>Avec constat${
-        avecConstat ? " — " + avecConstat.length : ""}</button>
+        avecConstatPiece ? " — " + avecConstatPiece.length : ""}</button>
       <button class="seg${!E.triEntree || E.triEntree === "piece" ? " actif" : ""}"
         id="tri-piece">Cette pièce — ${dePiece.length}</button>
       <button class="seg${E.triEntree === "toutes" ? " actif" : ""}"
@@ -3077,7 +3081,7 @@ function blocPhotosEntree() {
           ${lien
             ? `<img src="${echapper(lien)}" alt="" loading="lazy">`
             : `<div class="vignette-vide"></div>`}
-          <figcaption>${echapper(libelleVignette(p))}${prise ? " ✓" : ""}</figcaption>
+          ${legendeVignette(p, prise)}
         </figure>`;
       }).join("")}
     </div>
@@ -3098,6 +3102,46 @@ function libelleVignette(p) {
   return "—";
 }
 
+/* LE MUR SOUS LE NUMÉRO, EN TOUTES LETTRES.
+
+   Une lettre — G, F, D, E — ne se lit pas d'un coup d'œil sur une vignette
+   de quatre centimètres. Le mot, si.
+
+   Les photographies qui ne portent pas l'information dans leur nom —
+   états des lieux faits avant l'application, ou prises au bouton
+   « Autre » — reçoivent « autre ». C'est exact : on ne sait pas de quel
+   mur il s'agit, et prétendre le contraire tromperait la visée. */
+function murVignette(p) {
+  const cle = (p && p.mur) || "DIV";
+  const m = (typeof MURS !== "undefined" ? MURS : []).find(x => x.cle === cle);
+  return (m ? m.libelle : "Autre").toLowerCase();
+}
+
+/* La légende est fabriquée ici et NULLE PART AILLEURS : elle est posée à
+   deux endroits — au dessin de la grille, et quand un lien arrive et
+   remplace le contenu de la vignette. Deux écritures divergeraient. */
+function legendeVignette(p, prise) {
+  /* Le mur actif est marqué d'un fond vert pâle : le premier groupe de la
+     grille se repère alors sans lire chaque mot. La marque suit le bouton
+     touché, elle ne dit rien de la photographie elle-même. */
+  const actif = (typeof murActifCourant === "function") && p && p.mur &&
+    p.mur === murActifCourant();
+  return `<figcaption><span class="vig-num">${
+    echapper(libelleVignette(p))}${prise ? " ✓" : ""}</span>` +
+    `<span class="vig-mur${actif ? " actif" : ""}">${
+    echapper(murVignette(p))}</span></figcaption>`;
+}
+
+/* Le mur actif de la pièce en cours, ou null quand la notion n'a pas de
+   sens — hors d'une pièce, ou dans un WC. Une seule source pour le tri et
+   pour la marque : deux lectures divergeraient au premier changement. */
+function murActifCourant() {
+  if (!E.piece || !VISITE) return null;
+  const piece = (VISITE.pieces || []).find(p => p.piece_id === E.piece);
+  if (!piece || pieceSansMurs(piece.libelle)) return null;
+  return murCourant(E.piece);
+}
+
 /* La liste selon le tri choisi. Le tri par constat prime sur le filtre par
    pièce : un constat désigne déjà l'endroit. */
 /* TROIS MODES D'AFFICHAGE, et non plus deux.
@@ -3114,15 +3158,45 @@ function lotAffiche() {
   const e = E.photosEntree;
   if (!e || e.statut !== "ok") return [];
 
+  const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
+  const dePiece = photosEntreePourPiece(e.photos, piece && piece.libelle);
+
+  let lot;
   if (E.triEntree === "constat") {
     const avec = photosAvecConstat(e.photos, e.edle);
-    if (avec) return avec;
-    return e.photos;          /* pas de fichier de données : tout */
+    if (!avec) lot = e.photos;                /* pas de fichier de données */
+    else {
+      /* « AVEC CONSTAT » NE SORT PLUS DE LA PIÈCE.
+         Il montrait les constatations de tout le logement : dans la
+         cuisine, on voyait celles de la chambre. On croise donc les deux
+         filtres. Si la pièce n'a aucune photographie portant constat, on
+         retombe sur la pièce entière plutôt que sur une grille vide. */
+      const croise = avec.filter(p => dePiece.includes(p));
+      lot = croise.length ? croise : dePiece;
+    }
+  } else if (E.triEntree === "toutes") {
+    lot = e.photos;
+  } else {
+    lot = dePiece;
   }
-  if (E.triEntree === "toutes") return e.photos;
 
-  const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
-  return photosEntreePourPiece(e.photos, piece && piece.libelle);
+  return trierParMur(lot);
+}
+
+/* LES PHOTOGRAPHIES DU MUR CHOISI PASSENT DEVANT.
+
+   Julien touche « Gauche » puis cherche la vue d'entrée du mur gauche :
+   elle était noyée au milieu des autres. Elles remontent donc en tête.
+
+   RIEN NE DISPARAÎT : les autres suivent, dans leur ordre d'origine. Un
+   filtre ferait perdre une vue mal nommée à l'entrée, et c'est précisément
+   celle-là qu'on cherche quand on ne trouve pas. */
+function trierParMur(lot) {
+  const actif = murActifCourant();
+  if (!actif) return lot;
+  const devant = [], derriere = [];
+  lot.forEach(p => ((p.mur === actif) ? devant : derriere).push(p));
+  return devant.concat(derriere);
 }
 
 async function ouvrirPhotosEntree() {
@@ -3167,9 +3241,15 @@ async function chargerLiensVisibles() {
       E.liensEntree[p.onedrive_item_id] = lien;
       const fig = $("vue").querySelector(
         '[data-entree="' + p.onedrive_item_id + '"]');
-      if (fig) fig.innerHTML =
-        `<img src="${echapper(lien)}" alt="" loading="lazy">` +
-        `<figcaption>${echapper(libelleVignette(p))}</figcaption>`;
+      /* La coche « déjà reprise » doit survivre à l'arrivée du lien :
+         sans elle, la vignette perdait sa marque au chargement. */
+      if (fig) {
+        const prise = (VISITE.photos || [])
+          .some(x => x.photo_entree_id === p.onedrive_item_id);
+        fig.innerHTML =
+          `<img src="${echapper(lien)}" alt="" loading="lazy">` +
+          legendeVignette(p, prise);
+      }
     } catch (_) { /* une image illisible n'empêche pas les autres */ }
   }
 }
@@ -4343,17 +4423,33 @@ function dessinerPiece(message) {
   const cg = $("commentaire-general");
   if (cg) cg.oninput = () => { E.commentaireGeneral = cg.value; };
 
+  /* LES BOUTONS D'ÉTAT GÉNÉRAL NE RECONSTRUISENT PLUS L'ÉCRAN.
+
+     Toucher « bon état » ou « propre » appelait dessinerPiece, qui
+     remplace tout le contenu de la page : Safari ramenait le défilement
+     en haut et l'écran sautait sous le doigt. Même défaut, même cause et
+     même remède que pour le bouton « cocher ».
+
+     On ne touche donc qu'à ce qui change : la classe des cinq boutons du
+     groupe. Le texte du commentaire est déjà mémorisé à chaque frappe, et
+     l'enregistrement reste au bouton « Enregistrer l'état général ». */
+  const majSegments = (attribut, valeur) => {
+    $("vue").querySelectorAll("[" + attribut + "]").forEach(x => {
+      x.className = "seg" + (x.getAttribute(attribut) === valeur ? " actif" : "");
+    });
+  };
+
   $("vue").querySelectorAll("[data-etat]").forEach(b => b.onclick = () => {
     const v = b.getAttribute("data-etat");
     E.etat = (E.etat === v) ? null : v;
     if (cg) E.commentaireGeneral = cg.value;
-    dessinerPiece();
+    majSegments("data-etat", E.etat);
   });
   $("vue").querySelectorAll("[data-proprete]").forEach(b => b.onclick = () => {
     const v = b.getAttribute("data-proprete");
     E.proprete = (E.proprete === v) ? null : v;
     if (cg) E.commentaireGeneral = cg.value;
-    dessinerPiece();
+    majSegments("data-proprete", E.proprete);
   });
 
   $("btn-etat-general").onclick = async () => {

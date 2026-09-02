@@ -64,6 +64,10 @@ async function chargerPhotosEntree(visite) {
             drive_id: r.driveId,
             numero: numeroDuNom(e.name),
             piece: pieceDuNom(e.name),
+            /* Le mur, quand le nom le porte. Les états des lieux antérieurs
+               à l'application, et les prises faites au bouton « Autre »,
+               n'en ont pas : la vignette affichera « autre ». */
+            mur: murDuNom(e.name),
             horodatage: h,
             heic: /\.(heic|heif)$/i.test(e.name || ""),
             prise_le: e.lastModifiedDateTime || null,
