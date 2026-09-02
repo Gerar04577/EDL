@@ -122,6 +122,7 @@
 <div class="bloc cache" id="bloc-photos">
   <h2>3. Photographies de l'entrée</h2>
   <p class="note" id="etat-photos"></p>
+  <p class="note" id="etat-focale">Focales : en attente.</p>
   <div class="vignettes" id="vignettes"></div>
 </div>
 
@@ -194,7 +195,7 @@
 <script src="recalage.js"></script>
 
 <script>
-const VERSION = "onedrive 1.5";
+const VERSION = "onedrive 1.6";
 
 /* L'adresse de redirection est ramenée à celle de l'application — la seule
    que Microsoft accepte. Elle n'est pas employée puisque le banc n'ouvre
@@ -344,7 +345,15 @@ async function chargerPhotos() {
                  /\.(jpe?g|png|heic|heif|webp)$/i.test(e.name || ""))
     .map(e => {
       const r = refDe(e, refPhotos.driveId);
-      return { nom_fichier: e.name, onedrive_item_id: r.id, drive_id: r.driveId };
+      /* LA FACETTE PHOTO — métadonnées EXIF exposées par Graph sur les
+         images. Sur OneDrive personnel elle porte focalLength, cameraMake
+         et cameraModel ; sur OneDrive Entreprise, seulement takenDateTime.
+         C'est la focale qui nous intéresse : elle dit avec quel objectif
+         la photographie a été prise, donc quel zoom la caméra du
+         navigateur doit adopter pour retrouver le même cadrage. */
+      const ph = e.photo || (e.remoteItem && e.remoteItem.photo) || null;
+      return { nom_fichier: e.name, onedrive_item_id: r.id, drive_id: r.driveId,
+               photo: ph };
     })
     .sort((a, b) => String(a.nom_fichier).localeCompare(String(b.nom_fichier)));
 
@@ -358,10 +367,34 @@ async function chargerPhotos() {
   $("etat-photos").className = "note ok";
   noter(photos.length + " photographie(s) trouvée(s).", "ok");
 
-  $("vignettes").innerHTML = photos.map((p, i) =>
-    `<figure data-i="${i}"><div style="width:100%;aspect-ratio:3/4;
+  /* Le flux de Safari est celui du module principal, 24 mm en équivalent
+     35 mm. Le zoom voulu est donc le rapport des deux focales. La focale
+     brute d'un iPhone n'est PAS l'équivalent 35 mm — 6,86 mm pour le
+     principal — d'où la normalisation par la plus petite focale vue dans
+     le dossier, qui correspond à l'ultra grand-angle. */
+  const focales = photos.map(p => p.photo && p.photo.focalLength)
+                        .filter(f => typeof f === "number" && f > 0);
+  const avec = focales.length;
+  const uniques = [...new Set(focales.map(f => Math.round(f * 100) / 100))]
+                    .sort((a, b) => a - b);
+  $("etat-focale").textContent = avec
+    ? avec + " sur " + photos.length + " portent une focale — valeurs vues : " +
+      uniques.join(" · ") + " mm"
+    : "Aucune focale renvoyée par Graph sur ce dossier.";
+  $("etat-focale").className = avec ? "note ok" : "note ko";
+  noter(avec
+    ? "Focales lues : " + avec + "/" + photos.length + " — " + uniques.join(" · ") + " mm."
+    : "Aucune focale : la facette photo ne porte pas focalLength ici.",
+    avec ? "ok" : "ko");
+
+  $("vignettes").innerHTML = photos.map((p, i) => {
+    const f = p.photo && p.photo.focalLength;
+    const leg = (typeof f === "number" && f > 0)
+      ? f.toFixed(2) + " mm" : "—";
+    return `<figure data-i="${i}"><div style="width:100%;aspect-ratio:3/4;
       border-radius:8px;background:#f0eeea"></div>
-      <figcaption>${i + 1}</figcaption></figure>`).join("");
+      <figcaption>${i + 1}<br>${ech(leg)}</figcaption></figure>`;
+  }).join("");
 
   $("vignettes").querySelectorAll("[data-i]").forEach(f => f.onclick = () =>
     choisirPhoto(photos[Number(f.getAttribute("data-i"))]));
@@ -372,8 +405,10 @@ async function chargerPhotos() {
       const u = await apercuPhotoEntree(photos[i], false);
       liens[photos[i].onedrive_item_id] = u;
       const f = $("vignettes").querySelector('[data-i="' + i + '"]');
+      const fo = photos[i].photo && photos[i].photo.focalLength;
+      const leg = (typeof fo === "number" && fo > 0) ? fo.toFixed(2) + " mm" : "—";
       if (f) f.innerHTML = `<img src="${ech(u)}" alt="" loading="lazy">` +
-        `<figcaption>${i + 1}</figcaption>`;
+        `<figcaption>${i + 1}<br>${ech(leg)}</figcaption>`;
     } catch (_) { /* une vignette manquante n'empêche rien */ }
   }
 }
