@@ -211,12 +211,12 @@
   </div>
 
   <div id="sous-image" class="cache">
-    <div class="ligne"><span>Zoom de la CAMÉRA</span>
+    <div class="ligne"><span>Zoom de la CAMÉRA — règle-le à la main</span>
       <span id="val-zoom-cam">—</span></div>
     <input type="range" id="zoom-cam" min="50" max="1000" step="5" value="100" disabled>
     <label class="bascule">
       <input type="checkbox" id="zoom-cam-auto" checked>
-      <span>Balayer le zoom caméra, puis relais à 45 %</span>
+      <span>Affiner le zoom autour de mon réglage, puis relais</span>
     </label>
     <p class="note" id="etat-zoom-cam">À tester une fois la caméra allumée.</p>
     <div class="ligne"><span>Flux pendant le zoom</span>
@@ -336,6 +336,51 @@
 <script src="auth.js"></script>
 <script src="graph.js"></script>
 <script>
+/* ============================================================
+   RÉGLAGES DU RECALAGE — LE SEUL BLOC À RECOPIER
+
+   Toutes les valeurs arrêtées par la mesure sont ici, avec la date et le
+   fait qui les justifie. Le noyau de recalage plus bas n'en connaît pas
+   d'autres : porter le mécanisme dans l'application, c'est recopier ce
+   bloc et les fonctions du noyau, sans une seule référence à l'interface
+   du banc.
+
+   Ce qui reste réglable par curseur sur le banc est signalé : sa valeur
+   ici est celle qui sera figée le jour de l'intégration. */
+const RECALAGE = {
+  /* Mise en place : l'opérateur se place et cale son zoom. Aucun réglage
+     ne bouge pendant ce temps. Demandé le 03/09. */
+  delai_mise_en_place: 10000,
+
+  /* Bande explorée autour du réglage manuel, et nombre de mesures.
+     L'exploration large a été abandonnée le 03/09 : au-delà d'un facteur
+     3, les mesures se contredisent — 18 % à 1,53 × puis 222 % à 6,48 ×
+     avec des scores équivalents. */
+  zone_zoom: 1.25,
+  paliers_zone: 5,
+
+  /* Seuil des contours faibles, en fraction du plus fort de l'image.
+     Non linéaire, donc la corrélation de Pearson ne peut pas l'annuler —
+     contrairement au gain de contraste, qui n'avait aucun effet.
+     CURSEUR SUR LE BANC : à figer après mesure. */
+  seuil_contour: 0,
+
+  /* Normalisation du contraste des DEUX images avant Sobel. Les vues de
+     sortie sont systématiquement plus claires que celles d'entrée, et le
+     gradient suit le contraste. */
+  normaliser: true,
+
+  /* Taille demandée à Graph pour la référence. « large » ne rend que
+     600×800 sur les HEIC de l'iPhone ; c1920x1920 rend 1440×1920, cinq
+     fois plus de pixels, proportions conservées. */
+  tailles_apercu: ["c1920x1920", "large", "medium"],
+
+  /* Au-delà de ce zoom, la référence ne montre qu'un morceau de pièce et
+     retrouver le cadrage à main levée n'a plus de sens : la photographie
+     est reprise à vue. */
+  zoom_max_utile: 4
+};
+
 /* ================= NOYAU DE RECALAGE ================= */
 /* Deux tailles de travail : une petite pour CHERCHER l'échelle, une plus
    grande pour MESURER l'alignement une fois l'échelle connue. C'est la
@@ -469,8 +514,8 @@ function contoursT(g, T) {
    contours passent à cinq ou sept pixels d'épaisseur. Le sommet s'élargit
    d'autant, et la mesure devient monotone sur une plage utile. */
 var DILATATION = true;
-var NORMALISER = true;
-var SEUIL_CONTOUR = 0;
+var NORMALISER = RECALAGE.normaliser;
+var SEUIL_CONTOUR = RECALAGE.seuil_contour;
 
 /* Vraie dès qu'une photographie est prise : plus rien à chercher. */
 var viseeClose = false;
@@ -487,7 +532,7 @@ var viseeClose = false;
    référence à 100 %, de sorte que l'opérateur voit le plus large possible
    pour se placer. Ensuite seulement le balayage démarre, puis le relais
    passe à la référence. */
-const DELAI_MISE_EN_PLACE = 10000;
+const DELAI_MISE_EN_PLACE = RECALAGE.delai_mise_en_place;
 let debutVisee = 0;
 
 function attenteEnCours() {
@@ -775,7 +820,8 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 6.3";
+const VERSION = "essai 7.0";
+
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -830,7 +876,6 @@ let zoomCamPlainte = false;   // le refus a-t-il déjà été signalé
    Dans une pièce meublée qui a vécu, deux vues correctement alignées ne
    dépasseront donc pas 50 à 60 %. Les seuils sont calés là-dessus, sur
    une mesure et non sur une intuition. */
-const SEUIL_RELAIS = 0.30;
 
 let phaseVisee = "camera";
 let balayageEnCours = false, balayageFait = false;
@@ -886,7 +931,7 @@ async function odApercu(element, driveId) {
       if (lien) return { url: lien, via: "fichier d'origine" };
     }
   }
-  for (const t of ["c1920x1920", "large", "medium"]) {
+  for (const t of RECALAGE.tailles_apercu) {
     try {
       const res = await appelGraph(`${base}/thumbnails/0/${t}`);
       if (!res.ok) continue;
@@ -1298,6 +1343,7 @@ $("btn-camera").onclick = async () => {
 
        On note donc ce que la piste déclare d'elle-même. */
     await diagnostiquerObjectif(p0);
+
     if (cap && cap.zoom) {
       $("zoom-cam").disabled = false;
       $("zoom-cam").min = Math.round(cap.zoom.min * 100);
@@ -1309,24 +1355,8 @@ $("btn-camera").onclick = async () => {
       zoomCamValeur = p0.getSettings().zoom || 1;
       zoomCamPose = false;
 
-      /* ON PART DU PLUS LARGE.
-
-         Demandé le 03/09 : zoom caméra au minimum, référence à 100 %.
-         L'opérateur voit ainsi le plus grand champ possible pendant qu'il
-         cherche sa place — c'est le contraire d'un cadrage serré, où l'on
-         ne sait pas de quel côté se déplacer. */
+      /* ON PART DU PLUS LARGE : zoom caméra au minimum de l'appareil. */
       await poserZoomBrut(cap.zoom.min);
-      $("zoom-ref").value = 100;
-      $("val-zoom-ref").textContent = "100 % (mise en place)";
-      poserEchelleCalque(100);
-      echelleFigee = null; echelleRetenue = null; echecs = 0;
-      phaseVisee = "camera"; balayageFait = false; balayageEnCours = false;
-      viseeClose = false;
-      debutVisee = performance.now();
-      lancerChrono();
-      noter("Mise en place : " + (DELAI_MISE_EN_PLACE / 1000) +
-        " s pour se positionner — caméra à " + cap.zoom.min.toFixed(2) +
-        " ×, référence à 100 %. Aucun zoom ne bougera avant.", "ok");
 
       $("res-zoom").textContent = obtenu + "  (départ)";
       $("res-zoom").className = "ok";
@@ -1360,6 +1390,50 @@ $("btn-camera").onclick = async () => {
       $("etat-zoom-cam").className = "note attention";
       noter("Zoom caméra indisponible sur cet appareil.", "attention");
     }
+
+    /* LA MISE EN PLACE VAUT DANS TOUS LES CAS.
+
+       Elle était armée DANS le bloc « if (cap && cap.zoom) », donc elle
+       dépendait de la disponibilité du zoom — et le chronomètre restait
+       bloqué à l'écran quand ce bloc n'était pas emprunté. Constaté le
+       03/09 à 18:40 : chronomètre figé sur 1, les deux cases décochées, et
+       les réglages qui bougeaient malgré tout.
+
+       Se placer est nécessaire que le zoom soit disponible ou non, et que
+       les cases soient cochées ou non. La mise en place est donc ici, hors
+       de toute condition. */
+    $("zoom-ref").value = 100;
+    $("val-zoom-ref").textContent = "100 % (mise en place)";
+    poserEchelleCalque(100);
+    echelleFigee = null; echelleRetenue = null; echecs = 0;
+    phaseVisee = "camera"; balayageFait = false; balayageEnCours = false;
+    viseeClose = false;
+    debutVisee = performance.now();
+    lancerChrono();
+    noter("Mise en place : " + (DELAI_MISE_EN_PLACE / 1000) +
+      " s pour se positionner — référence à 100 %" +
+      (zoomCamBornes ? ", caméra à " + zoomCamBornes.min.toFixed(2) + " ×" : "") +
+      ". Aucun réglage ne bougera avant.", "ok");
+
+    /* MISE EN PLACE — HORS DU BLOC DE ZOOM.
+
+       Elle était armée dans « if (cap && cap.zoom) ». Quand ce bloc
+       n'était pas pris, ou quand les cases étaient décochées, le
+       chronomètre s'affichait sans jamais se terminer : constaté le 03/09
+       à 18:40, bloqué sur 1 pendant que les réglages bougeaient quand
+       même. La mise en place ne dépend pas du zoom : elle vaut dans tous
+       les cas. */
+    $("zoom-ref").value = 100;
+    $("val-zoom-ref").textContent = "100 % (mise en place)";
+    poserEchelleCalque(100);
+    echelleFigee = null; echelleRetenue = null; echecs = 0;
+    phaseVisee = "camera"; balayageFait = false; balayageEnCours = false;
+    viseeClose = false;
+    debutVisee = performance.now();
+    lancerChrono();
+    noter("Mise en place : " + (DELAI_MISE_EN_PLACE / 1000) + " s pour se " +
+      "positionner et régler le zoom caméra à la main. Rien ne bougera " +
+      "avant.", "ok");
 
     $("scene").classList.remove("cache");
     $("sous-image").classList.remove("cache");
@@ -1490,7 +1564,8 @@ function chercherEchelle(v, dx, dy, cl, ch) {
   if (!$("recherche-echelle").checked) return 100;
 
   /* Pendant la mise en place, la référence reste à 100 % : l'opérateur se
-     place sur une image qui ne bouge pas sous ses yeux. */
+     place sur une image qui ne bouge pas sous ses yeux. Cette garde est
+     AVANT toute autre condition et ne dépend d'aucune case à cocher. */
   if (attenteEnCours()) return 100;
 
   /* Phase caméra : l'échelle ne bouge pas, sinon les deux mécanismes se
@@ -1640,62 +1715,81 @@ async function poserZoomBrut(z) {
   } catch (e) { return false; }
 }
 
-/* BALAYAGE ALLER-RETOUR, ET ON GARDE LE MEILLEUR.
+/* ============================================================
+   NOYAU DE RECALAGE — DESTINÉ À ÊTRE REPRIS TEL QUEL
 
-   L'approche itérative du 02/09 suivait la mesure d'échelle, qui se
-   contredit dès que l'écart dépasse un facteur 3 : 18 % à 1,53 × puis
-   222 % à 6,48 ×, avec des scores équivalents. Elle se laissait donc
-   conduire par des faux maximums.
+   Tout ce qui suit ne dépend d'aucun élément d'interface : ni curseur,
+   ni case, ni journal. Les réglages arrivent par les constantes
+   ci-dessus. C'est le bloc à porter dans l'application le jour venu,
+   sans rien réécrire.
+   ============================================================ */
 
-   Ici on ne suit rien : on parcourt toute la plage de l'objectif, on note
-   le score à chaque palier, et on retient le meilleur rencontré. Un aller
-   large pour situer, un retour resserré autour du meilleur pour affiner —
-   dans l'autre sens, de sorte qu'un écart dû à l'exposition qui se refait
-   ne biaise pas les deux passes du même côté.
+/* RECHERCHE DANS LA ZONE DU RÉGLAGE MANUEL.
 
-   L'échelle est figée à 100 % pendant tout le balayage : c'est bien le
-   cadrage de l'objectif qu'on mesure, rien d'autre. */
-async function balayerZoom(v, dx, dy, cl, ch) {
+   L'ancien balayage parcourait toute la plage de l'objectif, de 0,50 à
+   10,00 ×, en seize paliers. Deux défauts établis les 02 et 03/09 :
+
+     — plus la plage explorée est large, plus elle contient d'endroits où
+       deux images sans rapport se ressemblent par hasard. L'essai de
+       22:09 mesurait 18 % à 1,53 × puis 222 % à 6,48 ×, avec des scores
+       équivalents : le score ne distinguait pas le vrai du faux ;
+     — cinq secondes pendant lesquelles l'image saute sous les yeux de
+       l'opérateur.
+
+   Le réglage manuel supprime la question. L'opérateur cale le zoom
+   pendant la mise en place ; il sait, lui, ce qu'il regarde. La recherche
+   n'a plus qu'à affiner AUTOUR de cette valeur — jamais ailleurs.
+
+   Cinq paliers dans une bande étroite, en logarithme pour que l'écart
+   soit proportionnel de part et d'autre. Le meilleur l'emporte. Environ
+   une seconde et demie, et l'image ne s'éloigne jamais de ce que
+   l'opérateur a choisi. */
+const ZONE_ZOOM = RECALAGE.zone_zoom;
+const PALIERS_ZONE = RECALAGE.paliers_zone;
+
+async function affinerZoomDansZone(v, dx, dy, cl, ch) {
   balayageEnCours = true;
-  const b = zoomCamBornes;
-  const lo = Math.log(b.min), hi = Math.log(b.max);
+  const b = zoomCamBornes || { min: 1, max: 1 };
+  const depart = zoomCamValeur;
+  const lo = Math.log(Math.max(b.min, depart / ZONE_ZOOM));
+  const hi = Math.log(Math.min(b.max, depart * ZONE_ZOOM));
+
   const mesurer = () => {
     const r = contoursRef(100, TAILLE_ECH);
     if (!r) return 0;
     return chercherT(r, contoursFluxT(v, dx, dy, cl, ch, 100, TAILLE_ECH),
                      TAILLE_ECH).score;
   };
-  let best = { z: zoomCamValeur, s: -1 };
 
-  const N = 9;
-  noter("Balayage : aller en " + N + " paliers, de " + b.min.toFixed(2) +
-    " à " + b.max.toFixed(2) + " ×.", "ok");
-  for (let i = 0; i < N; i++) {
-    const z = Math.exp(lo + (hi - lo) * i / (N - 1));
+  let best = { z: depart, s: -1 };
+  noter("Réglage manuel retenu : " + depart.toFixed(2) + " × — affinage sur " +
+    Math.exp(lo).toFixed(2) + " à " + Math.exp(hi).toFixed(2) + " ×.", "ok");
+
+  for (let i = 0; i < PALIERS_ZONE; i++) {
+    const z = PALIERS_ZONE > 1
+      ? Math.exp(lo + (hi - lo) * i / (PALIERS_ZONE - 1))
+      : depart;
     if (!(await poserZoomBrut(z))) continue;
     const sc = mesurer();
-    noter("Aller " + (i + 1) + "/" + N + " — zoom " + z.toFixed(2) + " × : " +
-      Math.round(sc * 100) + " %.", "ok");
-    if (sc > best.s) best = { z, s: sc };
-  }
-
-  const M = 7;
-  const l2 = Math.max(lo, Math.log(best.z) - Math.log(1.6));
-  const h2 = Math.min(hi, Math.log(best.z) + Math.log(1.6));
-  noter("Retour resserré autour de " + best.z.toFixed(2) + " ×.", "ok");
-  for (let i = M - 1; i >= 0; i--) {
-    const z = Math.exp(l2 + (h2 - l2) * i / (M - 1));
-    if (!(await poserZoomBrut(z))) continue;
-    const sc = mesurer();
-    noter("Retour " + (M - i) + "/" + M + " — zoom " + z.toFixed(2) + " × : " +
-      Math.round(sc * 100) + " %.", "ok");
+    noter("Palier " + (i + 1) + "/" + PALIERS_ZONE + " — zoom " + z.toFixed(2) +
+      " × : " + Math.round(sc * 100) + " %.", "ok");
     if (sc > best.s) best = { z, s: sc };
   }
 
   await poserZoomBrut(best.z);
-  noter("Meilleur cadrage retenu : zoom " + best.z.toFixed(2) + " × à " +
-    Math.round(best.s * 100) + " %.", "ok");
+  noter("Zoom caméra calé à " + best.z.toFixed(2) + " × (" +
+    Math.round(best.s * 100) + " %) — le zoom de la RÉFÉRENCE prend la " +
+    "suite.", "ok");
   balayageFait = true; balayageEnCours = false;
+
+  /* LE RELAIS EST INCONDITIONNEL.
+
+     Il ne dépend plus d'un seuil de score. L'objectif est calé, sa part du
+     travail est faite : le reste est du ressort de l'échelle, quel que
+     soit le score atteint. Le seuil de 30 % laissait la phase caméra
+     s'éterniser sur les sujets peu contrastés. */
+  phaseVisee = "reference";
+  echelleFigee = null; echelleRetenue = null; echecs = 0;
 }
 
 /* APPROCHE EN PLUSIEURS PASSES.
@@ -1779,7 +1873,7 @@ function piloterZoomCamera(v, dx, dy, cl, ch, echelle, score) {
   if (balayageEnCours) return;
 
   if (!balayageFait) {
-    balayerZoom(v, dx, dy, cl, ch);
+    affinerZoomDansZone(v, dx, dy, cl, ch);
     return;
   }
   return;
@@ -1857,29 +1951,20 @@ function analyser() {
   /* Le zoom de l'objectif se règle ici, à partir de l'échelle mesurée. */
   piloterZoomCamera(v, dx, dy, cl, ch, pc, m.score);
 
-  /* LE RELAIS À 45 %.
-
-     Tant que la superposition est mauvaise, c'est le cadrage qui est en
-     cause : seul l'objectif peut y faire quelque chose. Passé 45 %, le
-     gros de l'écart est absorbé et il ne reste que quelques pourcents —
-     c'est le domaine de la recherche d'échelle, qui y est fiable.
-
-     Le retour en arrière existe aussi : si l'alignement s'effondre
-     durablement, c'est que l'opérateur a changé de sujet ou de place, et
-     le balayage doit reprendre depuis l'objectif. */
-  if (zoomCamAuto && !attenteEnCours() && phaseVisee === "camera" && balayageFait
-      && !balayageEnCours && m.score >= SEUIL_RELAIS) {
-    phaseVisee = "reference";
-    echelleFigee = null; echelleRetenue = null; echecs = 0;
-    noter("Superposition à " + Math.round(m.score * 100) + " % — le zoom de " +
-      "la RÉFÉRENCE prend le relais ; l'objectif reste à " +
-      zoomCamValeur.toFixed(2) + " ×.", "ok");
-  } else if (zoomCamAuto && !viseeClose && phaseVisee === "reference" && echecs >= 40) {
+  /* Le relais se fait dans affinerZoomDansZone, dès que l'objectif est
+     calé — plus par franchissement d'un seuil de score. Reste le retour
+     en arrière : si l'alignement s'effondre durablement, l'opérateur a
+     changé de sujet et il faut lui redonner la main sur l'objectif. */
+  if (zoomCamAuto && !viseeClose && !attenteEnCours()
+      && phaseVisee === "reference" && echecs >= 40) {
     phaseVisee = "camera"; balayageFait = false;
     echelleFigee = null; echelleRetenue = null; echecs = 0;
-    noter("Superposition perdue — retour au zoom de la CAMÉRA, nouveau " +
-      "balayage.", "attention");
+    debutVisee = performance.now();
+    lancerChrono();
+    noter("Superposition perdue — reprends le zoom caméra à la main.",
+      "attention");
   }
+
   const pourcent = Math.max(0, Math.round(m.score * 100));
   dernierScore = pourcent;
 
@@ -2122,14 +2207,22 @@ $("zoom-cam-auto").onchange = () => {
 $("zoom-cam").oninput = async () => {
   if (!fluxCamera) return;
   const z = Number($("zoom-cam").value) / 100;
-  /* Toucher le curseur reprend la main : la recherche s'arrête là où
-     l'opérateur l'a laissée, elle ne lutte pas contre lui. */
-  if (zoomCamAuto) {
-    zoomCamAuto = false;
-    $("zoom-cam-auto").checked = false;
-    noter("Recherche du zoom arrêtée : réglage à la main.", "attention");
-  }
+  /* LE RÉGLAGE MANUEL EST LE POINT DE DÉPART, PLUS UNE INTERRUPTION.
+
+     Auparavant, toucher le curseur coupait la recherche automatique : elle
+     était censée trouver le zoom seule, et la main de l'opérateur venait
+     la contredire. Le principe est inversé depuis le 03/09 — c'est
+     l'opérateur qui cale l'objectif, et la recherche n'affine qu'autour de
+     sa valeur. On ne décoche donc plus rien.
+
+     En revanche, bouger le curseur pendant l'affinage remettrait la zone
+     en cause : on recommence l'affinage depuis la nouvelle valeur. */
   zoomCamValeur = z;
+  if (zoomCamAuto && !attenteEnCours() && balayageFait) {
+    balayageFait = false; phaseVisee = "camera";
+    noter("Nouveau réglage manuel : " + z.toFixed(2) +
+      " × — l'affinage repartira de là.", "ok");
+  }
   echelleFigee = null; echelleRetenue = null; echecs = 0;
   const piste = fluxCamera.getVideoTracks()[0];
   try {
