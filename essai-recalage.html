@@ -111,6 +111,18 @@
     font-size:30px; font-weight:700; letter-spacing:.02em; text-align:center;
     opacity:0; pointer-events:none; transition:opacity .18s; }
   #flash.visible { opacity:1; }
+  /* LE CHRONOMÈTRE DE MISE EN PLACE.
+
+     Par-dessus la visée, au centre, assez grand pour se lire à bout de
+     bras. Il disparaît de lui-même quand les zooms prennent la main : sa
+     présence signifie « rien ne bouge encore, place-toi ». */
+  #chrono { position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:2px;
+    pointer-events:none; z-index:6; }
+  #chrono-nb { font-size:72px; font-weight:700; line-height:1; color:#fff;
+    text-shadow:0 2px 12px rgba(0,0,0,.75); font-variant-numeric:tabular-nums; }
+  #chrono-txt { font-size:15px; font-weight:600; color:#fff;
+    text-shadow:0 1px 8px rgba(0,0,0,.8); letter-spacing:.02em; }
 
   .ligne { display:flex; justify-content:space-between; gap:12px;
     padding:6px 0; border-bottom:1px solid #f0eeea; font-size:14px; }
@@ -185,6 +197,10 @@
   <div id="scene" class="cache">
     <video id="flux" playsinline muted autoplay></video>
     <img id="calque" alt="">
+    <div id="chrono" class="cache">
+      <div id="chrono-nb">10</div>
+      <div id="chrono-txt">Place-toi</div>
+    </div>
     <div id="cible"></div>
     <div id="verdict">—</div>
     <button id="auto-image" aria-label="Déclenchement automatique">AUTO</button>
@@ -479,6 +495,31 @@ function attenteEnCours() {
   return (performance.now() - debutVisee) < DELAI_MISE_EN_PLACE;
 }
 
+/* Le compte à rebours affiché. Un seul minuteur à la fois : on éteint le
+   précédent avant d'en armer un nouveau, sinon deux comptes se
+   superposeraient après un « Recommencer ». */
+let minuteurChrono = null;
+
+function lancerChrono() {
+  arreterChrono();
+  const c = $("chrono");
+  if (!c) return;
+  c.classList.remove("cache");
+  const majuscule = () => {
+    const reste = DELAI_MISE_EN_PLACE - (performance.now() - debutVisee);
+    if (reste <= 0) { arreterChrono(); return; }
+    $("chrono-nb").textContent = Math.ceil(reste / 1000);
+  };
+  majuscule();
+  minuteurChrono = setInterval(majuscule, 200);
+}
+
+function arreterChrono() {
+  if (minuteurChrono) { clearInterval(minuteurChrono); minuteurChrono = null; }
+  const c = $("chrono");
+  if (c) c.classList.add("cache");
+}
+
 /* LA VIGNETTE DE CONTRÔLE.
 
    Elle montre la CARTE DES CONTOURS de la référence, telle que la mesure
@@ -711,7 +752,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 6.1";
+const VERSION = "essai 6.2";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -1259,6 +1300,7 @@ $("btn-camera").onclick = async () => {
       phaseVisee = "camera"; balayageFait = false; balayageEnCours = false;
       viseeClose = false;
       debutVisee = performance.now();
+      lancerChrono();
       noter("Mise en place : " + (DELAI_MISE_EN_PLACE / 1000) +
         " s pour se positionner — caméra à " + cap.zoom.min.toFixed(2) +
         " ×, référence à 100 %. Aucun zoom ne bougera avant.", "ok");
@@ -1942,18 +1984,34 @@ $("recherche-echelle").onchange = () => {
     : "Échelle fixée à 100 % — plus rien à chercher.", "ok");
 };
 
+/* LES TROIS GESTIONNAIRES, CHACUN AU NIVEAU SUPÉRIEUR.
+
+   Ils étaient imbriqués : ceux du seuil et de la normalisation avaient été
+   posés DANS le corps de celui de la dilatation. Ils n'étaient donc
+   attachés qu'au moment où l'on touchait la case « Dilater les contours »
+   — jamais avant. D'où le curseur de seuil qui ne changeait rien, ni les
+   chiffres, ni la vignette.
+
+   Le tout restait syntaxiquement valide, ce qui explique que les contrôles
+   de syntaxe n'y aient rien vu. */
 $("dilatation").onchange = () => {
   DILATATION = $("dilatation").checked;
   /* Les contours mis en réserve ont été calculés avec l'autre réglage. */
   reserve = {};
+  echelleRetenue = null; echelleFigee = null; echecs = 0;
+  if (imageRefChargee) refContours = contoursRef(100, TAILLE);
+  dessinerApercuAccent();
+  noter(DILATATION ? "Contours dilatés — sommet élargi."
+                   : "Contours d'un pixel — sommet étroit.", "ok");
+};
 
 $("accent").oninput = () => {
   SEUIL_CONTOUR = Number($("accent").value) / 100;
   $("val-accent").textContent = Math.round(SEUIL_CONTOUR * 100) + " %";
-  dessinerApercuAccent();
-  /* La réserve distingue déjà l'accentuation par sa clé ; on la vide tout
-     de même pour ne pas la laisser gonfler à chaque cran du curseur. */
+  /* La réserve garde les contours calculés au seuil précédent. */
   reserve = {};
+  if (imageRefChargee) refContours = contoursRef(100, TAILLE);
+  dessinerApercuAccent();
   echelleFigee = null; echelleRetenue = null; echecs = 0;
 };
 
@@ -1961,12 +2019,10 @@ $("normaliser").onchange = () => {
   NORMALISER = $("normaliser").checked;
   reserve = {}; echelleFigee = null; echelleRetenue = null; echecs = 0;
   phaseVisee = "camera"; balayageFait = false;
+  if (imageRefChargee) refContours = contoursRef(100, TAILLE);
+  dessinerApercuAccent();
   noter(NORMALISER ? "Contraste normalisé sur les deux images."
                    : "Normalisation du contraste arrêtée.", "ok");
-}; echelleRetenue = null; echelleFigee = null; echecs = 0;
-  if (imageRefChargee) refContours = contoursRef(100, TAILLE);
-  noter(DILATATION ? "Contours dilatés — sommet élargi."
-                   : "Contours d'un pixel — sommet étroit.", "ok");
 };
 $("stab").oninput = () => {
   DELAI_STABILITE = Number($("stab").value);
@@ -2198,6 +2254,7 @@ function prendre() {
        faite, il n'y a plus rien à viser. On fige donc la recherche.
        « Recommencer » la relance, et rien d'autre. */
     viseeClose = true;
+    arreterChrono();
     noter("Visée close — la recherche s'arrête jusqu'à « Recommencer ».", "ok");
   }, "image/jpeg", qualiteChoisie());
 }
@@ -2230,6 +2287,7 @@ $("btn-recommencer").onclick = () => {
   /* Nouvelle prise, nouvelle mise en place : l'opérateur doit se replacer,
      et il a droit aux mêmes dix secondes qu'au premier relevé. */
   debutVisee = performance.now();
+  lancerChrono();
   if (zoomCamBornes) poserZoomBrut(zoomCamBornes.min);
   $("zoom-ref").value = 100;
   $("val-zoom-ref").textContent = "100 % (mise en place)";
