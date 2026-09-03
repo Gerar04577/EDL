@@ -349,8 +349,10 @@
    ici est celle qui sera figée le jour de l'intégration. */
 const RECALAGE = {
   /* Mise en place : l'opérateur se place et cale son zoom. Aucun réglage
-     ne bouge pendant ce temps. Demandé le 03/09. */
-  delai_mise_en_place: 10000,
+     ne bouge pendant ce temps. Demandé le 03/09, porté de 10 à 15 s le
+     même jour : dix secondes ne suffisaient pas pour se placer ET régler
+     le zoom à la main. */
+  delai_mise_en_place: 15000,
 
   /* Bande explorée autour du réglage manuel, et nombre de mesures.
      L'exploration large a été abandonnée le 03/09 : au-delà d'un facteur
@@ -560,7 +562,18 @@ function attenteEnCours() {
 const misePlace = { fin: 0 };
 
 function demarrerMisePlace() {
-  misePlace.fin = performance.now() + DELAI_MISE_EN_PLACE;
+  /* GARDE CONTRE LE DOUBLE DÉPART.
+
+     Le 03/09, un bloc dupliqué appelait cette fonction deux fois à la
+     suite : le second départ réarmait le compte à rebours et l'opérateur
+     attendait quinze secondes au lieu de dix. Le doublon est supprimé,
+     mais la garde reste — un second appel dans la seconde qui suit ne
+     prolonge plus rien. */
+  const maintenant = performance.now();
+  if (misePlace.fin > 0 && (misePlace.fin - maintenant) > DELAI_MISE_EN_PLACE - 1000) {
+    return;
+  }
+  misePlace.fin = maintenant + DELAI_MISE_EN_PLACE;
   rafraichirChrono();
 }
 
@@ -821,7 +834,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 7.1";
+const VERSION = "essai 7.2";
 
 
 const $ = (id) => document.getElementById(id);
@@ -1403,18 +1416,6 @@ $("btn-camera").onclick = async () => {
        Se placer est nécessaire que le zoom soit disponible ou non, et que
        les cases soient cochées ou non. La mise en place est donc ici, hors
        de toute condition. */
-    $("zoom-ref").value = 100;
-    $("val-zoom-ref").textContent = "100 % (mise en place)";
-    poserEchelleCalque(100);
-    echelleFigee = null; echelleRetenue = null; echecs = 0;
-    phaseVisee = "camera"; balayageFait = false; balayageEnCours = false;
-    viseeClose = false;
-    demarrerMisePlace();
-    noter("Mise en place : " + (DELAI_MISE_EN_PLACE / 1000) +
-      " s pour se positionner — référence à 100 %" +
-      (zoomCamBornes ? ", caméra à " + zoomCamBornes.min.toFixed(2) + " ×" : "") +
-      ". Aucun réglage ne bougera avant.", "ok");
-
     /* MISE EN PLACE — HORS DU BLOC DE ZOOM.
 
        Elle était armée dans « if (cap && cap.zoom) ». Quand ce bloc
@@ -2399,7 +2400,7 @@ $("btn-recommencer").onclick = () => {
   phaseVisee = "camera";
   balayageFait = false; balayageEnCours = false;
   /* Nouvelle prise, nouvelle mise en place : l'opérateur doit se replacer,
-     et il a droit aux mêmes dix secondes qu'au premier relevé. */
+     et il a droit au même temps qu'au premier relevé. */
   demarrerMisePlace();
   if (zoomCamBornes) poserZoomBrut(zoomCamBornes.min);
   $("zoom-ref").value = 100;
