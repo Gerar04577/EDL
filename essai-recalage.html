@@ -459,6 +459,26 @@ var SEUIL_CONTOUR = 0;
 /* Vraie dès qu'une photographie est prise : plus rien à chercher. */
 var viseeClose = false;
 
+/* DÉLAI DE MISE EN PLACE.
+
+   Demandé le 03/09. Les journaux de la veille le justifient : le balayage
+   partait dès l'allumage, pendant que l'opérateur cherchait encore sa
+   place. Il mesurait donc un cadrage qui n'avait pas de sens, retenait un
+   palier faux, et il fallait tout reprendre.
+
+   Dix secondes pendant lesquelles RIEN ne bouge : ni le zoom de la
+   caméra, ni celui de la référence. La caméra est au grand angle et la
+   référence à 100 %, de sorte que l'opérateur voit le plus large possible
+   pour se placer. Ensuite seulement le balayage démarre, puis le relais
+   passe à la référence. */
+const DELAI_MISE_EN_PLACE = 10000;
+let debutVisee = 0;
+
+function attenteEnCours() {
+  if (!debutVisee) return false;
+  return (performance.now() - debutVisee) < DELAI_MISE_EN_PLACE;
+}
+
 /* LA VIGNETTE DE CONTRÔLE.
 
    Elle montre la CARTE DES CONTOURS de la référence, telle que la mesure
@@ -691,7 +711,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 6.0";
+const VERSION = "essai 6.1";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -1224,6 +1244,29 @@ $("btn-camera").onclick = async () => {
       zoomCamBornes = { min: cap.zoom.min, max: cap.zoom.max };
       zoomCamValeur = p0.getSettings().zoom || 1;
       zoomCamPose = false;
+
+      /* ON PART DU PLUS LARGE.
+
+         Demandé le 03/09 : zoom caméra au minimum, référence à 100 %.
+         L'opérateur voit ainsi le plus grand champ possible pendant qu'il
+         cherche sa place — c'est le contraire d'un cadrage serré, où l'on
+         ne sait pas de quel côté se déplacer. */
+      await poserZoomBrut(cap.zoom.min);
+      $("zoom-ref").value = 100;
+      $("val-zoom-ref").textContent = "100 % (mise en place)";
+      poserEchelleCalque(100);
+      echelleFigee = null; echelleRetenue = null; echecs = 0;
+      phaseVisee = "camera"; balayageFait = false; balayageEnCours = false;
+      viseeClose = false;
+      debutVisee = performance.now();
+      noter("Mise en place : " + (DELAI_MISE_EN_PLACE / 1000) +
+        " s pour se positionner — caméra à " + cap.zoom.min.toFixed(2) +
+        " ×, référence à 100 %. Aucun zoom ne bougera avant.", "ok");
+      setTimeout(() => {
+        if (fluxCamera && !viseeClose) {
+          noter("Mise en place terminée — balayage du zoom caméra.", "ok");
+        }
+      }, DELAI_MISE_EN_PLACE);
       $("res-zoom").textContent = obtenu + "  (départ)";
       $("res-zoom").className = "ok";
       /* AUCUN ZOOM IMPOSÉ.
@@ -1384,6 +1427,10 @@ function chercherEchelle(v, dx, dy, cl, ch) {
 
      La case reste, pour constater la différence en basculant. */
   if (!$("recherche-echelle").checked) return 100;
+
+  /* Pendant la mise en place, la référence reste à 100 % : l'opérateur se
+     place sur une image qui ne bouge pas sous ses yeux. */
+  if (attenteEnCours()) return 100;
 
   /* Phase caméra : l'échelle ne bouge pas, sinon les deux mécanismes se
      compensent au lieu de se relayer. */
@@ -1665,6 +1712,7 @@ function piloterZoomCamera(v, dx, dy, cl, ch, echelle, score) {
      score de l'estimation est faible, la mesure ne veut rien dire — on
      n'y touche pas au zoom et on retentera à l'analyse suivante. */
   if (viseeClose) return;
+  if (attenteEnCours()) return;
   /* Phase référence : l'objectif est figé, on ne le touche plus. */
   if (phaseVisee !== "camera") return;
   if (balayageEnCours) return;
@@ -1758,8 +1806,8 @@ function analyser() {
      Le retour en arrière existe aussi : si l'alignement s'effondre
      durablement, c'est que l'opérateur a changé de sujet ou de place, et
      le balayage doit reprendre depuis l'objectif. */
-  if (zoomCamAuto && phaseVisee === "camera" && balayageFait && !balayageEnCours
-      && m.score >= SEUIL_RELAIS) {
+  if (zoomCamAuto && !attenteEnCours() && phaseVisee === "camera" && balayageFait
+      && !balayageEnCours && m.score >= SEUIL_RELAIS) {
     phaseVisee = "reference";
     echelleFigee = null; echelleRetenue = null; echecs = 0;
     noter("Superposition à " + Math.round(m.score * 100) + " % — le zoom de " +
@@ -2179,7 +2227,15 @@ $("btn-recommencer").onclick = () => {
   viseeClose = false;
   phaseVisee = "camera";
   balayageFait = false; balayageEnCours = false;
-  noter("Visée rouverte — nouveau balayage au prochain relevé.", "ok");
+  /* Nouvelle prise, nouvelle mise en place : l'opérateur doit se replacer,
+     et il a droit aux mêmes dix secondes qu'au premier relevé. */
+  debutVisee = performance.now();
+  if (zoomCamBornes) poserZoomBrut(zoomCamBornes.min);
+  $("zoom-ref").value = 100;
+  $("val-zoom-ref").textContent = "100 % (mise en place)";
+  poserEchelleCalque(100);
+  noter("Visée rouverte — " + (DELAI_MISE_EN_PLACE / 1000) +
+    " s de mise en place, caméra au plus large.", "ok");
   stableDepuis = 0;
   $("bloc-resultat").classList.add("cache");
   window.scrollTo(0, 0);
