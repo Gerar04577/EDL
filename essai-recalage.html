@@ -498,24 +498,47 @@ function attenteEnCours() {
 /* Le compte à rebours affiché. Un seul minuteur à la fois : on éteint le
    précédent avant d'en armer un nouveau, sinon deux comptes se
    superposeraient après un « Recommencer ». */
-let minuteurChrono = null;
+let minuteurChrono = null, minuteurFin = null;
 
 function lancerChrono() {
   arreterChrono();
   const c = $("chrono");
   if (!c) return;
   c.classList.remove("cache");
+
+  /* DEUX DÉFAUTS CORRIGÉS ICI, CONSTATÉS LE 03/09.
+
+     1. Math.ceil ne descend jamais à zéro : à 400 ms de la fin il rend
+        encore 1, et le chronomètre restait bloqué sur 1 jusqu'à la fin.
+        Ce n'est pas l'affichage qu'il faut changer — ceil donne la bonne
+        suite, 10, 9, 8… 1 — c'est la DISPARITION qui ne devait pas
+        dépendre de lui.
+
+     2. Un pas de 200 ms laissait le dernier affichage traîner : le
+        minuteur pouvait s'éteindre en montrant encore 1. On rafraîchit
+        toutes les 100 ms, et surtout on ARME UN MINUTEUR SÉPARÉ sur la fin
+        exacte du délai — c'est lui qui fait disparaître le chronomètre, pas
+        le hasard du rafraîchissement. */
   const majuscule = () => {
     const reste = DELAI_MISE_EN_PLACE - (performance.now() - debutVisee);
     if (reste <= 0) { arreterChrono(); return; }
     $("chrono-nb").textContent = Math.ceil(reste / 1000);
   };
   majuscule();
-  minuteurChrono = setInterval(majuscule, 200);
+  minuteurChrono = setInterval(majuscule, 100);
+
+  const reste = Math.max(0, DELAI_MISE_EN_PLACE - (performance.now() - debutVisee));
+  minuteurFin = setTimeout(() => {
+    arreterChrono();
+    if (fluxCamera && !viseeClose) {
+      noter("Mise en place terminée — le balayage prend la main.", "ok");
+    }
+  }, reste);
 }
 
 function arreterChrono() {
   if (minuteurChrono) { clearInterval(minuteurChrono); minuteurChrono = null; }
+  if (minuteurFin) { clearTimeout(minuteurFin); minuteurFin = null; }
   const c = $("chrono");
   if (c) c.classList.add("cache");
 }
@@ -752,7 +775,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 6.2";
+const VERSION = "essai 6.3";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -1304,11 +1327,7 @@ $("btn-camera").onclick = async () => {
       noter("Mise en place : " + (DELAI_MISE_EN_PLACE / 1000) +
         " s pour se positionner — caméra à " + cap.zoom.min.toFixed(2) +
         " ×, référence à 100 %. Aucun zoom ne bougera avant.", "ok");
-      setTimeout(() => {
-        if (fluxCamera && !viseeClose) {
-          noter("Mise en place terminée — balayage du zoom caméra.", "ok");
-        }
-      }, DELAI_MISE_EN_PLACE);
+
       $("res-zoom").textContent = obtenu + "  (départ)";
       $("res-zoom").className = "ok";
       /* AUCUN ZOOM IMPOSÉ.
