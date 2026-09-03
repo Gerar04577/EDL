@@ -442,6 +442,39 @@ var DILATATION = true;
 var NORMALISER = true;
 var ACCENT = 1;
 
+/* LA VIGNETTE DE CONTRÔLE.
+
+   Elle montre la référence telle que la MESURE la voit : en gris, réduite
+   au format d'analyse, normalisée puis accentuée. Sans elle, on règle un
+   curseur à l'aveugle et l'on ne voit pas le moment où l'accentuation
+   commence à détruire l'image au lieu de la servir. */
+function dessinerApercuAccent() {
+  const cv = $("apercu-accent");
+  if (!cv || !cv.getContext) return;
+  const c2 = cv.getContext("2d");
+  if (!imageRefChargee) {
+    c2.clearRect(0, 0, cv.width, cv.height);
+    return;
+  }
+  const T = cv.width;
+  const tmp = document.createElement("canvas");
+  tmp.width = T; tmp.height = T;
+  const tc = tmp.getContext("2d", { willReadFrequently: true });
+  const src = imageRefChargee;
+  const l = src.naturalWidth || src.width, h = src.naturalHeight || src.height;
+  tc.drawImage(src, 0, 0, l, h, 0, 0, T, T);
+  let g = reduireT(tc.getImageData(0, 0, T, T).data, T, T, T);
+  g = accentuerContraste(g, ACCENT);
+  const sortie = c2.createImageData(T, T);
+  for (let i = 0; i < T * T; i++) {
+    const v = Math.max(0, Math.min(255, g[i] | 0));
+    sortie.data[i * 4] = v; sortie.data[i * 4 + 1] = v;
+    sortie.data[i * 4 + 2] = v; sortie.data[i * 4 + 3] = 255;
+  }
+  c2.putImageData(sortie, 0, 0);
+}
+
+
 function dilater(c, T) {
   const d = new Float32Array(T * T);
   for (let y = 1; y < T - 1; y++) {
@@ -633,7 +666,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 5.4";
+const VERSION = "essai 5.5";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -1829,37 +1862,6 @@ $("dilatation").onchange = () => {
   DILATATION = $("dilatation").checked;
   /* Les contours mis en réserve ont été calculés avec l'autre réglage. */
   reserve = {};
-
-/* LA VIGNETTE DE CONTRÔLE.
-
-   Elle montre la référence telle que la MESURE la voit : en gris, réduite
-   au format d'analyse, normalisée puis accentuée. Sans elle, on règle un
-   curseur à l'aveugle et l'on ne voit pas le moment où l'accentuation
-   commence à détruire l'image au lieu de la servir. */
-function dessinerApercuAccent() {
-  const cv = $("apercu-accent");
-  const c2 = cv.getContext("2d");
-  if (!imageRefChargee) {
-    c2.clearRect(0, 0, cv.width, cv.height);
-    return;
-  }
-  const T = cv.width;
-  const tmp = document.createElement("canvas");
-  tmp.width = T; tmp.height = T;
-  const tc = tmp.getContext("2d", { willReadFrequently: true });
-  const src = imageRefChargee;
-  const l = src.naturalWidth || src.width, h = src.naturalHeight || src.height;
-  tc.drawImage(src, 0, 0, l, h, 0, 0, T, T);
-  let g = reduireT(tc.getImageData(0, 0, T, T).data, T, T, T);
-  g = accentuerContraste(g, ACCENT);
-  const sortie = c2.createImageData(T, T);
-  for (let i = 0; i < T * T; i++) {
-    const v = Math.max(0, Math.min(255, g[i] | 0));
-    sortie.data[i * 4] = v; sortie.data[i * 4 + 1] = v;
-    sortie.data[i * 4 + 2] = v; sortie.data[i * 4 + 3] = 255;
-  }
-  c2.putImageData(sortie, 0, 0);
-}
 
 $("accent").oninput = () => {
   ACCENT = Number($("accent").value) / 100;
