@@ -443,6 +443,9 @@ var DILATATION = true;
 var NORMALISER = true;
 var ACCENT = 1;
 
+/* Vraie dès qu'une photographie est prise : plus rien à chercher. */
+var viseeClose = false;
+
 /* LA VIGNETTE DE CONTRÔLE.
 
    Elle montre la référence telle que la MESURE la voit : en gris, réduite
@@ -667,7 +670,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 5.6";
+const VERSION = "essai 5.7";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -1642,6 +1645,7 @@ function piloterZoomCamera(v, dx, dy, cl, ch, echelle, score) {
      ELLE PEUT ÉCHOUER, et elle ne doit pas se latcher sur un échec. Si le
      score de l'estimation est faible, la mesure ne veut rien dire — on
      n'y touche pas au zoom et on retentera à l'analyse suivante. */
+  if (viseeClose) return;
   /* Phase référence : l'objectif est figé, on ne le touche plus. */
   if (phaseVisee !== "camera") return;
   if (balayageEnCours) return;
@@ -1717,7 +1721,7 @@ function analyser() {
      remise à zéro relance un balayage complet. On exige donc un alignement
      franchement mauvais, et plus longtemps. */
   echecs = (m.score < 0.22) ? echecs + 1 : 0;
-  if (echelleFigee && echecs >= 40) {
+  if (echelleFigee && echecs >= 40 && !viseeClose) {
     echelleFigee = null; echelleRetenue = null; echecs = 0;
     noter("Alignement perdu : nouvelle recherche d'échelle.", "attention");
   }
@@ -1742,7 +1746,7 @@ function analyser() {
     noter("Superposition à " + Math.round(m.score * 100) + " % — le zoom de " +
       "la RÉFÉRENCE prend le relais ; l'objectif reste à " +
       zoomCamValeur.toFixed(2) + " ×.", "ok");
-  } else if (zoomCamAuto && phaseVisee === "reference" && echecs >= 40) {
+  } else if (zoomCamAuto && !viseeClose && phaseVisee === "reference" && echecs >= 40) {
     phaseVisee = "camera"; balayageFait = false;
     echelleFigee = null; echelleRetenue = null; echecs = 0;
     noter("Superposition perdue — retour au zoom de la CAMÉRA, nouveau " +
@@ -2116,6 +2120,18 @@ function prendre() {
     confirmerPrise(dernierScore);
     noter("Photo prise à " + dernierScore + " % — " + fin.width + "×" + fin.height +
       ", " + Math.round(blob.size/1024) + " Ko.", "ok");
+
+    /* LA PRISE CLÔT LA VISÉE.
+
+       Constaté le 03/09 à 09:57 : la photographie prise à 82 %, l'opérateur
+       baisse l'appareil, l'alignement s'effondre — et le balayage repart
+       pour parcourir neuf paliers qui rendent tous 0 %.
+
+       C'est logique et parfaitement inutile : une fois la photographie
+       faite, il n'y a plus rien à viser. On fige donc la recherche.
+       « Recommencer » la relance, et rien d'autre. */
+    viseeClose = true;
+    noter("Visée close — la recherche s'arrête jusqu'à « Recommencer ».", "ok");
   }, "image/jpeg", qualiteChoisie());
 }
 
@@ -2140,6 +2156,11 @@ $("btn-recommencer").onclick = () => {
     echelleFigee = null; echelleRetenue = null; echecs = 0;
     noter("Nouvelle prise : recherche d'échelle relancée.");
   }
+  /* On rouvre la visée : c'est le seul endroit qui le fait. */
+  viseeClose = false;
+  phaseVisee = "camera";
+  balayageFait = false; balayageEnCours = false;
+  noter("Visée rouverte — nouveau balayage au prochain relevé.", "ok");
   stableDepuis = 0;
   $("bloc-resultat").classList.add("cache");
   window.scrollTo(0, 0);
