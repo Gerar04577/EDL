@@ -185,8 +185,8 @@
   par analyse : au-delà de 60 ms, la visée devient saccadée.</p>
   <div class="ligne"><span>Largeur du flux</span><span id="lib-flux">4032 — pleine résolution</span></div>
   <input type="range" id="reg-flux" min="0" max="2" value="2" step="1">
-  <div class="ligne" style="margin-top:8px"><span>Qualité JPEG</span><span id="lib-qualite">0,82 — actuelle</span></div>
-  <input type="range" id="reg-qualite" min="0" max="3" value="0" step="1">
+  <div class="ligne" style="margin-top:8px"><span>Qualité JPEG</span><span id="lib-qualite">0,92 — par défaut</span></div>
+  <input type="range" id="reg-qualite" min="0" max="3" value="2" step="1">
 </div>
 
 <div class="bloc">
@@ -365,6 +365,11 @@ const RECALAGE = {
      CURSEUR SUR LE BANC : à figer après mesure. */
   seuil_contour: 0,
 
+  /* Qualité JPEG de la photographie prise. Portée de 0,82 à 0,92 le
+     03/09 : le plafond de résolution ayant sauté, le poids se tient par
+     la qualité et non plus en jetant des pixels. */
+  qualite_jpeg: 0.92,
+
   /* Normalisation du contraste des DEUX images avant Sobel. Les vues de
      sortie sont systématiquement plus claires que celles d'entrée, et le
      gradient suit le contraste. */
@@ -533,61 +538,57 @@ var viseeClose = false;
    pour se placer. Ensuite seulement le balayage démarre, puis le relais
    passe à la référence. */
 const DELAI_MISE_EN_PLACE = RECALAGE.delai_mise_en_place;
-let debutVisee = 0;
 
 function attenteEnCours() {
-  if (!debutVisee) return false;
-  return (performance.now() - debutVisee) < DELAI_MISE_EN_PLACE;
+  return misePlace.fin > 0 && performance.now() < misePlace.fin;
 }
 
-/* Le compte à rebours affiché. Un seul minuteur à la fois : on éteint le
-   précédent avant d'en armer un nouveau, sinon deux comptes se
-   superposeraient après un « Recommencer ». */
-let minuteurChrono = null, minuteurFin = null;
+/* LE CHRONOMÈTRE — TROISIÈME ÉCRITURE, ET LA DERNIÈRE.
 
-function lancerChrono() {
-  arreterChrono();
-  const c = $("chrono");
-  if (!c) return;
-  c.classList.remove("cache");
+   Les deux premières s'appuyaient sur des minuteurs : un intervalle pour
+   l'affichage, un délai pour la disparition. Elles ont échoué deux fois,
+   le chronomètre restant bloqué sur 1. La raison de fond est toujours la
+   même : un minuteur peut ne pas se déclencher — onglet en arrière-plan,
+   appel manqué, chemin de code qui ne l'arme pas — et rien ne rattrape.
 
-  /* DEUX DÉFAUTS CORRIGÉS ICI, CONSTATÉS LE 03/09.
+   On renverse donc la charge. UNE SEULE SOURCE DE VÉRITÉ : l'instant de
+   fin. Tout le reste s'en déduit, et c'est la BOUCLE D'ANALYSE qui
+   rafraîchit l'affichage — elle tourne dix fois par seconde tant que la
+   caméra est allumée, c'est la chose la plus sûre du programme.
 
-     1. Math.ceil ne descend jamais à zéro : à 400 ms de la fin il rend
-        encore 1, et le chronomètre restait bloqué sur 1 jusqu'à la fin.
-        Ce n'est pas l'affichage qu'il faut changer — ceil donne la bonne
-        suite, 10, 9, 8… 1 — c'est la DISPARITION qui ne devait pas
-        dépendre de lui.
+   Plus aucun minuteur pour l'affichage ni pour la disparition. */
+const misePlace = { fin: 0 };
 
-     2. Un pas de 200 ms laissait le dernier affichage traîner : le
-        minuteur pouvait s'éteindre en montrant encore 1. On rafraîchit
-        toutes les 100 ms, et surtout on ARME UN MINUTEUR SÉPARÉ sur la fin
-        exacte du délai — c'est lui qui fait disparaître le chronomètre, pas
-        le hasard du rafraîchissement. */
-  const majuscule = () => {
-    const reste = DELAI_MISE_EN_PLACE - (performance.now() - debutVisee);
-    if (reste <= 0) { arreterChrono(); return; }
-    $("chrono-nb").textContent = Math.ceil(reste / 1000);
-  };
-  majuscule();
-  minuteurChrono = setInterval(majuscule, 100);
-
-  const reste = Math.max(0, DELAI_MISE_EN_PLACE - (performance.now() - debutVisee));
-  minuteurFin = setTimeout(() => {
-    arreterChrono();
-    if (fluxCamera && !viseeClose) {
-      noter("Mise en place terminée — le balayage prend la main.", "ok");
-    }
-  }, reste);
+function demarrerMisePlace() {
+  misePlace.fin = performance.now() + DELAI_MISE_EN_PLACE;
+  rafraichirChrono();
 }
 
 function arreterChrono() {
-  if (minuteurChrono) { clearInterval(minuteurChrono); minuteurChrono = null; }
-  if (minuteurFin) { clearTimeout(minuteurFin); minuteurFin = null; }
+  misePlace.fin = 0;
   const c = $("chrono");
   if (c) c.classList.add("cache");
 }
 
+/* Appelée par la boucle d'analyse, à chaque image. Elle affiche, et elle
+   masque : les deux décisions au même endroit, à partir du même calcul. */
+function rafraichirChrono() {
+  const c = $("chrono");
+  if (!c) return;
+  const reste = misePlace.fin - performance.now();
+  if (reste <= 0) {
+    if (misePlace.fin !== 0) {
+      misePlace.fin = 0;
+      if (fluxCamera && !viseeClose) {
+        noter("Mise en place terminée — l'affinage prend la main.", "ok");
+      }
+    }
+    c.classList.add("cache");
+    return;
+  }
+  c.classList.remove("cache");
+  $("chrono-nb").textContent = Math.ceil(reste / 1000);
+}
 /* LA VIGNETTE DE CONTRÔLE.
 
    Elle montre la CARTE DES CONTOURS de la référence, telle que la mesure
@@ -820,7 +821,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 7.0";
+const VERSION = "essai 7.1";
 
 
 const $ = (id) => document.getElementById(id);
@@ -1250,9 +1251,9 @@ const FLUX = [
   { l: 4032, h: 3024, lib: "4032 — pleine résolution" },
 ];
 const QUALITES = [
-  { q: 0.82, lib: "0,82 — actuelle" },
+  { q: 0.82, lib: "0,82" },
   { q: 0.88, lib: "0,88" },
-  { q: 0.92, lib: "0,92 — recommandée" },
+  { q: 0.92, lib: "0,92 — par défaut" },
   { q: 0.96, lib: "0,96 — lourde" },
 ];
 
@@ -1408,8 +1409,7 @@ $("btn-camera").onclick = async () => {
     echelleFigee = null; echelleRetenue = null; echecs = 0;
     phaseVisee = "camera"; balayageFait = false; balayageEnCours = false;
     viseeClose = false;
-    debutVisee = performance.now();
-    lancerChrono();
+    demarrerMisePlace();
     noter("Mise en place : " + (DELAI_MISE_EN_PLACE / 1000) +
       " s pour se positionner — référence à 100 %" +
       (zoomCamBornes ? ", caméra à " + zoomCamBornes.min.toFixed(2) + " ×" : "") +
@@ -1429,8 +1429,7 @@ $("btn-camera").onclick = async () => {
     echelleFigee = null; echelleRetenue = null; echecs = 0;
     phaseVisee = "camera"; balayageFait = false; balayageEnCours = false;
     viseeClose = false;
-    debutVisee = performance.now();
-    lancerChrono();
+    demarrerMisePlace();
     noter("Mise en place : " + (DELAI_MISE_EN_PLACE / 1000) + " s pour se " +
       "positionner et régler le zoom caméra à la main. Rien ne bougera " +
       "avant.", "ok");
@@ -1948,6 +1947,10 @@ function analyser() {
     noter("Alignement perdu : nouvelle recherche d'échelle.", "attention");
   }
 
+  /* Le chronomètre s'affiche et se masque ici, à chaque image : c'est la
+     seule chose qui tourne à coup sûr. */
+  rafraichirChrono();
+
   /* Le zoom de l'objectif se règle ici, à partir de l'échelle mesurée. */
   piloterZoomCamera(v, dx, dy, cl, ch, pc, m.score);
 
@@ -1959,8 +1962,7 @@ function analyser() {
       && phaseVisee === "reference" && echecs >= 40) {
     phaseVisee = "camera"; balayageFait = false;
     echelleFigee = null; echelleRetenue = null; echecs = 0;
-    debutVisee = performance.now();
-    lancerChrono();
+    demarrerMisePlace();
     noter("Superposition perdue — reprends le zoom caméra à la main.",
       "attention");
   }
@@ -2398,8 +2400,7 @@ $("btn-recommencer").onclick = () => {
   balayageFait = false; balayageEnCours = false;
   /* Nouvelle prise, nouvelle mise en place : l'opérateur doit se replacer,
      et il a droit aux mêmes dix secondes qu'au premier relevé. */
-  debutVisee = performance.now();
-  lancerChrono();
+  demarrerMisePlace();
   if (zoomCamBornes) poserZoomBrut(zoomCamBornes.min);
   $("zoom-ref").value = 100;
   $("val-zoom-ref").textContent = "100 % (mise en place)";
