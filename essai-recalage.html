@@ -241,11 +241,16 @@
 
     <div class="ligne"><span>Accentuation de la RÉFÉRENCE</span>
       <span id="val-accent">1,00 ×</span></div>
-    <input type="range" id="accent" min="100" max="300" step="5" value="100">
+    <input type="range" id="accent" min="100" max="600" step="5" value="100">
+    <canvas id="apercu-accent" width="96" height="96"
+      style="width:96px;height:96px;border-radius:8px;display:block;
+             margin:6px auto 0;background:#f0eeea"></canvas>
     <p class="note">Accentue le contraste de la seule photographie de
     référence, autour de sa valeur moyenne. À 1,00 elle n'est pas touchée.
     Le score se lit en direct : monte le curseur et regarde s'il progresse
-    ou s'il baisse.</p>
+    ou s'il baisse. Au-delà de 4,00, une image ordinaire s'écrête largement
+    — les grandes plages deviennent uniformément noires ou blanches et leurs
+    contours disparaissent. C'est visible sur la vignette de contrôle.</p>
 
     <label class="bascule">
       <input type="checkbox" id="recherche-echelle" checked>
@@ -628,7 +633,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 5.3";
+const VERSION = "essai 5.4";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -755,13 +760,53 @@ function odEstImage(e) {
          /\.(jpe?g|png|heic|heif|webp)$/i.test(e.name || "");
 }
 
+/* Les vignettes arrivent AVEC la liste, en une seule requête.
+
+   Un appel par photographie aurait mis un dossier de trois cents vues à
+   genoux. $expand=thumbnails demande à Graph de joindre les aperçus au
+   listage : une requête, tout le dossier. */
+async function odEnfantsAvecVignettes(ref) {
+  const exp = "$expand=thumbnails($select=small,medium)";
+  let url = ref && ref.driveId
+    ? `/drives/${ref.driveId}/items/${ref.id}/children?$top=200&${exp}`
+    : (ref && ref.id
+        ? `/me/drive/items/${ref.id}/children?$top=200&${exp}`
+        : `/me/drive/root/children?$top=200&${exp}`);
+  const tous = [];
+  while (url) {
+    const res = await appelGraph(url);
+    if (!res.ok) {
+      if (res.status === 404) return tous;
+      throw new Error("listage " + res.status);
+    }
+    const data = await res.json();
+    tous.push(...(data.value || []));
+    url = data["@odata.nextLink"]
+      ? data["@odata.nextLink"].replace(/^https:\/\/graph\.microsoft\.com\/v1\.0/, "")
+      : null;
+  }
+  return tous;
+}
+
+function odVignette(e) {
+  const t = (e.thumbnails && e.thumbnails[0]) || null;
+  if (!t) return null;
+  return (t.medium && t.medium.url) || (t.small && t.small.url) || null;
+}
+
 async function odAfficher() {
   const courant = odPile[odPile.length - 1];
   $("od-chemin").textContent = odPile.map(x => x.nom).join(" / ");
   $("od-liste").innerHTML = "<p class=\"note\">Lecture…</p>";
   let enfants;
-  try { enfants = await enfantsDeRef(courant.ref); }
-  catch (e) { return noter("Lecture impossible : " + e.message, "ko"); }
+  try { enfants = await odEnfantsAvecVignettes(courant.ref); }
+  catch (e) {
+    /* Repli sur le listage ordinaire : sans vignettes, mais navigable. */
+    noter("Vignettes indisponibles (" + e.message + ") — listage simple.",
+      "attention");
+    try { enfants = await enfantsDeRef(courant.ref); }
+    catch (e2) { return noter("Lecture impossible : " + e2.message, "ko"); }
+  }
 
   const dossiers = enfants.filter(e => e.folder || e.remoteItem)
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
@@ -780,13 +825,28 @@ async function odAfficher() {
     };
     $("od-liste").appendChild(b);
   }
-  for (const im of images) {
-    const b = document.createElement("button");
-    b.className = "mini";
-    b.style.cssText = "width:100%;text-align:left;margin:0 0 4px";
-    b.textContent = im.name;
-    b.onclick = () => odChoisir(im, courant.ref.driveId);
-    $("od-liste").appendChild(b);
+  if (images.length) {
+    const grille = document.createElement("div");
+    grille.style.cssText = "display:grid;grid-template-columns:repeat(3,1fr);" +
+      "gap:6px;margin-top:8px";
+    for (const im of images) {
+      const fig = document.createElement("figure");
+      fig.style.cssText = "margin:0;cursor:pointer";
+      const u = odVignette(im);
+      fig.innerHTML = u
+        ? `<img src="${u}" alt="" loading="lazy" style="width:100%;` +
+          `aspect-ratio:3/4;object-fit:cover;border-radius:8px">`
+        : `<div style="width:100%;aspect-ratio:3/4;border-radius:8px;` +
+          `background:#f0eeea"></div>`;
+      const leg = document.createElement("figcaption");
+      leg.style.cssText = "font-size:11px;text-align:center;overflow:hidden;" +
+        "text-overflow:ellipsis;white-space:nowrap";
+      leg.textContent = im.name;
+      fig.appendChild(leg);
+      fig.onclick = () => odChoisir(im, courant.ref.driveId);
+      grille.appendChild(fig);
+    }
+    $("od-liste").appendChild(grille);
   }
   if (!dossiers.length && !images.length) {
     $("od-liste").innerHTML = "<p class=\"note\">Dossier vide.</p>";
@@ -932,6 +992,8 @@ async function poserReferenceDepuis(fichier) {
      pixels ne coûte aucune précision et divise le travail par cent
      vingt-quatre. */
   imageRefChargee = reduireSource(source, 512);
+  reserve = {};
+  if ($("apercu-accent")) dessinerApercuAccent();
   refContours = contoursRef(100, TAILLE);
 
   const d = densiteContours(refContours);
@@ -1768,9 +1830,41 @@ $("dilatation").onchange = () => {
   /* Les contours mis en réserve ont été calculés avec l'autre réglage. */
   reserve = {};
 
+/* LA VIGNETTE DE CONTRÔLE.
+
+   Elle montre la référence telle que la MESURE la voit : en gris, réduite
+   au format d'analyse, normalisée puis accentuée. Sans elle, on règle un
+   curseur à l'aveugle et l'on ne voit pas le moment où l'accentuation
+   commence à détruire l'image au lieu de la servir. */
+function dessinerApercuAccent() {
+  const cv = $("apercu-accent");
+  const c2 = cv.getContext("2d");
+  if (!imageRefChargee) {
+    c2.clearRect(0, 0, cv.width, cv.height);
+    return;
+  }
+  const T = cv.width;
+  const tmp = document.createElement("canvas");
+  tmp.width = T; tmp.height = T;
+  const tc = tmp.getContext("2d", { willReadFrequently: true });
+  const src = imageRefChargee;
+  const l = src.naturalWidth || src.width, h = src.naturalHeight || src.height;
+  tc.drawImage(src, 0, 0, l, h, 0, 0, T, T);
+  let g = reduireT(tc.getImageData(0, 0, T, T).data, T, T, T);
+  g = accentuerContraste(g, ACCENT);
+  const sortie = c2.createImageData(T, T);
+  for (let i = 0; i < T * T; i++) {
+    const v = Math.max(0, Math.min(255, g[i] | 0));
+    sortie.data[i * 4] = v; sortie.data[i * 4 + 1] = v;
+    sortie.data[i * 4 + 2] = v; sortie.data[i * 4 + 3] = 255;
+  }
+  c2.putImageData(sortie, 0, 0);
+}
+
 $("accent").oninput = () => {
   ACCENT = Number($("accent").value) / 100;
   $("val-accent").textContent = ACCENT.toFixed(2).replace(".", ",") + " ×";
+  dessinerApercuAccent();
   /* La réserve distingue déjà l'accentuation par sa clé ; on la vide tout
      de même pour ne pas la laisser gonfler à chaque cran du curseur. */
   reserve = {};
