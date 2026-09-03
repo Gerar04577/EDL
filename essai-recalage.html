@@ -154,8 +154,9 @@
   <p class="note" id="etat-onedrive">La pellicule passe par le convertisseur
   d'iOS ; OneDrive rend le fichier tel qu'il est stocké. Pour éprouver ce
   que reçoit l'application, c'est OneDrive qu'il faut.</p>
-  <div id="bloc-od" class="cache">
-    <div class="ligne"><span id="od-chemin">—</span>
+  <div id="bloc-od" class="cache" style="max-width:100%;overflow:hidden">
+    <div class="ligne"><span id="od-chemin" style="overflow:hidden;
+      text-overflow:ellipsis;white-space:nowrap;min-width:0">—</span>
       <button class="mini secondaire" id="od-remonter">Remonter</button></div>
     <div id="od-liste"></div>
   </div>
@@ -666,7 +667,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 5.5";
+const VERSION = "essai 5.6";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -850,7 +851,8 @@ async function odAfficher() {
   for (const d of dossiers) {
     const b = document.createElement("button");
     b.className = "mini secondaire";
-    b.style.cssText = "width:100%;text-align:left;margin:0 0 4px";
+    b.style.cssText = "width:100%;max-width:100%;text-align:left;margin:0 0 4px;" +
+      "overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
     b.textContent = "📁 " + d.name;
     b.onclick = async () => {
       odPile.push({ ref: refDe(d, courant.ref.driveId), nom: d.name });
@@ -860,11 +862,22 @@ async function odAfficher() {
   }
   if (images.length) {
     const grille = document.createElement("div");
-    grille.style.cssText = "display:grid;grid-template-columns:repeat(3,1fr);" +
-      "gap:6px;margin-top:8px";
+    /* LES COLONNES D'UNE GRILLE NE DESCENDENT PAS SOUS LEUR CONTENU.
+
+       « 1fr » vaut « minmax(auto, 1fr) » : chaque colonne refuse d'être
+       plus étroite que ce qu'elle contient. Un nom de fichier long impose
+       donc sa largeur, la grille déborde du cadre, et TOUTE LA PAGE
+       s'élargit avec elle — c'est le décalage vers la gauche et la bande
+       vide à droite du 03/09 à 09:26.
+
+       « minmax(0, 1fr) » lève cette largeur plancher : la colonne peut
+       rétrécir, et c'est la légende qui se coupe. */
+    grille.style.cssText = "display:grid;" +
+      "grid-template-columns:repeat(3,minmax(0,1fr));" +
+      "gap:6px;margin-top:8px;width:100%;max-width:100%";
     for (const im of images) {
       const fig = document.createElement("figure");
-      fig.style.cssText = "margin:0;cursor:pointer";
+      fig.style.cssText = "margin:0;cursor:pointer;min-width:0;overflow:hidden";
       const u = odVignette(im);
       fig.innerHTML = u
         ? `<img src="${u}" alt="" loading="lazy" style="width:100%;` +
@@ -873,7 +886,7 @@ async function odAfficher() {
           `background:#f0eeea"></div>`;
       const leg = document.createElement("figcaption");
       leg.style.cssText = "font-size:11px;text-align:center;overflow:hidden;" +
-        "text-overflow:ellipsis;white-space:nowrap";
+        "text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:100%";
       leg.textContent = im.name;
       fig.appendChild(leg);
       fig.onclick = () => odChoisir(im, courant.ref.driveId);
