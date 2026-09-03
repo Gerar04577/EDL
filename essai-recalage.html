@@ -240,18 +240,18 @@
     coïncident à l'œil sortaient à 35 %. On étale les deux images sur toute
     la plage avant de chercher les contours. Décoche pour comparer.</p>
 
-    <div class="ligne"><span>Accentuation de la RÉFÉRENCE</span>
-      <span id="val-accent">1,00 ×</span></div>
-    <input type="range" id="accent" min="100" max="600" step="5" value="100">
+    <div class="ligne"><span>Seuil des contours faibles</span>
+      <span id="val-accent">0 %</span></div>
+    <input type="range" id="accent" min="0" max="30" step="1" value="0">
     <canvas id="apercu-accent" width="96" height="96"
       style="width:96px;height:96px;border-radius:8px;display:block;
              margin:6px auto 0;background:#f0eeea"></canvas>
-    <p class="note">Accentue le contraste de la seule photographie de
-    référence, autour de sa valeur moyenne. À 1,00 elle n'est pas touchée.
-    Le score se lit en direct : monte le curseur et regarde s'il progresse
-    ou s'il baisse. Au-delà de 4,00, une image ordinaire s'écrête largement
-    — les grandes plages deviennent uniformément noires ou blanches et leurs
-    contours disparaissent. C'est visible sur la vignette de contrôle.</p>
+    <p class="note">Met à zéro tout contour plus faible que ce pourcentage
+    du plus fort de l'image, sur la référence ET sur le flux. À 0 %, rien
+    n'est retiré. Cela supprime le bruit de compression de la vignette de
+    Microsoft sans toucher aux arêtes franches — et contrairement à un
+    simple gain de contraste, la corrélation ne peut pas l'annuler. La
+    vignette ci-dessous montre la carte des contours obtenue.</p>
 
     <label class="bascule">
       <input type="checkbox" id="recherche-echelle" checked>
@@ -345,25 +345,37 @@ function reduireT(rgba, L, H, T) {
   return NORMALISER ? normaliserContraste(g) : g;
 }
 
-/* ACCENTUATION DU CONTRASTE, SUR LA SEULE RÉFÉRENCE.
+/* POURQUOI L'ACCENTUATION LINÉAIRE NE POUVAIT RIEN FAIRE.
 
-   Chaque valeur est écartée de la moyenne de l'image dans le rapport
-   demandé : à 1,50, un pixel qui dépassait la moyenne de 20 la dépasse de
-   30. Les zones claires s'éclaircissent, les sombres s'assombrissent, et
-   le gradient de Sobel — qui suit le contraste local — s'élève d'autant.
+   Elle multipliait le contraste de la référence par un facteur. Or la
+   chaîne est linéaire de bout en bout : Sobel est linéaire, et le score
+   est un coefficient de corrélation de Pearson, qui est INVARIANT par
+   changement d'échelle — multiplier la référence par trois multiplie le
+   numérateur par trois et le dénominateur par trois.
 
-   Réglable de 1,00 à 3,00 pour que l'effet se mesure au lieu de se
-   supposer. À 1,00, l'image n'est pas touchée. */
-function accentuerContraste(g, facteur) {
-  if (!(facteur > 1.001)) return g;
-  const n = g.length;
-  let somme = 0;
-  for (let i = 0; i < n; i++) somme += g[i];
-  const moy = somme / n;
+   Constaté le 03/09 : curseur poussé à fond, aucun chiffre ne bouge.
+   Ce n'était pas un réglage à trouver, c'était une opération sans effet.
+
+   LE SEUIL, LUI, EST NON LINÉAIRE.
+
+   En dessous d'une fraction du gradient le plus fort de l'image, le
+   contour est mis à zéro. Cela retire le bruit de compression de la
+   vignette — 600×800 sortie du convertisseur de Microsoft — sans toucher
+   aux arêtes franches. Aucune normalisation ne peut annuler cela : on ne
+   change pas l'amplitude, on supprime des points.
+
+   Appliqué à la référence ET au flux : les deux images doivent subir le
+   même traitement, sans quoi leurs cartes de contours ne sont plus
+   comparables. */
+function seuillerContours(c, fraction) {
+  if (!(fraction > 0.001)) return c;
+  const n = c.length;
+  let max = 0;
+  for (let i = 0; i < n; i++) if (c[i] > max) max = c[i];
+  if (max <= 0) return c;
+  const seuil = max * fraction;
   const r = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    r[i] = Math.max(0, Math.min(255, moy + (g[i] - moy) * facteur));
-  }
+  for (let i = 0; i < n; i++) r[i] = c[i] >= seuil ? c[i] : 0;
   return r;
 }
 
@@ -425,7 +437,8 @@ function contoursT(g, T) {
       c[i] = Math.sqrt(gx*gx + gy*gy);
     }
   }
-  return DILATATION ? dilater(c, T) : c;
+  const cs = seuillerContours(c, SEUIL_CONTOUR);
+  return DILATATION ? dilater(cs, T) : cs;
 }
 
 /* DILATATION MORPHOLOGIQUE DES GRADIENTS.
@@ -441,17 +454,20 @@ function contoursT(g, T) {
    d'autant, et la mesure devient monotone sur une plage utile. */
 var DILATATION = true;
 var NORMALISER = true;
-var ACCENT = 1;
+var SEUIL_CONTOUR = 0;
 
 /* Vraie dès qu'une photographie est prise : plus rien à chercher. */
 var viseeClose = false;
 
 /* LA VIGNETTE DE CONTRÔLE.
 
-   Elle montre la référence telle que la MESURE la voit : en gris, réduite
-   au format d'analyse, normalisée puis accentuée. Sans elle, on règle un
-   curseur à l'aveugle et l'on ne voit pas le moment où l'accentuation
-   commence à détruire l'image au lieu de la servir. */
+   Elle montre la CARTE DES CONTOURS de la référence, telle que la mesure
+   la voit : après réduction, normalisation, Sobel et seuil. C'est cette
+   carte qui est comparée, pas l'image.
+
+   Sans elle, on règle le seuil à l'aveugle. Avec elle, on voit à quel
+   moment on cesse de retirer du bruit pour commencer à effacer de vraies
+   arêtes — le point où le seuil devient nuisible. */
 function dessinerApercuAccent() {
   const cv = $("apercu-accent");
   if (!cv || !cv.getContext) return;
@@ -467,11 +483,16 @@ function dessinerApercuAccent() {
   const src = imageRefChargee;
   const l = src.naturalWidth || src.width, h = src.naturalHeight || src.height;
   tc.drawImage(src, 0, 0, l, h, 0, 0, T, T);
-  let g = reduireT(tc.getImageData(0, 0, T, T).data, T, T, T);
-  g = accentuerContraste(g, ACCENT);
+  const g = reduireT(tc.getImageData(0, 0, T, T).data, T, T, T);
+  const c = contoursT(g, T);
+  /* Les gradients n'ont pas de plage fixe : on ramène le plus fort à 255
+     pour que la vignette reste lisible quel que soit le sujet. */
+  let mx = 0;
+  for (let i = 0; i < c.length; i++) if (c[i] > mx) mx = c[i];
+  const k = mx > 0 ? 255 / mx : 0;
   const sortie = c2.createImageData(T, T);
   for (let i = 0; i < T * T; i++) {
-    const v = Math.max(0, Math.min(255, g[i] | 0));
+    const v = Math.max(0, Math.min(255, Math.round(c[i] * k)));
     sortie.data[i * 4] = v; sortie.data[i * 4 + 1] = v;
     sortie.data[i * 4 + 2] = v; sortie.data[i * 4 + 3] = 255;
   }
@@ -670,7 +691,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 5.7";
+const VERSION = "essai 6.0";
 
 const $ = (id) => document.getElementById(id);
 let fluxCamera = null, refContours = null, refL = 0, refH = 0;
@@ -1300,7 +1321,7 @@ function contoursRef(pc, T) {
      Sans cela, bouger le curseur ne changerait rien à l'écran : on
      resservirait l'image mise en réserve avant l'accentuation, et le banc
      mesurerait un effet qu'il n'applique pas. */
-  const cle = T + "|" + Math.round(pc * 10) + "|" + Math.round(ACCENT * 100) +
+  const cle = T + "|" + Math.round(pc * 10) + "|" + Math.round(SEUIL_CONTOUR * 1000) +
               "|" + (NORMALISER ? 1 : 0);
   if (reserve[cle]) return reserve[cle];
   if (!imageRefChargee) return null;
@@ -1325,9 +1346,7 @@ function contoursRef(pc, T) {
   const sw = iw / z, sh = ih / z;
   ctx.drawImage(imageRefChargee, (iw - sw) / 2, (ih - sh) / 2, sw, sh, 0, 0, T, T);
   const d = ctx.getImageData(0, 0, T, T).data;
-  /* L'accentuation ne touche QUE la référence : c'est ici, et nulle part
-     ailleurs. Le flux passe par contoursFluxT, qui n'y a pas accès. */
-  const r = contoursT(accentuerContraste(reduireT(d, T, T, T), ACCENT), T);
+  const r = contoursT(reduireT(d, T, T, T), T);
   reserve[cle] = r;
   return r;
 }
@@ -1881,8 +1900,8 @@ $("dilatation").onchange = () => {
   reserve = {};
 
 $("accent").oninput = () => {
-  ACCENT = Number($("accent").value) / 100;
-  $("val-accent").textContent = ACCENT.toFixed(2).replace(".", ",") + " ×";
+  SEUIL_CONTOUR = Number($("accent").value) / 100;
+  $("val-accent").textContent = Math.round(SEUIL_CONTOUR * 100) + " %";
   dessinerApercuAccent();
   /* La réserve distingue déjà l'accentuation par sa clé ; on la vide tout
      de même pour ne pas la laisser gonfler à chaque cran du curseur. */
