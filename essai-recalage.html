@@ -124,6 +124,29 @@
   #chrono-txt { font-size:15px; font-weight:600; color:#fff;
     text-shadow:0 1px 8px rgba(0,0,0,.8); letter-spacing:.02em; }
 
+  /* LE CURSEUR DU ZOOM CAMÉRA, À LA TAILLE DU POUCE.
+
+     C'est le seul réglage que l'opérateur manipule pendant la mise en
+     place, à bout de bras, en tenant l'appareil d'une main. Il lui faut
+     une poignée qu'on ne rate pas et une piste assez haute pour qu'un
+     appui approximatif tombe dessus. */
+  #zoom-cam { height:44px; margin:2px 0 6px; }
+  #zoom-cam::-webkit-slider-runnable-track {
+    height:14px; border-radius:7px; background:#dcd8d2; }
+  #zoom-cam::-webkit-slider-thumb {
+    -webkit-appearance:none; appearance:none;
+    width:44px; height:44px; margin-top:-15px; border-radius:50%;
+    background:#3d7a63; border:3px solid #fff;
+    box-shadow:0 2px 8px rgba(0,0,0,.28); }
+  #zoom-cam::-moz-range-track {
+    height:14px; border-radius:7px; background:#dcd8d2; }
+  #zoom-cam::-moz-range-thumb {
+    width:38px; height:38px; border-radius:50%;
+    background:#3d7a63; border:3px solid #fff;
+    box-shadow:0 2px 8px rgba(0,0,0,.28); }
+  /* La valeur affichée suit la même logique : lisible d'un coup d'œil. */
+  #val-zoom-cam { font-size:20px; font-weight:700; }
+
   .ligne { display:flex; justify-content:space-between; gap:12px;
     padding:6px 0; border-bottom:1px solid #f0eeea; font-size:14px; }
   .ligne:last-child { border-bottom:0; }
@@ -561,6 +584,26 @@ function attenteEnCours() {
    Plus aucun minuteur pour l'affichage ni pour la disparition. */
 const misePlace = { fin: 0 };
 
+/* DEUX MOTEURS, CHACUN SUFFISANT SEUL.
+
+   La boucle d'analyse rafraîchit le chronomètre à chaque image, et ce
+   minuteur le fait aussi. Si l'une des deux voies s'interrompt — analyse
+   en sortie anticipée, minuteur non déclenché — l'autre continue.
+
+   Trois écritures ont échoué en s'appuyant sur un seul moteur. */
+let veilleChrono = null;
+
+function armerVeilleChrono() {
+  if (veilleChrono) return;
+  veilleChrono = setInterval(() => {
+    rafraichirChrono();
+    if (misePlace.fin === 0) {
+      clearInterval(veilleChrono);
+      veilleChrono = null;
+    }
+  }, 150);
+}
+
 function demarrerMisePlace() {
   /* GARDE CONTRE LE DOUBLE DÉPART.
 
@@ -575,6 +618,7 @@ function demarrerMisePlace() {
   }
   misePlace.fin = maintenant + DELAI_MISE_EN_PLACE;
   rafraichirChrono();
+  armerVeilleChrono();
 }
 
 function arreterChrono() {
@@ -834,7 +878,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 7.2";
+const VERSION = "essai 7.3";
 
 
 const $ = (id) => document.getElementById(id);
@@ -1892,6 +1936,15 @@ function piloterZoomCamera(v, dx, dy, cl, ch, echelle, score) {
 }
 
 function analyser() {
+  /* PREMIÈRE INSTRUCTION, AVANT TOUTE SORTIE ANTICIPÉE.
+
+     Le rafraîchissement était placé au milieu d'analyser, après le
+     « if (!v.videoWidth || !refContours) return; ». Dès que l'une de ces
+     conditions tombait, il cessait d'être appelé — et la dernière valeur
+     écrite restait affichée. C'est le 1 figé du 03/09 : le chronomètre
+     n'était pas bloqué, il n'était plus rafraîchi. */
+  rafraichirChrono();
+
   const v = $("flux");
   if (!v.videoWidth || !refContours) return;
   const t0 = performance.now();
@@ -1947,10 +2000,6 @@ function analyser() {
     echelleFigee = null; echelleRetenue = null; echecs = 0;
     noter("Alignement perdu : nouvelle recherche d'échelle.", "attention");
   }
-
-  /* Le chronomètre s'affiche et se masque ici, à chaque image : c'est la
-     seule chose qui tourne à coup sûr. */
-  rafraichirChrono();
 
   /* Le zoom de l'objectif se règle ici, à partir de l'échelle mesurée. */
   piloterZoomCamera(v, dx, dy, cl, ch, pc, m.score);
