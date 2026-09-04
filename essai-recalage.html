@@ -116,9 +116,19 @@
      Par-dessus la visée, au centre, assez grand pour se lire à bout de
      bras. Il disparaît de lui-même quand les zooms prennent la main : sa
      présence signifie « rien ne bouge encore, place-toi ». */
+  /* LA RÈGLE QUI MANQUAIT — TROIS CORRECTIONS PERDUES POUR ELLE.
+
+     « #chrono » est un sélecteur d'identifiant, « .cache » un sélecteur de
+     classe : l'identifiant l'emporte toujours. Le display:flex ci-dessous
+     écrasait le display:none de .cache, quoi que fasse le programme. Le
+     chronomètre était correctement masqué du point de vue du code, et
+     restait affiché à l'écran.
+
+     Il faut donc une règle d'au moins la même force pour le cacher. */
   #chrono { position:absolute; inset:0; display:flex; flex-direction:column;
     align-items:center; justify-content:center; gap:2px;
     pointer-events:none; z-index:6; }
+  #chrono.cache { display:none; }
   #chrono-nb { font-size:72px; font-weight:700; line-height:1; color:#fff;
     text-shadow:0 2px 12px rgba(0,0,0,.75); font-variant-numeric:tabular-nums; }
   #chrono-txt { font-size:15px; font-weight:600; color:#fff;
@@ -156,6 +166,13 @@
   .cote-a-cote img { width:100%; border-radius:8px; display:block; }
   .cote-a-cote figcaption { font-size:12px; color:#8a8a8a; margin-top:4px; text-align:center; }
   .cache { display:none; }
+  /* MÊME PIÈGE, MÊME REMÈDE, PARTOUT.
+
+     Tout identifiant qui pose un display l'emporte sur .cache et ne peut
+     donc plus être masqué. Le chronomètre en a coûté trois corrections ;
+     autant fermer la porte pour les autres. */
+  #chrono.cache, #compte-a-rebours.cache, #flash.cache,
+  #declencheur.cache { display:none; }
 
   /* Déclencheur rond, juste sous l'image : le bouton « Prendre la photo »
      était trop bas pour être atteint au pouce sans lâcher la visée des
@@ -878,7 +895,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 7.3";
+const VERSION = "essai 7.4";
 
 
 const $ = (id) => document.getElementById(id);
