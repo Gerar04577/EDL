@@ -172,7 +172,13 @@
      donc plus être masqué. Le chronomètre en a coûté trois corrections ;
      autant fermer la porte pour les autres. */
   #chrono.cache, #compte-a-rebours.cache, #flash.cache,
-  #declencheur.cache { display:none; }
+  #declencheur.cache, #bloc-vignette-ref.cache { display:none; }
+  /* Le display du bloc vit dans une RÈGLE, pas dans un attribut de style :
+     un style en ligne l'emporte sur toute règle CSS et le bloc ne pourrait
+     plus se masquer — c'est le piège qui a coûté trois corrections au
+     chronomètre, attrapé cette fois par le contrôle du style calculé. */
+  #bloc-vignette-ref { display:flex; gap:10px; align-items:flex-start;
+    margin-top:6px; }
 
   /* Déclencheur rond, juste sous l'image : le bouton « Prendre la photo »
      était trop bas pour être atteint au pouce sans lâcher la visée des
@@ -213,6 +219,14 @@
     <div id="od-liste"></div>
   </div>
   <p class="note" id="etat-ref">Aucune référence chargée.</p>
+  <div id="bloc-vignette-ref" class="cache">
+    <img id="vignette-ref" alt=""
+         style="width:96px;height:128px;object-fit:cover;border-radius:8px;
+                background:#f0eeea;flex:0 0 auto">
+    <div style="min-width:0;flex:1">
+      <p class="note" id="detail-ref" style="margin:0"></p>
+    </div>
+  </div>
   <div id="diag-ref" class="cache">
     <div class="ligne"><span>Contours détectés</span><span id="densite">—</span></div>
     <div class="ligne"><span>Analysable</span><span id="analysable">—</span></div>
@@ -895,7 +909,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 7.4";
+const VERSION = "essai 7.5";
 
 
 const $ = (id) => document.getElementById(id);
@@ -1140,6 +1154,12 @@ async function odChoisir(element, driveId) {
     $("etat-onedrive").textContent =
       element.name + " — chargée par " + a.via + ".";
     $("etat-onedrive").className = "note ok";
+    if ($("detail-ref")) {
+      $("detail-ref").innerHTML =
+        "<strong>" + ech(element.name) + "</strong><br>" +
+        "Chargée depuis OneDrive par " + ech(a.via) + "<br>" +
+        Math.round(blob.size / 1024) + " Ko";
+    }
     noter("Référence OneDrive : " + element.name + " — " + a.via +
       ", " + Math.round(blob.size / 1024) + " Ko.", "ok");
   } catch (e) {
@@ -1182,7 +1202,10 @@ $("btn-onedrive").onclick = async () => {
   }
 };
 
-$("btn-pellicule").onclick = () => $("fichier").click();
+$("btn-pellicule").onclick = () => {
+  if ($("detail-ref")) $("detail-ref").textContent = "Chargée depuis la pellicule.";
+  $("fichier").click();
+};
 $("fichier").onchange = async (e) => {
   const f = e.target.files && e.target.files[0];
   if (!f) return;
@@ -1266,6 +1289,17 @@ async function poserReferenceDepuis(fichier) {
      pixels ne coûte aucune précision et divise le travail par cent
      vingt-quatre. */
   imageRefChargee = reduireSource(source, 512);
+
+  /* LA VIGNETTE DE LA RÉFÉRENCE.
+
+     Elle vaut pour toutes les origines — pellicule comme OneDrive — parce
+     qu'elle est posée ici, dans le seul passage obligé. On voit ainsi
+     quelle photographie on cherche à retrouver, sans avoir à la deviner
+     depuis le calque en transparence. */
+  if ($("vignette-ref")) {
+    $("vignette-ref").src = url;
+    $("bloc-vignette-ref").classList.remove("cache");
+  }
   reserve = {};
   if ($("apercu-accent")) dessinerApercuAccent();
   refContours = contoursRef(100, TAILLE);
