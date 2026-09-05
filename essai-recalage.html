@@ -952,7 +952,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 8.4";
+const VERSION = "essai 8.5";
 
 
 const $ = (id) => document.getElementById(id);
@@ -1736,29 +1736,28 @@ function contoursFluxT(v, dx, dy, cl, ch, pc, T) {
 /* Cherche l'échelle au PETIT format, puis mesure l'alignement au GRAND.
    C'est la pyramide : estimation au grossier, mesure au fin. */
 function chercherEchelle(v, dx, dy, cl, ch) {
-  /* ÉCHELLE FIXÉE À 100 PAR DÉFAUT.
+  /* LE COMMENTAIRE QUI SUIVAIT ÉTAIT FAUX, ET IL A COÛTÉ CHER.
 
-     La calibration du 29/08/2026 a établi que l'appareil natif et le flux
-     du navigateur ont le même champ : cinq mesures à 99,9 %, dispersion
-     nulle. Il n'y a donc aucune échelle à chercher, et tout ce qui suit
-     répondait à un problème inexistant.
+     Il affirmait, d'après une calibration du 29/08, que l'appareil natif
+     et le flux du navigateur ont le même champ — « cinq mesures à 99,9 %,
+     dispersion nulle ». Les mesures du 05/09 le réfutent : même depuis le
+     même endroit, à 0,50 × qui est la borne basse de l'objectif, le flux
+     ne voit pas ce que la photographie voyait. L'échelle doit descendre à
+     58, 69 ou 73 % pour que les deux coïncident.
 
-     Ce qui la rendait nécessaire en apparence : quand l'opérateur n'est
-     pas à l'endroit exact de la photographie, la recherche compensait par
-     l'échelle un écart qui était un déplacement. D'où les valeurs
-     erratiques — 108 %, puis 70 % — et le tremblement.
-
+     Il y a donc bien un écart de champ, et l'échelle sert à le corriger.
      La case reste, pour constater la différence en basculant. */
-  if (!$("recherche-echelle").checked) return 100;
+  if (!$("recherche-echelle").checked) return RECALAGE.echelle_depart;
 
-  /* Pendant la mise en place, la référence reste à 100 % : l'opérateur se
-     place sur une image qui ne bouge pas sous ses yeux. Cette garde est
-     AVANT toute autre condition et ne dépend d'aucune case à cocher. */
-  if (attenteEnCours()) return 100;
+  /* Pendant la mise en place, la référence reste à l'échelle de départ.
+     Elle était à 100 % : le calque débordait de l'écran pendant les
+     quinze secondes où l'opérateur est censé s'en servir pour se placer.
+     Cette garde est AVANT toute autre condition. */
+  if (attenteEnCours()) return RECALAGE.echelle_depart;
 
   /* Phase caméra : l'échelle ne bouge pas, sinon les deux mécanismes se
      compensent au lieu de se relayer. */
-  if (zoomCamAuto && phaseVisee === "camera") return 100;
+  if (zoomCamAuto && phaseVisee === "camera") return RECALAGE.echelle_depart;
 
   if (!$("echelle-auto").checked) return Number($("zoom-ref").value);
   if (echelleFigee) return echelleFigee;
