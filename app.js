@@ -3307,7 +3307,7 @@ async function chargerLiensVisibles() {
    d'un état des lieux valent mieux que ce risque tant que l'affinage n'a
    pas été éprouvé sur le terrain. Il s'active en un geste dans les
    réglages, sur place, et se compare aussitôt. */
-var VISEE_VERSION = "visée 8.8.1";
+var VISEE_VERSION = "visée 8.8.3";
 
 var REGLAGES_VISEE_DEFAUT = {
   seuil: 68,        // % d'alignement exigé — relevé sur le terrain le 29/08
@@ -3315,7 +3315,21 @@ var REGLAGES_VISEE_DEFAUT = {
   qualite: 0.96,    // compression JPEG
   misePlace: 15000, // ms avant que le déclenchement s'arme — banc 8.8
   affinageZoom: false, // affinage du zoom caméra en 5 paliers — banc 8.8
+  normaliser: true, // étalement du contraste des deux images — banc 8.8
+  seuilContour: 0,  // fraction des contours faibles mise à zéro — banc 8.8
+  dilatation: true, // dilatation des contours — déjà dans le noyau
 };
+
+/* LE TRAITEMENT DES CONTOURS SE POSE AVANT TOUTE MESURE. Les trois réglages
+   valent pour la référence comme pour le flux : le noyau les lit dans ses
+   propres variables, il faut donc les y porter. */
+function poserTraitementVisee() {
+  const R = reglagesVisee();
+  NORMALISER = R.normaliser !== false;
+  SEUIL_CONTOUR = Number(R.seuilContour) || 0;
+  DILATATION = R.dilatation !== false;
+  echelleRetenue = null; echelleFigee = null; echecs = 0;
+}
 
 /* Les réglages conservés portent le numéro de la version qui les a écrits.
    Sans cela, un seuil descendu pendant un essai survivait indéfiniment et
@@ -3512,6 +3526,10 @@ function brancherVisee() {
   if ($("visee-defaut")) $("visee-defaut").onclick = () => {
     E.reglagesVisee = null;
     try { localStorage.removeItem("edl_reglages_visee"); } catch (_) {}
+    /* Le noyau garde le traitement dans ses propres variables : sans cet
+       appel, la normalisation et le seuil des contours conservaient les
+       valeurs d'avant jusqu'au prochain allumage. */
+    poserTraitementVisee();
     if (V.boucle) { clearInterval(V.boucle); V.boucle = null; }
     dessinerVisee("Réglages revenus aux valeurs d'usine.");
     if (V.camera) V.boucle = setInterval(analyserVisee, 100);
@@ -3567,6 +3585,35 @@ function brancherVisee() {
     $("visee-mep").oninput = majMep;
     $("visee-mep").onchange = majMep;
   }
+
+  /* LES TROIS RÉGLAGES DE CONTOURS. Toute bascule invalide l'échelle
+     figée : le score change de définition, celle d'avant ne vaut plus. */
+  if ($("visee-seuilc")) {
+    const majSeuilC = () => {
+      const pc = Number($("visee-seuilc").value);
+      enregistrerReglagesVisee({ seuilContour: pc / 100 });
+      $("visee-val-seuilc").textContent = pc + " %";
+      poserTraitementVisee();
+    };
+    $("visee-seuilc").oninput = majSeuilC;
+    $("visee-seuilc").onchange = majSeuilC;
+  }
+
+  if ($("visee-normaliser")) $("visee-normaliser").onclick = () => {
+    const a = !(reglagesVisee().normaliser !== false);
+    enregistrerReglagesVisee({ normaliser: a });
+    poserTraitementVisee();
+    $("visee-normaliser").textContent =
+      "Normalisation du contraste : " + (a ? "oui" : "non");
+  };
+
+  if ($("visee-dilatation")) $("visee-dilatation").onclick = () => {
+    const a = !(reglagesVisee().dilatation !== false);
+    enregistrerReglagesVisee({ dilatation: a });
+    poserTraitementVisee();
+    $("visee-dilatation").textContent =
+      "Dilatation des contours : " + (a ? "oui" : "non");
+  };
 
   if ($("visee-affinage")) $("visee-affinage").onclick = () => {
     const a = !reglagesVisee().affinageZoom;
@@ -3692,6 +3739,16 @@ function blocReglagesVisee() {
     <button class="mini secondaire pleine" id="visee-affinage">Affinage du zoom
       caméra : ${R.affinageZoom ? "ACTIF" : "arrêté"}</button>
 
+    <div class="ligne"><span>Seuil des contours faibles</span>
+      <span id="visee-val-seuilc">${Math.round((R.seuilContour || 0) * 100)} %</span></div>
+    <input type="range" id="visee-seuilc" min="0" max="40" step="1" value="${
+      Math.round((R.seuilContour || 0) * 100)}">
+
+    <button class="mini secondaire pleine" id="visee-normaliser">Normalisation du
+      contraste : ${R.normaliser !== false ? "oui" : "non"}</button>
+    <button class="mini secondaire pleine" id="visee-dilatation">Dilatation des
+      contours : ${R.dilatation !== false ? "oui" : "non"}</button>
+
     <p class="note">Un seuil bas déclenche vite mais cadre moins bien. Une
     immobilité nulle rend les photographies floues. La mise en place est le
     temps laissé pour se placer : le déclenchement ne s'arme qu'après. Ces
@@ -3771,6 +3828,7 @@ async function allumerVisee() {
        contours à chaque échelle essayée. La réserve est vidée : elle
        contiendrait ceux de la photographie précédente. */
     V.image = img;
+    poserTraitementVisee();
     V.echelle = ECHELLE_FIXE;
     V.echelleAuto = true;
     poserReference(img);
@@ -3810,6 +3868,13 @@ async function allumerVisee() {
     $("visee-flux").srcObject = V.camera;
     await $("visee-flux").play();
     $("visee-allumer").classList.add("cache");
+    /* LE BLOC SOUS L'IMAGE N'ÉTAIT JAMAIS MONTRÉ ICI (corrigé le 05/09).
+       Il contient le seuil de déclenchement, le zoom de la référence, le
+       zoom de la caméra et l'obturateur. brancherVisee l'affiche au
+       redessin, mais l'allumage n'appelle pas de redessin : au premier
+       allumage, tout ce bloc restait invisible et n'apparaissait qu'après
+       avoir touché un réglage. */
+    $("visee-sous-image").classList.remove("cache");
     $("visee-reglages").classList.remove("cache");
     majAutoVisee();
 

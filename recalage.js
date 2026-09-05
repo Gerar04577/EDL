@@ -26,6 +26,11 @@
    qu'on prenait pour un écart d'échelle venait d'un zoom de 1,30 imposé
    par mon propre code au banc d'essai. */
 
+/* VERSION. Le noyau vient du banc essai-recalage ; ce numéro dit laquelle.
+   Repris de la 3.3 le 29/08, complété par la 8.8 le 05/09 (normalisation
+   du contraste et seuil des contours faibles). */
+var RECALAGE_VERSION = "noyau 8.8";
+
 const TAILLE = 96;          // mesure de l'alignement
 const TAILLE_ECH = 48;      // recherche de l'échelle — un essai y coûte
                             // 1,3 ms au lieu de 22
@@ -41,9 +46,93 @@ function reduireT(rgba, L, H, T) {
       g[y * T + x] = 0.299 * rgba[i] + 0.587 * rgba[i+1] + 0.114 * rgba[i+2];
     }
   }
-  return g;
+  return NORMALISER ? normaliserContraste(g) : g;
 }
 
+/* Réglages du traitement des contours, repris du banc 8.8. Ils valent pour
+   la RÉFÉRENCE comme pour le FLUX : deux images traitées différemment ne
+   sont plus comparables. */
+var NORMALISER = true;      // étalement du contraste avant Sobel
+var SEUIL_CONTOUR = 0;      // fraction du gradient le plus fort mise à zéro
+
+/* NORMALISATION DU CONTRASTE, APPLIQUÉE AUX DEUX IMAGES.
+
+   Mesuré et consigné : les photographies de sortie sont systématiquement
+   plus claires que celles d'entrée — même lumière, même position, deux
+   minutes d'écart, et l'écart demeure. Le traitement d'image d'Apple ne
+   s'applique pas au flux du navigateur, et aucun réglage n'y remédie.
+
+   Conséquence sur le score : le gradient de Sobel est proportionnel au
+   contraste local. Une image plus claire et plus plate rend des contours
+   plus faibles, et la comparaison les compte comme absents. C'est une
+   partie du 35 % du 03/09, alors que les arêtes coïncidaient à l'œil.
+
+   On étale donc chaque image sur toute la plage avant de chercher les
+   contours. ATTENTION : appliqué aux DEUX, jamais à une seule — accentuer
+   la référence seule lui donnerait un caractère de contours que le flux
+   n'a pas, et le score baisserait au lieu de monter.
+
+   L'étalement se fait sur les centiles 2 et 98, pas sur le minimum et le
+   maximum : un seul pixel brûlé ou un seul point noir suffirait sinon à
+   ruiner l'échelle. */
+function normaliserContraste(g) {
+  const n = g.length;
+  const hist = new Int32Array(256);
+  for (let i = 0; i < n; i++) hist[Math.max(0, Math.min(255, g[i] | 0))]++;
+  const bas = Math.round(n * 0.02), haut = Math.round(n * 0.98);
+  let acc = 0, p2 = 0, p98 = 255;
+  for (let v = 0; v < 256; v++) {
+    acc += hist[v];
+    if (acc >= bas) { p2 = v; break; }
+  }
+  acc = 0;
+  for (let v = 0; v < 256; v++) {
+    acc += hist[v];
+    if (acc >= haut) { p98 = v; break; }
+  }
+  /* Une image sans contraste du tout : on la laisse telle quelle plutôt
+     que d'amplifier son seul bruit. */
+  if (p98 - p2 < 12) return g;
+  const k = 255 / (p98 - p2);
+  const r = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    r[i] = Math.max(0, Math.min(255, (g[i] - p2) * k));
+  }
+  return r;
+}
+/* POURQUOI L'ACCENTUATION LINÉAIRE NE POUVAIT RIEN FAIRE.
+
+   Elle multipliait le contraste de la référence par un facteur. Or la
+   chaîne est linéaire de bout en bout : Sobel est linéaire, et le score
+   est un coefficient de corrélation de Pearson, qui est INVARIANT par
+   changement d'échelle — multiplier la référence par trois multiplie le
+   numérateur par trois et le dénominateur par trois.
+
+   Constaté le 03/09 : curseur poussé à fond, aucun chiffre ne bouge.
+   Ce n'était pas un réglage à trouver, c'était une opération sans effet.
+
+   LE SEUIL, LUI, EST NON LINÉAIRE.
+
+   En dessous d'une fraction du gradient le plus fort de l'image, le
+   contour est mis à zéro. Cela retire le bruit de compression de la
+   vignette — 600×800 sortie du convertisseur de Microsoft — sans toucher
+   aux arêtes franches. Aucune normalisation ne peut annuler cela : on ne
+   change pas l'amplitude, on supprime des points.
+
+   Appliqué à la référence ET au flux : les deux images doivent subir le
+   même traitement, sans quoi leurs cartes de contours ne sont plus
+   comparables. */
+function seuillerContours(c, fraction) {
+  if (!(fraction > 0.001)) return c;
+  const n = c.length;
+  let max = 0;
+  for (let i = 0; i < n; i++) if (c[i] > max) max = c[i];
+  if (max <= 0) return c;
+  const seuil = max * fraction;
+  const r = new Float32Array(n);
+  for (let i = 0; i < n; i++) r[i] = c[i] >= seuil ? c[i] : 0;
+  return r;
+}
 /* Amplitude du gradient (Sobel). On compare des CONTOURS, pas des teintes :
    l'éclairage change entre l'entrée et la sortie, les arêtes non. */
 function contoursT(g, T) {
@@ -56,7 +145,8 @@ function contoursT(g, T) {
       c[i] = Math.sqrt(gx*gx + gy*gy);
     }
   }
-  return DILATATION ? dilater(c, T) : c;
+  const cs = seuillerContours(c, SEUIL_CONTOUR);
+  return DILATATION ? dilater(cs, T) : cs;
 }
 
 /* DILATATION MORPHOLOGIQUE DES GRADIENTS.
@@ -190,7 +280,10 @@ var echecs = 0;                   // analyses de suite sous le seuil
 /* Contours de la référence à une échelle donnée, mis en réserve : ils ne
    changent pas tant que la photographie ne change pas. */
 function contoursRef(pc, T) {
-  const cle = T + "|" + Math.round(pc * 10);
+  /* Le traitement entre dans la clé : sans cela, basculer la
+     normalisation servirait les contours calculés avec l'ancien réglage. */
+  const cle = T + "|" + Math.round(pc * 10) + "|" + (NORMALISER ? 1 : 0) +
+              "|" + Math.round(SEUIL_CONTOUR * 100);
   if (reserve[cle]) return reserve[cle];
   if (!imageRefChargee) return null;
   const c = document.createElement("canvas");
