@@ -105,6 +105,17 @@
   .rang .marquer { width:auto; margin:6px 0 0; padding:6px 10px;
     font-size:12px; font-weight:600; }
 
+  button.mini { width:auto; margin:0; padding:8px 12px; font-size:13px; }
+
+  .groupe { border:1px solid #e3e0da; border-radius:10px; padding:10px;
+    margin-bottom:10px; }
+  .groupe.actif { border-color:#2f7d63; background:#f3faf6; }
+  .groupe-tete { display:flex; justify-content:space-between; align-items:center;
+    gap:10px; font-size:13px; font-weight:600; margin-bottom:8px; }
+  .groupe-tete button { width:auto; margin:0; padding:6px 10px; font-size:12px; }
+  .groupe .vignettes { grid-template-columns:repeat(5,1fr); gap:4px; }
+  .groupe .vignettes img { border-radius:4px; }
+
   #verdict { font-size:15px; font-weight:600; margin:0 0 8px; }
   #journal { font-size:12px; line-height:1.55; max-height:220px;
     overflow-y:auto; }
@@ -132,7 +143,17 @@ d'entrée correspondante · <strong id="version"></strong></p>
 <div class="bloc cache" id="bloc-photos">
   <h2>3. Photographies d'entrée</h2>
   <p class="note" id="etat-photos"></p>
-  <div class="vignettes" id="vignettes"></div>
+  <p class="note" id="etat-heures"></p>
+
+  <div class="ligne"><span>Coupure entre deux groupes</span>
+    <span id="val-coupure">—</span></div>
+  <input type="range" id="coupure" min="5" max="600" step="5" value="90">
+  <p class="note">Une visite est séquentielle : quelques secondes entre deux
+  vues d'une même pièce, bien plus au moment de changer de pièce. Au-delà de
+  cet écart, le banc ouvre un nouveau groupe. La valeur de départ est
+  déduite des écarts mesurés dans CE dossier, pas choisie d'avance.</p>
+
+  <div id="groupes"></div>
 </div>
 
 <div class="bloc cache" id="bloc-sortie">
@@ -160,6 +181,7 @@ d'entrée correspondante · <strong id="version"></strong></p>
   si le pré-tri laisse échapper la bonne réponse. À lancer une fois sur
   une série, pas à chaque essai.</p>
 
+  <p class="note" id="etat-portee"></p>
   <button id="btn-chercher" disabled>Chercher la correspondance</button>
   <p class="note" id="etat-recherche"></p>
 </div>
@@ -199,7 +221,7 @@ d'entrée correspondante · <strong id="version"></strong></p>
 <script>
 /* Version du banc. À incrémenter à chaque dépôt : sans elle, on ne sait
    pas si l'iPhone sert la page qu'on vient de déposer ou la précédente. */
-const VERSION = "appariement 1.0";
+const VERSION = "appariement 1.1";
 
 /* L'adresse de redirection est ramenée à celle de l'application — la seule
    que Microsoft accepte. Elle n'est pas employée puisque le banc n'ouvre
@@ -387,7 +409,7 @@ async function chargerPhotos() {
   const courant = pile[pile.length - 1];
   $("bloc-photos").classList.remove("cache");
   $("etat-photos").textContent = "Lecture du dossier…";
-  $("vignettes").innerHTML = "";
+  $("groupes").innerHTML = "";
   empreintes = {}; imagesFines = {};
 
   let enfants;
@@ -403,14 +425,59 @@ async function chargerPhotos() {
     try { liste = await enfantsDeRef(refPhotos); } catch (_) {}
   }
 
+  /* L'HEURE DE PRISE SE DEMANDE.
+
+     graph.js liste les enfants avec un $select restreint, où photo ne
+     figure pas : takenDateTime ne pouvait donc pas arriver. L'absence
+     constatée le 02/09 ne disait rien de OneDrive, seulement de la
+     requête. Le banc refait la lecture pour son propre compte, en
+     réclamant la facette. Il ne touche pas à graph.js : tant que la
+     mesure n'est pas concluante, l'application n'a pas à changer.
+
+     ET CE N'EST PAS LA DATE DE ONEDRIVE. lastModifiedDateTime est le
+     moment où le fichier est ARRIVÉ dans le dossier : cent photos
+     déposées en une fois la portent toutes, à la seconde près. Elle ne
+     dit rien du parcours de la visite. takenDateTime, si. */
+  let parId = {};
+  try {
+    const champs = "id,name,file,remoteItem,photo";
+    let url = refPhotos && refPhotos.driveId
+      ? `/drives/${refPhotos.driveId}/items/${refPhotos.id}/children?$top=200&$select=${champs}`
+      : `/me/drive/items/${refPhotos.id}/children?$top=200&$select=${champs}`;
+    while (url) {
+      const res = await appelGraph(url);
+      if (!res.ok) break;
+      const data = await res.json();
+      (data.value || []).forEach(e => { parId[e.id] = e; });
+      url = data["@odata.nextLink"]
+        ? data["@odata.nextLink"].replace(/^https:\/\/graph\.microsoft\.com\/v1\.0/, "")
+        : null;
+    }
+  } catch (e) {
+    noter("Facette photo indisponible : " + e.message, "attention");
+  }
+
   photos = liste
     .filter(e => (e.file || (e.remoteItem && e.remoteItem.file)) &&
                  /\.(jpe?g|png|heic|heif|webp)$/i.test(e.name || ""))
     .map(e => {
       const r = refDe(e, refPhotos.driveId);
-      return { nom_fichier: e.name, onedrive_item_id: r.id, drive_id: r.driveId };
+      const bis = parId[e.id] || {};
+      const ph = e.photo || bis.photo || (e.remoteItem && e.remoteItem.photo) ||
+                 (bis.remoteItem && bis.remoteItem.photo) || null;
+      const t = ph && ph.takenDateTime ? Date.parse(ph.takenDateTime) : null;
+      return { nom_fichier: e.name, onedrive_item_id: r.id, drive_id: r.driveId,
+               prise: (t && !isNaN(t)) ? t : null };
     })
-    .sort((a, b) => String(a.nom_fichier).localeCompare(String(b.nom_fichier)));
+    /* Par heure de prise quand on l'a, par nom sinon. Les sans-heure
+       finissent ensemble, à la fin : elles n'ont pas de place dans le
+       parcours, et leur en inventer une serait pire que de l'avouer. */
+    .sort((a, b) => {
+      if (a.prise && b.prise) return a.prise - b.prise;
+      if (a.prise) return -1;
+      if (b.prise) return 1;
+      return String(a.nom_fichier).localeCompare(String(b.nom_fichier));
+    });
 
   if (!photos.length) {
     $("etat-photos").textContent = "Aucune photographie dans ce dossier.";
@@ -418,26 +485,183 @@ async function chargerPhotos() {
     return noter("Aucune photographie.", "ko");
   }
 
+  /* INVENTAIRE DES CHAMPS REÇUS.
+
+     Avant de bâtir quoi que ce soit sur l'heure de prise, on regarde ce
+     que Graph a réellement renvoyé. Un champ absent de cette liste
+     n'existe pas, et il ne sert à rien de bâtir dessus. C'est la même
+     précaution qu'au banc OneDrive le 02/09 : l'absence constatée alors
+     ne disait rien de OneDrive, seulement de la requête. */
+  const cles = new Set();
+  Object.keys(parId).forEach(k => {
+    const e = parId[k];
+    const ph = e.photo || (e.remoteItem && e.remoteItem.photo);
+    if (ph) Object.keys(ph).forEach(c => cles.add(c));
+  });
+  noter("Champs de la facette photo : " +
+    ([...cles].sort().join(", ") || "AUCUN"), cles.size ? "ok" : "ko");
+
+  const avecHeure = photos.filter(p => p.prise).length;
+  $("etat-heures").textContent = avecHeure + " photographie(s) sur " +
+    photos.length + " portent une heure de prise" +
+    (cles.size ? " · facette photo : " + [...cles].sort().join(", ") : "");
+  $("etat-heures").className = "note " +
+    (avecHeure === photos.length ? "ok" : avecHeure ? "attention" : "ko");
+
   $("etat-photos").textContent = photos.length + " photographie(s). Vignettes…";
   $("etat-photos").className = "note";
-  $("vignettes").innerHTML = photos.map((p, i) =>
-    `<figure><img id="vig-${i}" alt=""><figcaption>${ech(p.nom_fichier)}</figcaption></figure>`).join("");
 
-  for (let i = 0; i < photos.length; i++) {
+  /* LE TÉLÉCHARGEMENT EN PARALLÈLE, MAIS PAS EN RAFALE.
+
+     345 vignettes une par une, c'est 345 allers-retours enchaînés. Six à
+     la fois divise l'attente sans risquer le 429 : au-delà, Graph limite
+     le débit et impose un délai d'attente. Ce n'est pas une question de
+     coût — Graph est compris dans l'abonnement — mais de blocage
+     temporaire. */
+  /* Les groupes sont dessinés AVANT le téléchargement : les vignettes se
+     remplissent alors sous tes yeux, groupe par groupe. Dessinés après,
+     elles n'apparaîtraient qu'une fois les 345 arrivées. */
+  decouperGroupes();
+
+  let recues = 0;
+  await enParallele(photos, 6, async (p, i) => {
     try {
-      const u = await apercuPhotoEntree(photos[i], false);
-      liens[photos[i].onedrive_item_id] = u;
+      const u = await apercuPhotoEntree(p, false);
+      liens[p.onedrive_item_id] = u;
       const e = $("vig-" + i); if (e) e.src = u;
     } catch (_) { /* une vignette manquante n'empêche pas la mesure */ }
-  }
-
-  $("etat-photos").textContent = photos.length + " photographie(s) d'entrée, toutes " +
-    "candidates — aucun tri par pièce cette année.";
+    recues++;
+    if (recues % 10 === 0)
+      $("etat-photos").textContent = "Vignettes " + recues + " / " + photos.length + "…";
+  });
+  $("etat-photos").textContent = photos.length + " photographie(s) d'entrée.";
   $("etat-photos").className = "note ok";
   noter(photos.length + " photographie(s) d'entrée chargée(s).", "ok");
   $("bloc-sortie").classList.remove("cache");
   $("bloc-reglages").classList.remove("cache");
   $("k").max = Math.max(1, photos.length);
+}
+
+/* EXÉCUTION PAR VAGUES. n tâches en vol, jamais plus. */
+async function enParallele(liste, n, tache) {
+  let i = 0;
+  const ouvriers = new Array(Math.min(n, liste.length)).fill(0).map(async () => {
+    while (i < liste.length) {
+      const k = i++;
+      await tache(liste[k], k);
+    }
+  });
+  await Promise.all(ouvriers);
+}
+
+/* ============================================================
+   LE DÉCOUPAGE PAR PIÈCE, À PARTIR DE L'HEURE DE PRISE
+
+   Une séance d'état des lieux est séquentielle : quelques secondes
+   entre deux vues d'un même mur, bien plus au moment de changer de
+   pièce. Les écarts portent donc la structure du logement, sans que
+   personne ait rien classé.
+
+   POURQUOI C'EST LE LEVIER PRINCIPAL. 345 candidates, ce n'est pas 15 :
+   on tire vingt fois plus souvent, donc une vue sans rapport a vingt
+   fois plus d'occasions de battre la bonne par hasard. Découper la
+   séance en une quinzaine de groupes ramène le problème à la taille où
+   il a été mesuré.
+
+   LE SEUIL N'EST PAS UNE VALEUR INVENTÉE. Il est déduit des écarts de
+   CE dossier : la médiane multipliée par cinq, bornée entre 30 et 300
+   secondes. Une séance rapide donnera un seuil court, une séance
+   étalée un seuil long. Le curseur reste là pour que tu voies les
+   groupes se former et se défaire.
+   ============================================================ */
+let groupes = [];
+
+function coupureConseillee() {
+  const t = photos.filter(p => p.prise).map(p => p.prise).sort((a, b) => a - b);
+  if (t.length < 3) return 90;
+  const ecarts = [];
+  for (let i = 1; i < t.length; i++) ecarts.push((t[i] - t[i - 1]) / 1000);
+  ecarts.sort((a, b) => a - b);
+  const med = ecarts[Math.floor(ecarts.length / 2)] || 5;
+  return Math.round(Math.max(30, Math.min(300, med * 5)) / 5) * 5;
+}
+
+function decouperGroupes() {
+  const c = $("coupure");
+  if (!photos.some(p => p.prise)) {
+    groupes = [{ nom: "Toutes les photographies", membres: photos.slice() }];
+    c.disabled = true;
+    $("val-coupure").textContent = "—";
+    return rendreGroupes("Aucune heure de prise : pas de découpage possible. " +
+      "L'ordre des noms de fichiers reste le seul repère.");
+  }
+  c.disabled = false;
+  if (!c.dataset.regle) { c.value = coupureConseillee(); c.dataset.regle = "1"; }
+  const seuil = Number(c.value) * 1000;
+  $("val-coupure").textContent = Number(c.value) + " s";
+
+  groupes = [];
+  let cour = null;
+  photos.forEach(p => {
+    if (!cour || !p.prise || !cour.fin || (p.prise - cour.fin) > seuil) {
+      cour = { membres: [], debut: p.prise, fin: p.prise };
+      groupes.push(cour);
+    }
+    cour.membres.push(p);
+    if (p.prise) cour.fin = p.prise;
+  });
+  groupes.forEach((g, i) => {
+    const h = (t) => t ? new Date(t).toLocaleTimeString("fr-BE",
+      { hour: "2-digit", minute: "2-digit" }) : "—";
+    g.nom = "Groupe " + (i + 1) + " · " + g.membres.length + " vue(s) · " +
+      h(g.debut) + " à " + h(g.fin);
+  });
+  rendreGroupes(groupes.length + " groupe(s) — probablement autant d'endroits " +
+    "distincts. À vérifier de l'œil : c'est une hypothèse, pas un classement.");
+}
+
+/* Le classement peut être restreint à un seul groupe. C'est là que le
+   découpage sert vraiment : chercher parmi 20 vues du même coin de
+   logement plutôt que parmi 345. */
+let groupeChoisi = null;
+
+function rendreGroupes(message) {
+  $("groupes").innerHTML = groupes.map((g, i) => {
+    const vues = g.membres.map(p =>
+      `<figure><img id="vig-${photos.indexOf(p)}" src="${ech(liens[p.onedrive_item_id] || "")}" alt="">
+       </figure>`).join("");
+    return `<div class="groupe ${groupeChoisi === i ? "actif" : ""}">
+      <div class="groupe-tete">
+        <span>${ech(g.nom)}</span>
+        <button class="mini secondaire" data-g="${i}">${
+          groupeChoisi === i ? "Tout le dossier" : "Chercher ici"}</button>
+      </div>
+      <div class="vignettes">${vues}</div></div>`;
+  }).join("");
+  $("groupes").querySelectorAll("[data-g]").forEach(b => b.onclick = () => {
+    const i = Number(b.getAttribute("data-g"));
+    groupeChoisi = (groupeChoisi === i) ? null : i;
+    rendreGroupes(message);
+    majPorteeRecherche();
+  });
+  if (message) { $("etat-photos").textContent = message; $("etat-photos").className = "note"; }
+  majPorteeRecherche();
+}
+
+function majPorteeRecherche() {
+  const lot = candidates();
+  if ($("k")) $("k").max = Math.max(1, lot.length);
+  if ($("etat-portee")) {
+    $("etat-portee").textContent = groupeChoisi == null
+      ? "Recherche sur les " + lot.length + " photographies du dossier."
+      : "Recherche restreinte au groupe " + (groupeChoisi + 1) + " — " +
+        lot.length + " candidate(s).";
+    $("etat-portee").className = "note " + (groupeChoisi == null ? "" : "ok");
+  }
+}
+
+function candidates() {
+  return groupeChoisi == null ? photos : groupes[groupeChoisi].membres;
 }
 
 /* LES EMPREINTES DU PRÉ-TRI.
@@ -494,6 +718,7 @@ $("fichier").onchange = async (e) => {
 
 /* ---- 5. La recherche ---------------------------------------------------- */
 $("k").oninput = () => { $("val-k").textContent = $("k").value; };
+$("coupure").oninput = () => { $("coupure").dataset.regle = "1"; decouperGroupes(); };
 
 $("btn-chercher").onclick = async () => {
   if (!sortie || !photos.length) return;
@@ -502,8 +727,9 @@ $("btn-chercher").onclick = async () => {
   $("bloc-resultat").classList.add("cache");
 
   const ratio = sortie.image.width / sortie.image.height;
+  const lot = candidates();
   const tout = $("tout-fin").checked;
-  const K = tout ? photos.length : Math.min(Number($("k").value), photos.length);
+  const K = tout ? lot.length : Math.min(Number($("k").value), lot.length);
 
   try {
     /* ---- PRÉ-TRI : toutes les entrées, échelle 100 %, en 48 × 48 -------
@@ -514,14 +740,19 @@ $("btn-chercher").onclick = async () => {
     const t0 = performance.now();
     const cSortie48 = contoursCadre(sortie.image, ratio, 1, TAILLE_ECH);
     const brut = [];
-    for (let i = 0; i < photos.length; i++) {
-      $("etat-recherche").textContent = "Pré-tri " + (i + 1) + " / " + photos.length + "…";
+    /* Le décodage est local, mais le premier passage télécharge les
+       aperçus : par vagues de six, comme les vignettes. Les images
+       décodées restent en mémoire, donc la recherche suivante sur la
+       même unité ne repaie rien. */
+    let faits = 0;
+    await enParallele(lot, 6, async (p) => {
       let img;
-      try { img = await empreinteDe(photos[i]); }
-      catch (_) { continue; }
+      try { img = await empreinteDe(p); } catch (_) { return; }
       const c = contoursCadre(img, ratio, 1, TAILLE_ECH);
-      brut.push({ p: photos[i], pretri: chercherT(c, cSortie48, TAILLE_ECH).score });
-    }
+      brut.push({ p, pretri: chercherT(c, cSortie48, TAILLE_ECH).score });
+      faits++;
+      $("etat-recherche").textContent = "Pré-tri " + faits + " / " + lot.length + "…";
+    });
     const t1 = performance.now();
     brut.sort((a, b2) => b2.pretri - a.pretri);
 
@@ -542,7 +773,7 @@ $("btn-chercher").onclick = async () => {
     dernierClassement = {
       retenues, brut,
       msPretri: Math.round(t1 - t0), msFin: Math.round(t2 - t1),
-      nPretri: brut.length, K
+      nPretri: brut.length, K, lot: lot.length
     };
     afficherClassement();
     noter("Pré-tri " + Math.round(t1 - t0) + " ms sur " + brut.length +
@@ -581,7 +812,7 @@ function afficherClassement() {
     (ecart == null ? "" : " · avance du 1er sur le 2e : " + ecart.toFixed(1) + " point(s)");
   $("etat-recherche").className = "note";
 
-  $("classement").innerHTML = r.map((c, i) => {
+  $("classement").innerHTML = r.slice(0, 10).map((c, i) => {
     const u = liens[c.p.onedrive_item_id] || "";
     return `<div class="rang ${i === 0 ? "premier" : ""}">
       <img src="${ech(u)}" alt="">
