@@ -1,4 +1,11 @@
-/* EDL — Écrans
+/* EDL — Écrans   ·   app 2.32.1 (05/09/2026)
+
+   2.32.1 : intégration du banc essai-recalage (essai 8.8) dans la visée
+   guidée — seuil 45 %, qualité 0,92, échelle de départ 65 %, zoom de la
+   CAMÉRA réglé à la main puis affiné, relais au zoom de la RÉFÉRENCE,
+   chronomètre de mise en place, modes Cadre et Contours, prise plein
+   format. Rien hors de la visée n'est touché.
+
    Étape 3 : démarrage d'une visite. La capture arrive à l'étape suivante. */
 
 var E = {
@@ -3294,55 +3301,32 @@ async function chargerLiensVisibles() {
    l'autre. Les valeurs par défaut viennent des essais du 28/08/2026 ;
    elles conviennent à la plupart des pièces, mais un local sombre ou une
    surface peu texturée peut demander autre chose. */
-/* VISÉE GUIDÉE — reprise du banc essai-recalage 8.8 (05/09/2026).
-
-   Deux mécanismes du banc arrivent ici : la mise en place, qui laisse à
-   l'opérateur le temps de se placer avant que le déclenchement s'arme, et
-   l'affinage du zoom de la caméra en cinq paliers autour du réglage
-   manuel.
-
-   L'AFFINAGE DU ZOOM EST ARRÊTÉ D'USINE, et c'est délibéré. Le commentaire
-   d'allumerVisee plus bas, daté du 29/08, établit qu'un zoom imposé faisait
-   retomber Safari sur 1440×1920 au lieu de 3024×4032 — les photographies
-   d'un état des lieux valent mieux que ce risque tant que l'affinage n'a
-   pas été éprouvé sur le terrain. Il s'active en un geste dans les
-   réglages, sur place, et se compare aussitôt. */
-var VISEE_VERSION = "visée 8.8.3";
-
 var REGLAGES_VISEE_DEFAUT = {
-  seuil: 68,        // % d'alignement exigé — relevé sur le terrain le 29/08
-  stabilite: 1200,  // ms d'immobilité avant la prise
-  qualite: 0.96,    // compression JPEG
-  misePlace: 15000, // ms avant que le déclenchement s'arme — banc 8.8
-  affinageZoom: false, // affinage du zoom caméra en 5 paliers — banc 8.8
-  normaliser: true, // étalement du contraste des deux images — banc 8.8
-  seuilContour: 0,  // fraction des contours faibles mise à zéro — banc 8.8
-  dilatation: true, // dilatation des contours — déjà dans le noyau
-};
+  /* SEUIL RAMENÉ DE 68 À 45 %, valeur du banc au 03/09/2026.
 
-/* LE TRAITEMENT DES CONTOURS SE POSE AVANT TOUTE MESURE. Les trois réglages
-   valent pour la référence comme pour le flux : le noyau les lit dans ses
-   propres variables, il faut donc les y porter. */
-function poserTraitementVisee() {
-  const R = reglagesVisee();
-  NORMALISER = R.normaliser !== false;
-  SEUIL_CONTOUR = Number(R.seuilContour) || 0;
-  DILATATION = R.dilatation !== false;
-  echelleRetenue = null; echelleFigee = null; echecs = 0;
-}
+     Le score n'est pas une note de superposition : c'est un taux de
+     contours communs. Mesure du 03/09 à 00:26 — les arêtes du meuble
+     coïncidaient nettement à l'œil, et le score affichait 35 %. Deux
+     causes, toutes deux hors de portée du cadrage : le contenu de la
+     pièce a changé, et l'éclairage diffère. Dans une pièce meublée qui a
+     vécu, deux vues correctement alignées ne dépassent pas 50 à 60 %.
+     Le seuil est calé là-dessus, sur une mesure et non sur une
+     intuition. */
+  seuil: 45,
+  stabilite: 1200,  // ms d'immobilité avant la prise
+  /* 0,92 comme au banc : le plafond de résolution ayant sauté, le poids
+     se tient désormais par la qualité et non plus en jetant des pixels. */
+  qualite: RECALAGE.qualite_jpeg,
+};
 
 /* Les réglages conservés portent le numéro de la version qui les a écrits.
    Sans cela, un seuil descendu pendant un essai survivait indéfiniment et
    écrasait les valeurs d'usine des versions suivantes — le seuil restait à
    35 % alors que la nouvelle valeur était 68. */
-/* LE NUMÉRO RESTE À 2 (05/09/2026). Il avait été passé à 3 en ajoutant les
-   deux réglages de la visée 8.8 — à tort : la ligne d'Object.assign
-   ci-dessous fusionne les réglages conservés avec les valeurs d'usine, donc
-   une clé nouvelle prend sa valeur par défaut sans que rien ne soit
-   détruit. Incrémenter aurait effacé sans raison le seuil et l'immobilité
-   réglés sur l'iPhone. On n'incrémente que pour FORCER l'oubli d'une valeur
-   devenue mauvaise. */
-var REGLAGES_VISEE_VERSION = 2;
+/* PORTÉ À 3 LE 05/09/2026. Sans cela, le seuil de 68 % et la qualité de
+   0,96 conservés dans le stockage de l'iPhone survivraient à la mise à
+   jour et écraseraient les valeurs du banc. */
+var REGLAGES_VISEE_VERSION = 3;
 
 function reglagesVisee() {
   if (E.reglagesVisee) return E.reglagesVisee;
@@ -3388,9 +3372,8 @@ async function ecranViseeGuidee(itemEntree) {
      n'ont rien à faire ici. */
   E.visee = { ref, lien, blobRef, score: 0, auto: false, camera: null,
               boucle: null, refL: 0, refH: 0, stableDepuis: 0, sousSeuil: 0,
-              echelle: ECHELLE_FIXE, echelleAuto: true,
-              phase: "camera", misePlaceFin: 0, misePlaceFinie: false,
-              zoomBornes: null, zoomCam: 1 };
+              echelle: RECALAGE.echelle_depart, echelleAuto: true,
+              zoomCam: null, cadre: false, contours: false };
   const piece = VISITE.pieces.find(p => p.piece_id === E.piece);
   titre("Refaire le cadrage", piece ? piece.libelle : "");
   dessinerVisee();
@@ -3405,7 +3388,12 @@ function dessinerVisee(message) {
         ? ` style="aspect-ratio:${V.refL} / ${V.refH}"` : ""}>
         <video id="visee-flux" playsinline muted autoplay></video>
         <img id="visee-calque" src="${echapper(V.lien)}" alt="">
+        <canvas id="visee-contours" class="cache"></canvas>
         <div id="visee-cadre"></div>
+        <div id="visee-chrono" class="cache">
+          <div id="visee-chrono-nb">${RECALAGE.delai_mise_en_place / 1000}</div>
+          <div id="visee-chrono-txt">Place-toi</div>
+        </div>
         <div id="visee-verdict">Allume la caméra</div>
         <div id="visee-jauge"></div>
         <button id="visee-auto-image" aria-label="Déclenchement automatique">AUTO</button>
@@ -3414,21 +3402,33 @@ function dessinerVisee(message) {
       </div>
 
       <div id="visee-sous-image" class="cache">
+        <div id="visee-modes">
+          <button id="visee-btn-cadre" class="mini secondaire">Cadre</button>
+          <button id="visee-btn-contours" class="mini secondaire">Contours</button>
+        </div>
+        <p class="note">Deux façons de lire la référence. <strong>Cadre</strong>
+        trace ses bords en vert : on voit la zone à retrouver.
+        <strong>Contours</strong> remplace l'image par ses seules arêtes —
+        deux jeux de lignes à faire coïncider, au lieu de deux images qui
+        se mélangent. Les deux s'activent indépendamment.</p>
+
+        <div class="ligne"><span>Zoom de la CAMÉRA — règle-le à la main</span>
+          <span id="visee-val-zoomcam">—</span></div>
+        <input type="range" id="visee-zoomcam" min="50" max="1000" step="1"
+          value="100" disabled>
+        <p class="note" id="visee-etat-zoomcam">Allume la caméra pour connaître
+        les bornes de l'objectif.</p>
+
         <div class="ligne"><span>Seuil de déclenchement</span>
           <span id="visee-val-seuil">${reglagesVisee().seuil} %</span></div>
-        <input type="range" id="visee-seuil-haut" min="35" max="95" step="1"
+        <input type="range" id="visee-seuil-haut" min="30" max="95" step="1"
           value="${reglagesVisee().seuil}">
 
-        <div class="ligne"><span>Zoom de la référence</span>
-          <span id="visee-val-zoom">100 %</span></div>
-        <input type="range" id="visee-zoom" min="25" max="125" step="1" value="100">
-        <button class="mini secondaire pleine" id="visee-zoom-defaut">Rechercher l'échelle automatiquement</button>
-
-        <div id="visee-bloc-zoom-cam" class="cache">
-          <div class="ligne"><span>Zoom de la caméra</span>
-            <span id="visee-val-zoom-cam">1,00 ×</span></div>
-          <input type="range" id="visee-zoom-cam" min="50" max="300" step="1" value="100">
-        </div>
+        <div class="ligne"><span>Zoom de la RÉFÉRENCE</span>
+          <span id="visee-val-zoom">${RECALAGE.echelle_depart} % (mise en place)</span></div>
+        <input type="range" id="visee-zoom" min="25" max="125" step="1"
+          value="${RECALAGE.echelle_depart}">
+        <button class="mini secondaire pleine" id="visee-zoom-defaut">Relancer la recherche d'échelle</button>
 
         <div id="visee-declencheur">
           <button id="visee-obturateur" aria-label="Prendre la photo"></button>
@@ -3451,6 +3451,7 @@ function dessinerVisee(message) {
       </div>
 
       <p class="note" id="visee-diag"></p>
+      <p class="note" id="visee-phase"></p>
 
     </div>
     <button class="secondaire" id="visee-retour">Retour à la pièce</button>
@@ -3526,10 +3527,6 @@ function brancherVisee() {
   if ($("visee-defaut")) $("visee-defaut").onclick = () => {
     E.reglagesVisee = null;
     try { localStorage.removeItem("edl_reglages_visee"); } catch (_) {}
-    /* Le noyau garde le traitement dans ses propres variables : sans cet
-       appel, la normalisation et le seuil des contours conservaient les
-       valeurs d'avant jusqu'au prochain allumage. */
-    poserTraitementVisee();
     if (V.boucle) { clearInterval(V.boucle); V.boucle = null; }
     dessinerVisee("Réglages revenus aux valeurs d'usine.");
     if (V.camera) V.boucle = setInterval(analyserVisee, 100);
@@ -3561,159 +3558,125 @@ function brancherVisee() {
   /* Et le bouton rend la recherche automatique. */
   if ($("visee-zoom-defaut")) $("visee-zoom-defaut").onclick = () => {
     V.echelleAuto = true;
-    V.echelle = ECHELLE_FIXE;
+    V.echelle = RECALAGE.echelle_depart;
     echelleRetenue = null; echelleFigee = null; echecs = 0;
-    $("visee-zoom").value = ECHELLE_FIXE;
-    $("visee-val-zoom").textContent = ECHELLE_FIXE + " %";
-    poserEchelleVisee(ECHELLE_FIXE);
+    $("visee-zoom").value = RECALAGE.echelle_depart;
+    $("visee-val-zoom").textContent = RECALAGE.echelle_depart + " % (en recherche)";
+    poserEchelleVisee(RECALAGE.echelle_depart);
   };
   if ($("visee-prendre")) $("visee-prendre").onclick = prendreVisee;
 
-  /* LE ZOOM DE LA CAMÉRA — banc 8.8. Au relâchement seulement :
-     applyConstraints demande un quart de seconde à la piste, l'appeler à
-     chaque pas du curseur ferait sauter l'image sous le doigt. */
-  if ($("visee-zoom-cam")) $("visee-zoom-cam").onchange = () => {
-    poserZoomVisee(Number($("visee-zoom-cam").value) / 100);
+  /* ---- CADRE ET CONTOURS -----------------------------------------------
+
+     À 65 % d'échelle, les bords de la référence se devinaient par
+     contraste avec le flux, et seulement quand les couleurs s'y
+     prêtaient. Le cadre vert les rend certains ; les contours montrent ce
+     que la mesure compare réellement. Les deux sont indépendants. */
+  const posterCadre = () => {
+    if ($("visee-calque")) $("visee-calque").classList.toggle("cadre", !!V.cadre);
+    if ($("visee-btn-cadre"))
+      $("visee-btn-cadre").className = V.cadre ? "mini" : "mini secondaire";
+  };
+  const posterContours = () => {
+    if ($("visee-contours")) $("visee-contours").classList.toggle("cache", !V.contours);
+    if ($("visee-btn-contours"))
+      $("visee-btn-contours").className = V.contours ? "mini" : "mini secondaire";
+    /* L'image disparaît sous les contours : deux jeux de lignes se lisent
+       mieux que deux photographies mêlées. */
+    if ($("visee-calque")) $("visee-calque").style.opacity =
+      V.contours ? 0 : (Number($("visee-opacite").value) / 100);
+    if (V.contours) dessinerContoursVisee();
+  };
+  if ($("visee-btn-cadre")) $("visee-btn-cadre").onclick = () => {
+    V.cadre = !V.cadre; posterCadre();
+  };
+  if ($("visee-btn-contours")) $("visee-btn-contours").onclick = () => {
+    V.contours = !V.contours; posterContours();
+  };
+  posterCadre(); posterContours();
+
+  /* L'opacité ne s'applique qu'en mode image. */
+  if (o) o.oninput = () => {
+    $("visee-val-opacite").textContent = o.value + " %";
+    if (!V.contours) $("visee-calque").style.opacity = o.value / 100;
   };
 
-  if ($("visee-mep")) {
-    const majMep = () => {
-      const sec = Number($("visee-mep").value);
-      enregistrerReglagesVisee({ misePlace: sec * 1000 });
-      $("visee-val-mep").textContent = sec + " s";
+  /* ---- ZOOM DE LA CAMÉRA, RÉGLÉ À LA MAIN ------------------------------
+
+     C'est le point d'appui de tout le mécanisme : l'affinage ne cherche
+     que dans une bande étroite AUTOUR de cette valeur. L'opérateur cale
+     son zoom pendant la mise en place — il sait, lui, ce qu'il regarde. */
+  const zc = $("visee-zoomcam");
+  if (zc && V.zoomCam) {
+    zc.disabled = false;
+    zc.min = Math.round(V.zoomCam.min * 100);
+    zc.max = Math.round(V.zoomCam.max * 100);
+    zc.value = Math.round(zoomCamValeur * 100);
+    $("visee-val-zoomcam").textContent = zoomCamValeur.toFixed(2) + " ×";
+    $("visee-etat-zoomcam").textContent = "Réglable de " +
+      V.zoomCam.min.toFixed(2) + " × à " + V.zoomCam.max.toFixed(2) +
+      " ×. L'affinage cherchera ±" + Math.round((RECALAGE.zone_zoom - 1) * 100) +
+      " % autour de ton réglage, en " + RECALAGE.paliers_zone +
+      " paliers, puis le zoom de la référence prendra le relais.";
+    $("visee-etat-zoomcam").className = "note ok";
+    zc.oninput = () => {
+      const z = Number(zc.value) / 100;
+      $("visee-val-zoomcam").textContent = z.toFixed(2) + " ×";
     };
-    $("visee-mep").oninput = majMep;
-    $("visee-mep").onchange = majMep;
+    /* On ne pose le zoom qu'au relâchement : un applyConstraints par
+       millimètre de glissement noierait la piste. */
+    zc.onchange = () => { poserZoomBrut(Number(zc.value) / 100); };
   }
+}
 
-  /* LES TROIS RÉGLAGES DE CONTOURS. Toute bascule invalide l'échelle
-     figée : le score change de définition, celle d'avant ne vaut plus. */
-  if ($("visee-seuilc")) {
-    const majSeuilC = () => {
-      const pc = Number($("visee-seuilc").value);
-      enregistrerReglagesVisee({ seuilContour: pc / 100 });
-      $("visee-val-seuilc").textContent = pc + " %";
-      poserTraitementVisee();
-    };
-    $("visee-seuilc").oninput = majSeuilC;
-    $("visee-seuilc").onchange = majSeuilC;
+/* LES CONTOURS DE LA RÉFÉRENCE, TRACÉS PAR-DESSUS LE FLUX.
+
+   Ce sont exactement ceux que la mesure compare : après réduction,
+   normalisation, Sobel et seuil. Ils sont calculés à la taille d'analyse
+   puis étirés à l'écran — assez pour aligner à l'œil, et sans coût. */
+function dessinerContoursVisee() {
+  const V = E.visee;
+  const cv = $("visee-contours");
+  if (!V || !cv || !cv.getContext || !V.contours || !imageRefChargee) return;
+
+  const boite = cv.parentElement.getBoundingClientRect();
+  const L = Math.max(64, Math.round(boite.width));
+  const H = Math.max(64, Math.round(boite.height));
+  if (cv.width !== L || cv.height !== H) { cv.width = L; cv.height = H; }
+  const c2 = cv.getContext("2d");
+  c2.clearRect(0, 0, L, H);
+
+  const T = TAILLE;
+  const tmp = document.createElement("canvas");
+  tmp.width = T; tmp.height = T;
+  const tc = tmp.getContext("2d", { willReadFrequently: true });
+  const src = imageRefChargee;
+  tc.drawImage(src, 0, 0, src.naturalWidth || src.width,
+    src.naturalHeight || src.height, 0, 0, T, T);
+  const g = contoursT(reduireT(tc.getImageData(0, 0, T, T).data, T, T, T), T);
+
+  let mx = 0;
+  for (let i = 0; i < g.length; i++) if (g[i] > mx) mx = g[i];
+  if (mx <= 0) return;
+
+  /* Blanc opaque sur les arêtes fortes, transparent ailleurs : les lignes
+     se détachent sur n'importe quel fond. */
+  const img = c2.createImageData(T, T);
+  for (let i = 0; i < T * T; i++) {
+    const v = g[i] / mx;
+    const a = v > 0.18 ? Math.min(255, Math.round(v * 320)) : 0;
+    img.data[i * 4] = 255; img.data[i * 4 + 1] = 255;
+    img.data[i * 4 + 2] = 255; img.data[i * 4 + 3] = a;
   }
+  const inter = document.createElement("canvas");
+  inter.width = T; inter.height = T;
+  inter.getContext("2d").putImageData(img, 0, 0);
 
-  if ($("visee-normaliser")) $("visee-normaliser").onclick = () => {
-    const a = !(reglagesVisee().normaliser !== false);
-    enregistrerReglagesVisee({ normaliser: a });
-    poserTraitementVisee();
-    $("visee-normaliser").textContent =
-      "Normalisation du contraste : " + (a ? "oui" : "non");
-  };
-
-  if ($("visee-dilatation")) $("visee-dilatation").onclick = () => {
-    const a = !(reglagesVisee().dilatation !== false);
-    enregistrerReglagesVisee({ dilatation: a });
-    poserTraitementVisee();
-    $("visee-dilatation").textContent =
-      "Dilatation des contours : " + (a ? "oui" : "non");
-  };
-
-  if ($("visee-affinage")) $("visee-affinage").onclick = () => {
-    const a = !reglagesVisee().affinageZoom;
-    enregistrerReglagesVisee({ affinageZoom: a });
-    $("visee-affinage").textContent =
-      "Affinage du zoom caméra : " + (a ? "ACTIF" : "arrêté");
-  };
-}
-
-/* ---- Zoom de la caméra — repris du banc 8.8 ---------------------------
-
-   Le banc affine le zoom en cinq paliers autour de la valeur posée à la
-   main, en logarithme pour que l'écart soit proportionnel de part et
-   d'autre, puis le fige : l'objectif ne bouge plus, et c'est l'échelle de
-   la référence qui corrige le reste. Les deux ne travaillent jamais
-   ensemble — actifs en même temps, ils se compensent. */
-
-function capaciteZoomVisee() {
-  const V = E.visee;
-  const piste = V && V.camera && V.camera.getVideoTracks()[0];
-  if (!piste || !piste.getCapabilities) return null;
-  let cap = null;
-  try { cap = piste.getCapabilities(); } catch (_) { return null; }
-  if (!cap || !cap.zoom || !isFinite(cap.zoom.min) || !isFinite(cap.zoom.max)) return null;
-  if (cap.zoom.max <= cap.zoom.min) return null;
-  return { min: cap.zoom.min, max: cap.zoom.max };
-}
-
-async function poserZoomVisee(z) {
-  const V = E.visee;
-  const piste = V && V.camera && V.camera.getVideoTracks()[0];
-  if (!piste || !V.zoomBornes) return false;
-  const cible = Math.min(V.zoomBornes.max, Math.max(V.zoomBornes.min, z));
-  try {
-    await piste.applyConstraints({ advanced: [{ zoom: cible }] });
-    /* La piste met un quart de seconde à se reconfigurer, et l'exposition
-       un peu plus : mesurer trop tôt note une image en transition. */
-    await new Promise(r => setTimeout(r, 300));
-    V.zoomCam = cible;
-    if ($("visee-zoom-cam")) $("visee-zoom-cam").value = Math.round(cible * 100);
-    if ($("visee-val-zoom-cam")) $("visee-val-zoom-cam").textContent =
-      cible.toFixed(2).replace(".", ",") + " ×";
-    return true;
-  } catch (_) { return false; }
-}
-
-async function affinerZoomVisee() {
-  const V = E.visee;
-  const v = $("visee-flux");
-  if (!V || !V.zoomBornes || !v || !v.videoWidth || !V.image) return;
-
-  const b = V.zoomBornes;
-  const depart = V.zoomCam || 1;
-  const lo = Math.log(Math.max(b.min, depart / 1.25));
-  const hi = Math.log(Math.min(b.max, depart * 1.25));
-
-  /* L'échelle de la référence est figée pendant les paliers : sinon elle
-     rattraperait chaque mouvement du zoom et le score ne mesurerait plus
-     rien. */
-  const echAvant = V.echelleAuto;
-  V.echelleAuto = false;
-
-  const mesurer = () => {
-    const f = fenetreVisee(v, V);
-    const refC = contoursRef(V.echelle, TAILLE);
-    if (!refC) return 0;
-    return chercherT(refC,
-      contoursFluxT(v, f.dx, f.dy, f.l, f.h, V.echelle, TAILLE), TAILLE).score;
-  };
-
-  let best = { z: depart, s: -1 };
-  for (let i = 0; i < 5; i++) {
-    const z = Math.exp(lo + (hi - lo) * i / 4);
-    if (!(await poserZoomVisee(z))) continue;
-    const sc = mesurer();
-    if (sc > best.s) best = { z, s: sc };
-  }
-  await poserZoomVisee(best.z);
-
-  V.echelleAuto = echAvant;
-  echelleRetenue = null; echelleFigee = null; echecs = 0;
-  journaliser("visee_zoom_cale", {
-    depart: Number(depart.toFixed(2)), retenu: Number(best.z.toFixed(2)),
-    score: Math.round(best.s * 100),
-  });
-}
-
-/* Fin de la mise en place : l'affinage prend la main s'il est actif, puis
-   la référence. Le déclenchement automatique n'est PAS armé d'office —
-   c'est l'opérateur qui décide, comme avant. */
-function finirMisePlaceVisee() {
-  const V = E.visee;
-  V.misePlaceFinie = true;
-  const suite = () => {
-    V.phase = "reference";
-    if ($("visee-verdict")) $("visee-verdict").textContent = "Mise en place terminée.";
-  };
-  if (reglagesVisee().affinageZoom && V.zoomBornes) {
-    affinerZoomVisee().then(suite, suite);
-  } else suite();
+  /* Le calque est mis à l'échelle en cours : les contours doivent l'être
+     aussi, au même endroit. */
+  const pc = V.echelle || RECALAGE.echelle_depart;
+  const l2 = L * pc / 100, h2 = H * pc / 100;
+  c2.drawImage(inter, (L - l2) / 2, (H - h2) / 2, l2, h2);
 }
 
 /* Les trois réglages qui comptent, dépliables : ils encombreraient
@@ -3731,28 +3694,9 @@ function blocReglagesVisee() {
     <input type="range" id="visee-qualite" min="80" max="100" step="2" value="${
       Math.round(R.qualite * 100)}">
 
-    <div class="ligne"><span>Mise en place</span>
-      <span id="visee-val-mep">${Math.round(R.misePlace / 1000)} s</span></div>
-    <input type="range" id="visee-mep" min="0" max="30" step="1" value="${
-      Math.round(R.misePlace / 1000)}">
-
-    <button class="mini secondaire pleine" id="visee-affinage">Affinage du zoom
-      caméra : ${R.affinageZoom ? "ACTIF" : "arrêté"}</button>
-
-    <div class="ligne"><span>Seuil des contours faibles</span>
-      <span id="visee-val-seuilc">${Math.round((R.seuilContour || 0) * 100)} %</span></div>
-    <input type="range" id="visee-seuilc" min="0" max="40" step="1" value="${
-      Math.round((R.seuilContour || 0) * 100)}">
-
-    <button class="mini secondaire pleine" id="visee-normaliser">Normalisation du
-      contraste : ${R.normaliser !== false ? "oui" : "non"}</button>
-    <button class="mini secondaire pleine" id="visee-dilatation">Dilatation des
-      contours : ${R.dilatation !== false ? "oui" : "non"}</button>
-
     <p class="note">Un seuil bas déclenche vite mais cadre moins bien. Une
-    immobilité nulle rend les photographies floues. La mise en place est le
-    temps laissé pour se placer : le déclenchement ne s'arme qu'après. Ces
-    réglages sont conservés pour les prochaines visites. (${VISEE_VERSION})</p>
+    immobilité nulle rend les photographies floues. Ces réglages sont
+    conservés pour les prochaines visites.</p>
     <button class="mini secondaire" id="visee-defaut">Revenir aux valeurs d'usine</button>`;
 }
 
@@ -3828,13 +3772,12 @@ async function allumerVisee() {
        contours à chaque échelle essayée. La réserve est vidée : elle
        contiendrait ceux de la photographie précédente. */
     V.image = img;
-    poserTraitementVisee();
-    V.echelle = ECHELLE_FIXE;
+    V.echelle = RECALAGE.echelle_depart;
     V.echelleAuto = true;
     poserReference(img);
-    poserEchelleVisee(ECHELLE_FIXE);
+    poserEchelleVisee(RECALAGE.echelle_depart);
 
-    const contoursRefInitial = contoursRef(ECHELLE_FIXE, TAILLE);
+    const contoursRefInitial = contoursRef(100, TAILLE);
     const d = densiteContoursT(contoursRefInitial, TAILLE);
     $("visee-diag").textContent = d.part > 0.02
       ? "Référence " + V.refL + "×" + V.refH + " (" + V.decodeur + ") — " +
@@ -3868,41 +3811,35 @@ async function allumerVisee() {
     $("visee-flux").srcObject = V.camera;
     await $("visee-flux").play();
     $("visee-allumer").classList.add("cache");
-    /* LE BLOC SOUS L'IMAGE N'ÉTAIT JAMAIS MONTRÉ ICI (corrigé le 05/09).
-       Il contient le seuil de déclenchement, le zoom de la référence, le
-       zoom de la caméra et l'obturateur. brancherVisee l'affiche au
-       redessin, mais l'allumage n'appelle pas de redessin : au premier
-       allumage, tout ce bloc restait invisible et n'apparaissait qu'après
-       avoir touché un réglage. */
     $("visee-sous-image").classList.remove("cache");
     $("visee-reglages").classList.remove("cache");
+
+    /* LE NOYAU PREND LA MAIN SUR LA PISTE.
+
+       ouvrirVisee lit les bornes du zoom, place l'objectif au plus large
+       et arme la mise en place. À partir de là, plus rien ne bouge
+       pendant quinze secondes : ni le zoom de la caméra, ni celui de la
+       référence. L'opérateur se place et cale son zoom à la main. */
+    surZoomCamera = (z) => {
+      if ($("visee-zoomcam")) $("visee-zoomcam").value = Math.round(z * 100);
+      if ($("visee-val-zoomcam"))
+        $("visee-val-zoomcam").textContent = z.toFixed(2) + " ×";
+    };
+    surMessageVisee = (t, c) => {
+      const p = $("visee-phase");
+      if (!p) return;
+      p.textContent = t;
+      p.className = "note " + (c === "attention" ? "attention" : "ok");
+    };
+    V.zoomCam = await ouvrirVisee(V.camera.getVideoTracks()[0]);
+
+    /* Les commandes du bas ne sont branchées qu'une fois les bornes
+       connues : sans elles, le curseur de zoom n'aurait pas d'étendue. */
+    brancherVisee();
     majAutoVisee();
-
-    /* MISE EN PLACE ET ZOOM CAMÉRA — banc 8.8.
-       Les bornes se lisent une fois la piste ouverte ; sur un appareil qui
-       ne rend pas de capacité de zoom, le curseur reste caché et tout le
-       reste fonctionne comme avant. */
-    const R8 = reglagesVisee();
-    V.phase = "camera";
-    V.misePlaceFinie = false;
-    V.misePlaceFin = R8.misePlace > 0 ? Date.now() + R8.misePlace : 0;
-    if (!V.misePlaceFin) V.misePlaceFinie = true;
-    V.zoomBornes = capaciteZoomVisee();
-    if (V.zoomBornes) {
-      let st = {};
-      try { st = V.camera.getVideoTracks()[0].getSettings() || {}; } catch (_) {}
-      V.zoomCam = st.zoom || 1;
-      const bloc = $("visee-bloc-zoom-cam");
-      if (bloc) {
-        bloc.classList.remove("cache");
-        $("visee-zoom-cam").min = Math.round(V.zoomBornes.min * 100);
-        $("visee-zoom-cam").max = Math.round(V.zoomBornes.max * 100);
-        $("visee-zoom-cam").value = Math.round(V.zoomCam * 100);
-        $("visee-val-zoom-cam").textContent =
-          V.zoomCam.toFixed(2).replace(".", ",") + " ×";
-      }
-    }
-
+    surMessageVisee("Mise en place : " +
+      (RECALAGE.delai_mise_en_place / 1000) + " s pour te positionner et " +
+      "régler le zoom de la caméra à la main. Rien ne bougera avant.", "ok");
     V.boucle = setInterval(analyserVisee, 100);
     await journaliser("visee_ouverte", { entree: V.ref.nom_fichier });
   } catch (err) {
@@ -3946,9 +3883,43 @@ function analyserVisee() {
   }
 }
 
+/* LE CHRONOMÈTRE DE MISE EN PLACE.
+
+   Il s'affiche et se masque au même endroit, à partir du même calcul, et
+   c'est la BOUCLE D'ANALYSE qui le rafraîchit — elle tourne dix fois par
+   seconde tant que la caméra est allumée, c'est la chose la plus sûre du
+   programme. Trois écritures appuyées sur des minuteurs ont échoué avant
+   celle-ci, le compte restant bloqué sur 1. */
+function rafraichirChronoVisee() {
+  const c = $("visee-chrono");
+  if (!c) return;
+  const reste = resteMisePlace();
+  if (reste <= 0) {
+    if (!c.classList.contains("cache")) {
+      c.classList.add("cache");
+      const p = $("visee-phase");
+      if (p && !viseeClose) {
+        p.textContent = "Mise en place terminée — l'affinage du zoom prend la main.";
+        p.className = "note ok";
+      }
+    }
+    return;
+  }
+  c.classList.remove("cache");
+  $("visee-chrono-nb").textContent = reste;
+}
+
 function analyserViseeInterne() {
   const V = E.visee;
   if (!V || !V.image) return;
+
+  /* PREMIÈRE INSTRUCTION, AVANT TOUTE SORTIE ANTICIPÉE. Placé plus bas,
+     le rafraîchissement cessait dès que l'une des conditions suivantes
+     tombait — et la dernière valeur écrite restait affichée. C'est le 1
+     figé du 03/09 : le chronomètre n'était pas bloqué, il n'était plus
+     rafraîchi. */
+  rafraichirChronoVisee();
+
   const v = $("visee-flux");
   if (!v || !v.videoWidth) return;
   const R = reglagesVisee();
@@ -3978,9 +3949,13 @@ function analyserViseeInterne() {
   if (V.echelleAuto !== false && pc !== V.echelle) {
     V.echelle = pc;
     poserEchelleVisee(pc);
+    if (V.contours) dessinerContoursVisee();
     if ($("visee-zoom")) $("visee-zoom").value = Math.round(pc);
     if ($("visee-val-zoom")) $("visee-val-zoom").textContent =
-      pc.toFixed(1).replace(".0", "") + " %";
+      pc.toFixed(1).replace(".0", "") + " % " +
+      (attenteEnCours() ? "(mise en place)"
+       : phaseVisee === "camera" ? "(zoom caméra)"
+       : m.score >= 0.45 ? "(trouvé)" : "(en recherche)");
   }
 
   /* L'échelle se fige quand elle est convaincante : la recherche cesse
@@ -3988,8 +3963,27 @@ function analyserViseeInterne() {
      seul. Elle se libère si l'alignement s'effondre durablement. */
   if (!echelleFigee && m.score >= 0.65) echelleFigee = pc;
   echecs = (m.score < 0.22) ? echecs + 1 : 0;
-  if (echelleFigee && echecs >= 40) {
+  if (echelleFigee && echecs >= 40 && !viseeClose) {
     echelleFigee = null; echelleRetenue = null; echecs = 0;
+  }
+
+  /* Le zoom de l'objectif se règle ici. Le pilote ne fait rien la plupart
+     du temps — c'est voulu : il attend la fin de la mise en place, affine
+     une fois sur cinq paliers, puis passe la main. */
+  piloterZoomCamera(v, f.dx, f.dy, f.l, f.h);
+
+  /* Le relais vers la référence se fait dans l'affinage, dès que
+     l'objectif est calé. Reste le retour en arrière : si l'alignement
+     s'effondre durablement, l'opérateur a changé de sujet et il faut lui
+     redonner la main sur l'objectif. */
+  if (zoomCamAuto && !viseeClose && !attenteEnCours()
+      && phaseVisee === "reference" && echecs >= 40) {
+    phaseVisee = "camera"; balayageFait = false;
+    echelleFigee = null; echelleRetenue = null; echecs = 0;
+    demarrerMisePlace();
+    if (surMessageVisee)
+      surMessageVisee("Superposition perdue — reprends le zoom de la caméra " +
+        "à la main.", "attention");
   }
 
   const bon = p >= R.seuil;
@@ -4013,22 +4007,6 @@ function analyserViseeInterne() {
     $("visee-cadre").classList.remove("pret");
     $("visee-compte").classList.remove("visible");
   };
-  /* MISE EN PLACE — banc 8.8. Le score s'affiche et la superposition sert
-     déjà à cadrer ; seul le déclenchement est retenu, le temps que
-     l'opérateur se place et cale son zoom. */
-  if (V.misePlaceFin && !V.misePlaceFinie) {
-    const reste = V.misePlaceFin - Date.now();
-    if (reste > 0) {
-      $("visee-verdict").textContent =
-        p + " % — mise en place, " + Math.ceil(reste / 1000) + " s";
-      cacherCompte();
-      return;
-    }
-    finirMisePlaceVisee();
-    cacherCompte();
-    return;
-  }
-
   if (!V.auto) { cacherCompte(); return; }
 
   /* Une chute brève n'annule pas le décompte : le score varie de quelques
@@ -4065,21 +4043,33 @@ function analyserViseeInterne() {
    au curseur de secours : on n'agrandit jamais qu'une seule des deux, car
    réduire l'une découvrirait du vide autour. Au-dessus de 100, c'est la
    référence ; en dessous, le flux. */
+/* C'EST LA RÉFÉRENCE QU'ON MET À L'ÉCHELLE, JAMAIS LE FLUX.
+
+   L'ancienne version agrandissait le flux sous 100 % : à l'échelle de
+   départ de 65 %, l'opérateur se serait retrouvé avec un flux grossi de
+   moitié pendant les quinze secondes où il est censé se placer, alors
+   qu'il lui faut au contraire le champ le plus large possible.
+
+   Le flux est ce que la caméra voit, on n'y touche pas. La référence,
+   elle, est portée à la taille où elle correspond : au-dessus de 100 %
+   on l'agrandit, en dessous on la réduit. La mesure, elle, est
+   inchangée — contoursFluxT continue de rogner le flux en miroir, et la
+   géométrie des deux est la même. */
 function poserEchelleVisee(pc) {
-  const zoomer = (el, facteur) => {
-    if (!el) return;
-    const t = 100 * facteur;
-    el.style.width = t + "%";
-    el.style.height = t + "%";
-    el.style.left = (-(t - 100) / 2) + "%";
-    el.style.top = (-(t - 100) / 2) + "%";
-  };
-  if (pc >= 100) {
-    zoomer($("visee-calque"), pc / 100);
-    zoomer($("visee-flux"), 1);
-  } else {
-    zoomer($("visee-calque"), 1);
-    zoomer($("visee-flux"), 100 / pc);
+  const t = Math.max(1, pc);        /* jamais zéro ni négatif */
+  const c = $("visee-calque");
+  if (c) {
+    c.style.width = t + "%";
+    c.style.height = t + "%";
+    c.style.left = (-(t - 100) / 2) + "%";
+    c.style.top = (-(t - 100) / 2) + "%";
+  }
+  const f = $("visee-flux");
+  if (f) {
+    f.style.width = "100%";
+    f.style.height = "100%";
+    f.style.left = "0%";
+    f.style.top = "0%";
   }
 }
 
@@ -4103,16 +4093,28 @@ async function prendreVisee() {
 
   const f = fenetreVisee(v, V);
 
-  /* Même rognage qu'à l'analyse, pour que la photographie prise cadre
-     comme ce qui a été visé. À 100 %, il n'y a aucun rognage. */
-  const z = Math.max(1, 100 / (V.echelle || ECHELLE_FIXE));
-  const pl = Math.round(f.l / z), ph = Math.round(f.h / z);
-  const ox = f.dx + Math.round((f.l - pl) / 2);
-  const oy = f.dy + Math.round((f.h - ph) / 2);
+  /* LE FLUX EST PRIS ENTIER — décision du banc, 05/09/2026.
 
-  const r = Math.min(1, CONFIG.photo.cote_max_px / Math.max(pl, ph));
+     Le rognage suivait l'échelle de la référence : à 65 %, il coûtait la
+     moitié des pixels — 2087×2782 au lieu de 3024×4032 — sur une image
+     qui doit documenter un dégât. Le partage est donc net : la RÉFÉRENCE
+     est réduite pour la mesure, le FLUX est pris entier.
+
+     Conséquence assumée : la photographie de sortie couvre un champ plus
+     large que celle d'entrée. Les deux ne se superposaient déjà pas au
+     pixel, et une vue plus large ne perd aucune information alors qu'un
+     rognage en perd.
+
+     PLUS DE PLAFOND À 1600 non plus. Il avait un sens quand la prise
+     servait de vignette ; il n'en a plus si elle doit documenter un
+     dégât. Le poids se tient par la qualité JPEG (0,92), pas en jetant
+     des pixels. CONFIG.photo.cote_max_px continue de régir toutes les
+     autres photographies de l'application : il n'est pas touché. */
+  const pl = f.l, ph = f.h;
+  const ox = f.dx, oy = f.dy;
+
   const fin = document.createElement("canvas");
-  fin.width = Math.round(pl * r); fin.height = Math.round(ph * r);
+  fin.width = pl; fin.height = ph;
   fin.getContext("2d").drawImage(v, ox, oy, pl, ph, 0, 0, fin.width, fin.height);
 
   const blob = await new Promise(ok =>
@@ -4133,7 +4135,10 @@ async function prendreVisee() {
               url: noterApercu(URL.createObjectURL(blob)) };
 
   /* La caméra s'éteint : on ne vise plus, on juge. Elle se rallumera si
-     Julien veut refaire. */
+     Julien veut refaire. fermerVisee arrête en outre toute recherche —
+     sans quoi l'affinage repartirait dès que l'appareil s'abaisse et
+     parcourrait des paliers qui rendent tous 0 %. */
+  fermerVisee();
   if (V.boucle) { clearInterval(V.boucle); V.boucle = null; }
   if (V.camera) { V.camera.getTracks().forEach(t => t.stop()); V.camera = null; }
 
@@ -4264,6 +4269,12 @@ function arreterVisee() {
   if (!V) return;
   if (V.boucle) clearInterval(V.boucle);
   if (V.camera) V.camera.getTracks().forEach(t => t.stop());
+  /* Le noyau garde une référence à la piste et deux rappels vers des
+     éléments qui n'existeront plus : on les lâche ici, sinon le pilote de
+     zoom écrirait dans un écran détaché. */
+  fermerVisee();
+  surZoomCamera = null;
+  surMessageVisee = null;
   E.visee = null;
 }
 

@@ -26,10 +26,87 @@
    qu'on prenait pour un écart d'échelle venait d'un zoom de 1,30 imposé
    par mon propre code au banc d'essai. */
 
-/* VERSION. Le noyau vient du banc essai-recalage ; ce numéro dit laquelle.
-   Repris de la 3.3 le 29/08, complété par la 8.8 le 05/09 (normalisation
-   du contraste et seuil des contours faibles). */
-var RECALAGE_VERSION = "noyau 8.8";
+/* ============================================================
+   VERSION — recalage 2.1 (05/09/2026)
+
+   Porte dans l'application le banc d'essai essai-recalage.html
+   version « essai 8.8 ». Le CALCUL n'a pas changé d'une ligne : Sobel,
+   dilatation 3×3, pénalités de déplacement et d'échelle, section dorée
+   sur 25-125 % étaient déjà identiques au banc. Ce qui arrive ici, ce
+   sont les acquis des 03 et 05/09 :
+
+     — la normalisation du contraste des deux images ;
+     — le seuillage des contours faibles ;
+     — le délai de mise en place, pendant lequel RIEN ne bouge ;
+     — les deux phases exclusives : zoom de la CAMÉRA réglé à la main
+       puis affiné, ensuite relais au zoom de la RÉFÉRENCE ;
+     — l'échelle de départ à 65 % au lieu de 100.
+
+   RIEN ICI NE TOUCHE À L'INTERFACE. Les valeurs arrivent par le bloc
+   ci-dessous, l'état de la caméra par pisteVisee, et tout affichage
+   passe par les deux rappels facultatifs surZoomCamera et
+   surMessageVisee, que app.js pose s'il le veut.
+   ============================================================ */
+var RECALAGE_VERSION = "recalage 2.1";
+
+/* 2.1 — trois corrections trouvées en vérifiant contre le banc lui-même :
+     — la clé de la réserve de contours porte désormais le seuil et la
+       normalisation, comme au banc ; sans eux, changer un réglage
+       laissait les contours du réglage précédent ;
+     — les gardes de phase ne jouent que si un pilote de zoom est en
+       service. Sans ce test, essai-onedrive.html — qui charge ce fichier
+       et n'appelle jamais ouvrirVisee — restait figé à 65 % ;
+     — un appareil sans zoom réglable passe directement en phase
+       référence. Il restait sinon en phase caméra pour toujours, donc à
+       65 % jusqu'à la fin de la visée. */
+
+/* ============================================================
+   RÉGLAGES DU RECALAGE — RECOPIÉS DU BANC, VALEUR POUR VALEUR
+
+   Chaque valeur porte la date et le fait qui la justifient. Le noyau
+   n'en connaît pas d'autres.
+   ============================================================ */
+var RECALAGE = {
+  /* Mise en place : l'opérateur se place et cale son zoom. Aucun réglage
+     ne bouge pendant ce temps. Porté de 10 à 15 s le 03/09 : dix
+     secondes ne suffisaient pas pour se placer ET régler le zoom. */
+  delai_mise_en_place: 15000,
+
+  /* ÉCHELLE DE DÉPART DU CALQUE, PENDANT LA MISE EN PLACE.
+
+     Elle était à 100 %, donc la référence débordait de l'écran pendant
+     les quinze secondes où l'opérateur est censé s'en servir pour se
+     placer. 65 % est la moyenne des échelles mesurées le 05/09 sur des
+     photographies prises à 1× : 58, 69 et 73 %. Ce n'est pas une valeur
+     juste, c'est un point de départ plausible ; la recherche l'ajuste
+     dès la fin de la mise en place. */
+  echelle_depart: 65,
+
+  /* Bande explorée autour du réglage manuel, et nombre de mesures.
+     L'exploration large a été abandonnée le 03/09 : au-delà d'un facteur
+     3, les mesures se contredisent — 18 % à 1,53 × puis 222 % à 6,48 ×
+     avec des scores équivalents. */
+  zone_zoom: 1.25,
+  paliers_zone: 5,
+
+  /* Seuil des contours faibles, en fraction du plus fort de l'image.
+     Non linéaire, donc la corrélation de Pearson ne peut pas l'annuler. */
+  seuil_contour: 0,
+
+  /* Qualité JPEG de la photographie prise. Portée de 0,82 à 0,92 le
+     03/09 : le plafond de résolution ayant sauté, le poids se tient par
+     la qualité et non plus en jetant des pixels. */
+  qualite_jpeg: 0.92,
+
+  /* Normalisation du contraste des DEUX images avant Sobel. Les vues de
+     sortie sont systématiquement plus claires que celles d'entrée, et le
+     gradient suit le contraste. */
+  normaliser: true,
+
+  /* Au-delà de ce zoom, la référence ne montre qu'un morceau de pièce et
+     retrouver le cadrage à main levée n'a plus de sens. */
+  zoom_max_utile: 4
+};
 
 const TAILLE = 96;          // mesure de l'alignement
 const TAILLE_ECH = 48;      // recherche de l'échelle — un essai y coûte
@@ -49,11 +126,34 @@ function reduireT(rgba, L, H, T) {
   return NORMALISER ? normaliserContraste(g) : g;
 }
 
-/* Réglages du traitement des contours, repris du banc 8.8. Ils valent pour
-   la RÉFÉRENCE comme pour le FLUX : deux images traitées différemment ne
-   sont plus comparables. */
-var NORMALISER = true;      // étalement du contraste avant Sobel
-var SEUIL_CONTOUR = 0;      // fraction du gradient le plus fort mise à zéro
+/* POURQUOI L'ACCENTUATION LINÉAIRE NE POUVAIT RIEN FAIRE.
+
+   Elle multipliait le contraste de la référence par un facteur. Or la
+   chaîne est linéaire de bout en bout : Sobel est linéaire, et le score
+   est un coefficient de corrélation de Pearson, qui est INVARIANT par
+   changement d'échelle. Constaté au banc le 03/09 : curseur poussé à
+   fond, aucun chiffre ne bouge.
+
+   LE SEUIL, LUI, EST NON LINÉAIRE. En dessous d'une fraction du gradient
+   le plus fort de l'image, le contour est mis à zéro : on retire le bruit
+   de compression de la vignette sans toucher aux arêtes franches. Aucune
+   normalisation ne peut annuler cela — on ne change pas l'amplitude, on
+   supprime des points.
+
+   Appliqué à la référence ET au flux : les deux images doivent subir le
+   même traitement, sans quoi leurs cartes de contours ne sont plus
+   comparables. */
+function seuillerContours(c, fraction) {
+  if (!(fraction > 0.001)) return c;
+  const n = c.length;
+  let max = 0;
+  for (let i = 0; i < n; i++) if (c[i] > max) max = c[i];
+  if (max <= 0) return c;
+  const seuil = max * fraction;
+  const r = new Float32Array(n);
+  for (let i = 0; i < n; i++) r[i] = c[i] >= seuil ? c[i] : 0;
+  return r;
+}
 
 /* NORMALISATION DU CONTRASTE, APPLIQUÉE AUX DEUX IMAGES.
 
@@ -62,19 +162,17 @@ var SEUIL_CONTOUR = 0;      // fraction du gradient le plus fort mise à zéro
    minutes d'écart, et l'écart demeure. Le traitement d'image d'Apple ne
    s'applique pas au flux du navigateur, et aucun réglage n'y remédie.
 
-   Conséquence sur le score : le gradient de Sobel est proportionnel au
-   contraste local. Une image plus claire et plus plate rend des contours
-   plus faibles, et la comparaison les compte comme absents. C'est une
-   partie du 35 % du 03/09, alors que les arêtes coïncidaient à l'œil.
+   Le gradient de Sobel étant proportionnel au contraste local, une image
+   plus claire et plus plate rend des contours plus faibles, et la
+   comparaison les compte comme absents. C'est une partie du 35 % du
+   03/09, alors que les arêtes coïncidaient à l'œil.
 
-   On étale donc chaque image sur toute la plage avant de chercher les
-   contours. ATTENTION : appliqué aux DEUX, jamais à une seule — accentuer
-   la référence seule lui donnerait un caractère de contours que le flux
-   n'a pas, et le score baisserait au lieu de monter.
+   ATTENTION : appliqué aux DEUX, jamais à une seule — accentuer la
+   référence seule lui donnerait un caractère de contours que le flux n'a
+   pas, et le score baisserait au lieu de monter.
 
    L'étalement se fait sur les centiles 2 et 98, pas sur le minimum et le
-   maximum : un seul pixel brûlé ou un seul point noir suffirait sinon à
-   ruiner l'échelle. */
+   maximum : un seul pixel brûlé suffirait sinon à ruiner l'échelle. */
 function normaliserContraste(g) {
   const n = g.length;
   const hist = new Int32Array(256);
@@ -100,39 +198,7 @@ function normaliserContraste(g) {
   }
   return r;
 }
-/* POURQUOI L'ACCENTUATION LINÉAIRE NE POUVAIT RIEN FAIRE.
 
-   Elle multipliait le contraste de la référence par un facteur. Or la
-   chaîne est linéaire de bout en bout : Sobel est linéaire, et le score
-   est un coefficient de corrélation de Pearson, qui est INVARIANT par
-   changement d'échelle — multiplier la référence par trois multiplie le
-   numérateur par trois et le dénominateur par trois.
-
-   Constaté le 03/09 : curseur poussé à fond, aucun chiffre ne bouge.
-   Ce n'était pas un réglage à trouver, c'était une opération sans effet.
-
-   LE SEUIL, LUI, EST NON LINÉAIRE.
-
-   En dessous d'une fraction du gradient le plus fort de l'image, le
-   contour est mis à zéro. Cela retire le bruit de compression de la
-   vignette — 600×800 sortie du convertisseur de Microsoft — sans toucher
-   aux arêtes franches. Aucune normalisation ne peut annuler cela : on ne
-   change pas l'amplitude, on supprime des points.
-
-   Appliqué à la référence ET au flux : les deux images doivent subir le
-   même traitement, sans quoi leurs cartes de contours ne sont plus
-   comparables. */
-function seuillerContours(c, fraction) {
-  if (!(fraction > 0.001)) return c;
-  const n = c.length;
-  let max = 0;
-  for (let i = 0; i < n; i++) if (c[i] > max) max = c[i];
-  if (max <= 0) return c;
-  const seuil = max * fraction;
-  const r = new Float32Array(n);
-  for (let i = 0; i < n; i++) r[i] = c[i] >= seuil ? c[i] : 0;
-  return r;
-}
 /* Amplitude du gradient (Sobel). On compare des CONTOURS, pas des teintes :
    l'éclairage change entre l'entrée et la sortie, les arêtes non. */
 function contoursT(g, T) {
@@ -161,6 +227,8 @@ function contoursT(g, T) {
    contours passent à cinq ou sept pixels d'épaisseur. Le sommet s'élargit
    d'autant, et la mesure devient monotone sur une plage utile. */
 var DILATATION = true;
+var NORMALISER = RECALAGE.normaliser;
+var SEUIL_CONTOUR = RECALAGE.seuil_contour;
 
 function dilater(c, T) {
   const d = new Float32Array(T * T);
@@ -280,10 +348,13 @@ var echecs = 0;                   // analyses de suite sous le seuil
 /* Contours de la référence à une échelle donnée, mis en réserve : ils ne
    changent pas tant que la photographie ne change pas. */
 function contoursRef(pc, T) {
-  /* Le traitement entre dans la clé : sans cela, basculer la
-     normalisation servirait les contours calculés avec l'ancien réglage. */
-  const cle = T + "|" + Math.round(pc * 10) + "|" + (NORMALISER ? 1 : 0) +
-              "|" + Math.round(SEUIL_CONTOUR * 100);
+  /* LA CLÉ PORTE LES RÉGLAGES, PAS SEULEMENT L'ÉCHELLE.
+
+     Sans eux, la réserve rendait les contours calculés au seuil
+     précédent : changer le seuil ne changeait rien à l'écran, et on
+     réglait à l'aveugle. Défaut relevé au banc le 03/09. */
+  const cle = T + "|" + Math.round(pc * 10) + "|" + Math.round(SEUIL_CONTOUR * 1000) +
+    "|" + (NORMALISER ? 1 : 0);
   if (reserve[cle]) return reserve[cle];
   if (!imageRefChargee) return null;
   const c = document.createElement("canvas");
@@ -399,6 +470,230 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
   return { echelle: Math.exp(b.l), score: b.v, essais };
 }
 
+/* ============================================================
+   MISE EN PLACE, PHASES ET ZOOM DE LA CAMÉRA — PORTÉ DU BANC
+
+   Rien de tout cela ne lit ni n'écrit dans le document. La piste vidéo
+   arrive par ouvrirVisee ; l'affichage, s'il en faut un, passe par les
+   deux rappels ci-dessous.
+   ============================================================ */
+
+/* Rappels facultatifs, posés par app.js. Laissés à null, le noyau
+   fonctionne exactement pareil, en silence. */
+var surZoomCamera = null;     // (valeur en ×) -> l'app met son curseur à jour
+var surMessageVisee = null;   // (texte, "ok"|"attention") -> l'app affiche
+
+function direVisee(t, c) { if (surMessageVisee) surMessageVisee(t, c); }
+
+var pisteVisee = null;        // MediaStreamTrack de la visée en cours
+var phaseVisee = "camera";    // "camera" puis "reference" — jamais les deux
+var balayageEnCours = false, balayageFait = false;
+var viseeClose = false;       // vraie dès qu'une photographie est prise
+
+var zoomCamAuto = true;       // l'affinage a-t-il le droit d'agir
+var zoomCamOccupe = false;    // un applyConstraints est en cours
+var zoomCamValeur = 1;        // dernière valeur appliquée
+var zoomCamBornes = null;     // { min, max } de l'appareil
+var zoomCamPlainte = false;   // le refus a-t-il déjà été signalé
+
+/* DÉLAI DE MISE EN PLACE.
+
+   Les journaux du 02/09 le justifient : l'affinage partait dès
+   l'allumage, pendant que l'opérateur cherchait encore sa place. Il
+   mesurait donc un cadrage qui n'avait pas de sens, retenait un palier
+   faux, et il fallait tout reprendre.
+
+   Quinze secondes pendant lesquelles RIEN ne bouge : ni le zoom de la
+   caméra, ni celui de la référence. Ensuite seulement l'affinage démarre,
+   puis le relais passe à la référence. */
+var DELAI_MISE_EN_PLACE = RECALAGE.delai_mise_en_place;
+
+/* UNE SEULE SOURCE DE VÉRITÉ : l'instant de fin. Tout le reste s'en
+   déduit, et c'est la boucle d'analyse qui rafraîchit l'affichage — elle
+   tourne dix fois par seconde tant que la caméra est allumée. Trois
+   écritures appuyées sur des minuteurs ont échoué avant celle-ci, le
+   chronomètre restant bloqué sur 1. */
+var misePlace = { fin: 0 };
+
+function attenteEnCours() {
+  return misePlace.fin > 0 && performance.now() < misePlace.fin;
+}
+
+/* Reste à afficher, en secondes entières. Zéro quand il n'y a plus rien
+   à attendre : c'est ce que l'app teste pour masquer son chronomètre. */
+function resteMisePlace() {
+  const reste = misePlace.fin - performance.now();
+  if (reste <= 0) { misePlace.fin = 0; return 0; }
+  return Math.ceil(reste / 1000);
+}
+
+function demarrerMisePlace() {
+  /* GARDE CONTRE LE DOUBLE DÉPART : un second appel dans la seconde qui
+     suit ne prolonge plus le compte à rebours. */
+  const maintenant = performance.now();
+  if (misePlace.fin > 0 &&
+      (misePlace.fin - maintenant) > DELAI_MISE_EN_PLACE - 1000) return;
+  misePlace.fin = maintenant + DELAI_MISE_EN_PLACE;
+}
+
+function arreterMisePlace() { misePlace.fin = 0; }
+
+/* Pose le zoom sans rien écrire : l'affinage en fait cinq d'affilée. */
+async function poserZoomBrut(z) {
+  const b = zoomCamBornes || { min: 1, max: 1 };
+  const cible = Math.min(b.max, Math.max(b.min, z));
+  if (!pisteVisee) return false;
+  try {
+    zoomCamOccupe = true;
+    await pisteVisee.applyConstraints({ advanced: [{ zoom: cible }] });
+    /* La piste met un quart de seconde à se reconfigurer, et l'exposition
+       un peu plus : mesurer trop tôt note une image en transition. */
+    await new Promise(r => setTimeout(r, 300));
+    zoomCamValeur = cible;
+    if (surZoomCamera) surZoomCamera(cible);
+    return true;
+  } catch (e) {
+    return false;
+  } finally {
+    zoomCamOccupe = false;
+  }
+}
+
+/* RECHERCHE DANS LA ZONE DU RÉGLAGE MANUEL.
+
+   L'ancien balayage parcourait toute la plage de l'objectif, de 0,50 à
+   10,00 ×, en seize paliers. Deux défauts établis les 02 et 03/09 :
+
+     — plus la plage explorée est large, plus elle contient d'endroits où
+       deux images sans rapport se ressemblent par hasard. L'essai de
+       22:09 mesurait 18 % à 1,53 × puis 222 % à 6,48 ×, avec des scores
+       équivalents : le score ne distinguait pas le vrai du faux ;
+     — cinq secondes pendant lesquelles l'image saute sous les yeux de
+       l'opérateur.
+
+   Le réglage manuel supprime la question. L'opérateur cale le zoom
+   pendant la mise en place ; il sait, lui, ce qu'il regarde. La recherche
+   n'a plus qu'à affiner AUTOUR de cette valeur — jamais ailleurs. */
+var ZONE_ZOOM = RECALAGE.zone_zoom;
+var PALIERS_ZONE = RECALAGE.paliers_zone;
+
+async function affinerZoomDansZone(v, dx, dy, cl, ch) {
+  balayageEnCours = true;
+  const b = zoomCamBornes || { min: 1, max: 1 };
+  const depart = zoomCamValeur;
+  const lo = Math.log(Math.max(b.min, depart / ZONE_ZOOM));
+  const hi = Math.log(Math.min(b.max, depart * ZONE_ZOOM));
+
+  const mesurer = () => {
+    const r = contoursRef(100, TAILLE_ECH);
+    if (!r) return 0;
+    return chercherT(r, contoursFluxT(v, dx, dy, cl, ch, 100, TAILLE_ECH),
+                     TAILLE_ECH).score;
+  };
+
+  let best = { z: depart, s: -1 };
+  direVisee("Réglage retenu : " + depart.toFixed(2) + " × — affinage de " +
+    Math.exp(lo).toFixed(2) + " à " + Math.exp(hi).toFixed(2) + " ×.", "ok");
+
+  for (let i = 0; i < PALIERS_ZONE; i++) {
+    const z = PALIERS_ZONE > 1
+      ? Math.exp(lo + (hi - lo) * i / (PALIERS_ZONE - 1))
+      : depart;
+    if (!(await poserZoomBrut(z))) continue;
+    const sc = mesurer();
+    if (sc > best.s) best = { z, s: sc };
+  }
+
+  await poserZoomBrut(best.z);
+  direVisee("Zoom caméra calé à " + best.z.toFixed(2) + " × (" +
+    Math.round(best.s * 100) + " %) — le zoom de la RÉFÉRENCE prend la suite.",
+    "ok");
+  balayageFait = true; balayageEnCours = false;
+
+  /* LE RELAIS EST INCONDITIONNEL.
+
+     Il ne dépend plus d'un seuil de score. L'objectif est calé, sa part du
+     travail est faite : le reste est du ressort de l'échelle, quel que
+     soit le score atteint. Le seuil de 30 % laissait la phase caméra
+     s'éterniser sur les sujets peu contrastés. */
+  phaseVisee = "reference";
+  echelleFigee = null; echelleRetenue = null; echecs = 0;
+}
+
+/* Le pilote, appelé à chaque analyse. Il ne fait rien la plupart du
+   temps — c'est voulu. */
+function piloterZoomCamera(v, dx, dy, cl, ch) {
+  if (!zoomCamAuto) return;
+
+  /* CHAQUE REFUS SE DIT. Un pilote qui ne fait rien en silence est
+     indébogable à distance. */
+  if (!zoomCamBornes) {
+    if (!zoomCamPlainte) {
+      zoomCamPlainte = true;
+      direVisee("Cet appareil ne laisse pas régler le zoom depuis le " +
+        "navigateur : sers-toi du zoom de la référence.", "attention");
+    }
+    return;
+  }
+  if (zoomCamOccupe) return;
+  if (viseeClose) return;
+  if (attenteEnCours()) return;
+  /* Phase référence : l'objectif est figé, on ne le touche plus. */
+  if (phaseVisee !== "camera") return;
+  if (balayageEnCours) return;
+
+  if (!balayageFait) affinerZoomDansZone(v, dx, dy, cl, ch);
+}
+
+/* Remet toute la visée à zéro et prend la main sur la piste vidéo.
+   Appelée à chaque allumage de la caméra, et à chaque « Refaire ». */
+async function ouvrirVisee(piste) {
+  pisteVisee = piste || null;
+  phaseVisee = "camera";
+  balayageFait = false; balayageEnCours = false;
+  zoomCamOccupe = false; zoomCamPlainte = false;
+  viseeClose = false;
+  echelleFigee = null; echelleRetenue = null; echecs = 0;
+
+  const cap = (pisteVisee && pisteVisee.getCapabilities)
+    ? pisteVisee.getCapabilities() : {};
+  if (cap && cap.zoom) {
+    zoomCamAuto = true;
+    zoomCamBornes = { min: cap.zoom.min, max: cap.zoom.max };
+    zoomCamValeur = (pisteVisee.getSettings().zoom) || 1;
+    /* ON PART DU PLUS LARGE : zoom caméra au minimum de l'appareil.
+       C'est de là que l'opérateur monte à la main. */
+    await poserZoomBrut(cap.zoom.min);
+  } else {
+    /* AUCUN ZOOM RÉGLABLE — ON NE RESTE PAS EN PHASE CAMÉRA.
+
+       Le pilote sortirait à chaque analyse faute de bornes, l'affinage
+       ne se ferait jamais, le relais non plus, et l'échelle resterait
+       collée à 65 % jusqu'à la fin de la visée. Vérifié le 05/09 : elle
+       l'était. Sur un tel appareil il n'y a rien à piloter, donc la
+       référence prend la main tout de suite. */
+    zoomCamAuto = false;
+    zoomCamBornes = null;
+    zoomCamValeur = 1;
+    phaseVisee = "reference";
+    balayageFait = true;
+  }
+  demarrerMisePlace();
+  return zoomCamBornes;
+}
+
+/* LA PRISE CLÔT LA VISÉE.
+
+   Constaté au banc le 03/09 : la photographie prise à 82 %, l'opérateur
+   baisse l'appareil, l'alignement s'effondre — et l'affinage repart pour
+   parcourir des paliers qui rendent tous 0 %. Une fois la photographie
+   faite, il n'y a plus rien à viser. */
+function fermerVisee() {
+  viseeClose = true;
+  arreterMisePlace();
+  pisteVisee = null;
+}
+
 /* SEULE ADAPTATION PAR RAPPORT AU BANC D'ESSAI.
 
    L'original lisait trois réglages directement à l'écran :
@@ -410,6 +705,28 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
    La recherche a été validée sur le terrain le 29/08/2026, avec les
    contours dilatés : échelle stable autour de 100 %, étendue verte. */
 function chercherEchelle(v, dx, dy, cl, ch, active, echelleManuelle) {
+  /* UN SEUL MÉCANISME À LA FOIS.
+
+     Le zoom caméra et le zoom de la référence corrigent le même écart par
+     deux moyens différents : l'un change le champ capté, l'autre la
+     taille de l'image affichée. Actifs ensemble, ils se compensent — la
+     recherche d'échelle rattrape ce que le zoom vient de corriger, et le
+     zoom rattrape ce que l'échelle vient de faire. D'où les allers-
+     retours du 02/09 et l'étendue 25 à 125 %, butée à butée.
+
+     Deux phases exclusives, donc. Ces deux gardes sont AVANT toute autre
+     condition : pendant la mise en place et pendant la phase caméra,
+     l'échelle reste à sa valeur de départ, quoi qu'on lui demande.
+
+     ELLES NE VALENT QUE SI UN PILOTE EST EN SERVICE. pisteVisee n'est
+     posée que par ouvrirVisee. Sans elle — le banc OneDrive, qui charge
+     ce fichier et n'a pas de pilote de zoom — les gardes sont muettes et
+     la recherche travaille normalement. Sans ce test, ce banc restait
+     figé à 65 % pour toujours : vérifié le 05/09, il l'était. */
+  if (pisteVisee && attenteEnCours()) return RECALAGE.echelle_depart;
+  if (pisteVisee && zoomCamAuto && phaseVisee === "camera")
+    return RECALAGE.echelle_depart;
+
   if (!active) return echelleManuelle || 100;
   if (echelleFigee) return echelleFigee;
 

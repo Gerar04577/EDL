@@ -1,4 +1,7 @@
 <!DOCTYPE html>
+<!-- EDL — index 2.32.1 (05/09/2026) : CSS des contours, du cadre vert,
+     du chronomètre de mise en place et des deux boutons de mode. Rien
+     d'autre n'est touché dans ce fichier. -->
 <html lang="fr">
 <head>
 <meta charset="utf-8">
@@ -103,6 +106,43 @@
   #visee-flux, #visee-calque { position:absolute; inset:0; width:100%;
     height:100%; object-fit:cover; }
   #visee-calque { pointer-events:none; }
+
+  /* LES CONTOURS DE LA RÉFÉRENCE, tracés par-dessus le flux : deux jeux
+     de lignes à faire coïncider, au lieu de deux images qui se mélangent.
+
+     ATTENTION À LA SPÉCIFICITÉ. « #visee-contours » est un sélecteur
+     d'identifiant, « .cache » un sélecteur de classe : l'identifiant
+     l'emporte toujours. Sans la règle explicite qui suit, l'élément
+     serait masqué du point de vue du code et visible à l'écran. Le
+     chronomètre du banc a coûté trois corrections pour cette seule
+     raison. */
+  #visee-contours { position:absolute; inset:0; display:block;
+    width:100%; height:100%; pointer-events:none; z-index:4; }
+  #visee-contours.cache { display:none; }
+
+  /* LE CADRE DE LA RÉFÉRENCE. À 65 % d'échelle, ses bords se devinaient
+     par contraste avec le flux, et seulement quand les couleurs s'y
+     prêtaient. Une ligne verte les rend certains. */
+  #visee-calque.cadre { outline:3px solid #4ade80; outline-offset:-3px;
+    box-shadow:0 0 0 1px rgba(0,0,0,.5) inset; }
+
+  /* LE CHRONOMÈTRE DE MISE EN PLACE : quinze secondes pour se placer et
+     régler le zoom, pendant lesquelles rien ne bouge. */
+  #visee-chrono { position:absolute; inset:0; display:flex;
+    flex-direction:column; align-items:center; justify-content:center;
+    gap:4px; pointer-events:none; z-index:5;
+    background:rgba(20,20,20,.28); }
+  #visee-chrono.cache { display:none; }
+  #visee-chrono-nb { font-size:72px; font-weight:700; line-height:1;
+    color:#fff; font-variant-numeric:tabular-nums;
+    text-shadow:0 2px 12px rgba(0,0,0,.6); }
+  #visee-chrono-txt { font-size:15px; font-weight:600; color:#fff;
+    letter-spacing:.04em; text-shadow:0 2px 8px rgba(0,0,0,.6); }
+
+  /* Les deux aides à la lecture, côte à côte. */
+  #visee-modes { display:flex; gap:8px; margin:0 0 6px; }
+  #visee-modes button { flex:1; margin:0; }
+
   #visee-cadre { position:absolute; inset:0; border:3px solid transparent;
     border-radius:12px; pointer-events:none; transition:border-color .2s; }
   /* Le verdict reste en haut, mais SOUS la barre d'état : la pastille
