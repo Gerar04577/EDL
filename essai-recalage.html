@@ -66,6 +66,22 @@
      l'échelle revient alors à MONTRER PLUS de la photographie, comme un
      pas en arrière, sans jamais découvrir le flux autour. */
   #calque { pointer-events:none; }
+  #calque-contours { position:absolute; inset:0; display:block;
+    width:100%; height:100%; pointer-events:none; z-index:4; }
+  #calque-contours.cache { display:none; }
+
+  /* LE CADRE DE LA RÉFÉRENCE.
+
+     Rien ne matérialisait ses bords : à 65 % on les devinait par contraste
+     avec le flux, et seulement quand les couleurs s'y prêtaient. Une ligne
+     verte les rend certains. */
+  #calque.cadre { outline:3px solid #4ade80;
+    outline-offset:-3px; box-shadow:0 0 0 1px rgba(0,0,0,.5) inset; }
+
+  #modes-calque { display:flex; gap:8px; margin:0 0 6px; }
+  #modes-calque .mode { flex:1; }
+  #modes-calque .mode.actif { background:#3d7a63; color:#fff;
+    border-color:#3d7a63; }
 
   /* Le verdict, en surimpression : lisible d'un coup d'oeil, bras tendu. */
   #verdict { position:absolute; left:0; right:0; top:0; padding:10px 12px;
@@ -262,6 +278,7 @@
   <div id="scene" class="cache">
     <video id="flux" playsinline muted autoplay></video>
     <img id="calque" alt="">
+    <canvas id="calque-contours" class="cache"></canvas>
     <div id="chrono" class="cache">
       <div id="chrono-nb">10</div>
       <div id="chrono-txt">Place-toi</div>
@@ -276,6 +293,16 @@
   </div>
 
   <div id="sous-image" class="cache">
+    <div id="modes-calque">
+      <button id="btn-cadre" class="mode secondaire">Cadre</button>
+      <button id="btn-contours" class="mode secondaire">Contours</button>
+    </div>
+    <p class="note">Deux façons de lire la référence. <strong>Cadre</strong>
+    trace ses bords en vert : on voit la zone à retrouver. <strong>Contours</strong>
+    remplace l'image par ses seules arêtes : deux jeux de lignes à faire
+    coïncider, au lieu de deux images qui se mélangent. Les deux
+    s'activent et se désactivent indépendamment.</p>
+
     <div class="ligne"><span>Zoom de la CAMÉRA — règle-le à la main</span>
       <span id="val-zoom-cam">—</span></div>
     <input type="range" id="zoom-cam" min="50" max="1000" step="5" value="100" disabled>
@@ -952,7 +979,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 8.6";
+const VERSION = "essai 8.7";
 
 
 const $ = (id) => document.getElementById(id);
@@ -2168,6 +2195,7 @@ function analyser() {
     $("val-zoom-ref").textContent = pc + " % " +
       (m.score >= 0.45 ? "(trouvé)" : "(en recherche)");
     poserEchelleCalque(pc);
+    if (modeContours) dessinerContoursCalque();
   }
 
   /* L'échelle se fige quand elle est convaincante : la recherche cesse
@@ -2310,8 +2338,96 @@ function analyser() {
 }
 
 /* ---- Réglages ---- */
+/* ============================================================
+   DEUX LECTURES DE LA RÉFÉRENCE
+
+   Le calque en transparence est confus par nature : deux images
+   superposées à demi, et l'œil ne sait plus ce qui appartient à laquelle.
+   D'où deux aides, indépendantes l'une de l'autre pour qu'on puisse les
+   comparer.
+   ============================================================ */
+let modeCadre = false, modeContours = false;
+
+/* CADRE — les bords de la référence, en vert.
+
+   À 65 % d'échelle, ils se devinaient par contraste avec le flux, et
+   seulement quand les couleurs s'y prêtaient. Ils deviennent certains. */
+$("btn-cadre").onclick = () => {
+  modeCadre = !modeCadre;
+  $("calque").classList.toggle("cadre", modeCadre);
+  $("btn-cadre").classList.toggle("actif", modeCadre);
+  noter(modeCadre ? "Cadre de la référence affiché."
+                  : "Cadre de la référence retiré.", "ok");
+};
+
+/* CONTOURS — les arêtes de la référence, à la place de son image.
+
+   C'est ce que la mesure compare réellement. Deux jeux de lignes à faire
+   coïncider se lisent mieux que deux photographies mêlées. */
+$("btn-contours").onclick = () => {
+  modeContours = !modeContours;
+  $("calque-contours").classList.toggle("cache", !modeContours);
+  $("btn-contours").classList.toggle("actif", modeContours);
+  /* L'image reste visible sous les contours si le cadre est demandé,
+     sinon on l'efface pour ne garder que les lignes. */
+  $("calque").style.opacity = modeContours
+    ? 0 : (Number($("opacite").value) / 100);
+  if (modeContours) dessinerContoursCalque();
+  noter(modeContours ? "Référence en contours seuls."
+                     : "Référence en image.", "ok");
+};
+
+/* Le tracé, refait à chaque changement d'échelle ou de réglage. */
+function dessinerContoursCalque() {
+  const cv = $("calque-contours");
+  if (!cv || !cv.getContext || !modeContours || !imageRefChargee) return;
+
+  /* On dessine dans la définition d'affichage, pas dans celle du fichier :
+     le canevas se superpose au flux à l'écran. */
+  const boite = cv.parentElement.getBoundingClientRect();
+  const L = Math.max(64, Math.round(boite.width));
+  const H = Math.max(64, Math.round(boite.height));
+  if (cv.width !== L || cv.height !== H) { cv.width = L; cv.height = H; }
+  const c2 = cv.getContext("2d");
+  c2.clearRect(0, 0, L, H);
+
+  /* Les contours sont calculés à la taille d'analyse, puis étirés à
+     l'écran — assez pour aligner à l'œil, et sans coût. */
+  const T = TAILLE;
+  const tmp = document.createElement("canvas");
+  tmp.width = T; tmp.height = T;
+  const tc = tmp.getContext("2d", { willReadFrequently: true });
+  const src = imageRefChargee;
+  tc.drawImage(src, 0, 0, src.naturalWidth || src.width,
+    src.naturalHeight || src.height, 0, 0, T, T);
+  const g = contoursT(reduireT(tc.getImageData(0, 0, T, T).data, T, T, T), T);
+
+  let mx = 0;
+  for (let i = 0; i < g.length; i++) if (g[i] > mx) mx = g[i];
+  if (mx <= 0) return;
+
+  /* Blanc opaque sur les arêtes fortes, transparent ailleurs : les lignes
+     se détachent sur n'importe quel fond. */
+  const img = c2.createImageData(T, T);
+  for (let i = 0; i < T * T; i++) {
+    const v = g[i] / mx;
+    const a = v > 0.18 ? Math.min(255, Math.round(v * 320)) : 0;
+    img.data[i * 4] = 255; img.data[i * 4 + 1] = 255;
+    img.data[i * 4 + 2] = 255; img.data[i * 4 + 3] = a;
+  }
+  const inter = document.createElement("canvas");
+  inter.width = T; inter.height = T;
+  inter.getContext("2d").putImageData(img, 0, 0);
+
+  /* Le calque est réduit à l'échelle en cours : les contours doivent
+     l'être aussi, au même endroit. */
+  const pc = Number($("zoom-ref").value) || 100;
+  const l2 = L * pc / 100, h2 = H * pc / 100;
+  c2.drawImage(inter, (L - l2) / 2, (H - h2) / 2, l2, h2);
+}
+
 $("opacite").oninput = (e) => {
-  $("calque").style.opacity = e.target.value / 100;
+  if (!modeContours) $("calque").style.opacity = e.target.value / 100;
   $("val-opacite").textContent = e.target.value + " %";
 };
 $("calque").style.opacity = 0.35;
