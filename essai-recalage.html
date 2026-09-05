@@ -939,7 +939,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 8.2";
+const VERSION = "essai 8.3";
 
 
 const $ = (id) => document.getElementById(id);
@@ -2375,21 +2375,37 @@ $("stab").oninput = () => {
 
    Au-dessus de 100 : on agrandit la référence.
    En dessous : on agrandit le flux d'autant. */
+/* LA RÉFÉRENCE SE REDIMENSIONNE, LE FLUX NE BOUGE PAS.
+
+   L'ancienne version faisait l'inverse sous 100 % : elle laissait le
+   calque à sa taille pleine et AGRANDISSAIT le flux. À 50 %, la caméra
+   était étirée au double — elle remplissait l'écran avec deux fois moins
+   de chose — pendant que la référence, restée entière, débordait de
+   partout. C'est ce que montrent les captures du 05/09 à 13:00 : le
+   calque embrasse tout le salon, le flux ne montre que le canapé.
+
+   Or l'écart à corriger n'est pas dans le flux : il est entre les deux
+   champs. Le flux est ce que la caméra voit, on n'y touche pas. C'est la
+   RÉFÉRENCE qu'on met à la taille où elle correspond — au-dessus de 100 %
+   on l'agrandit, en dessous on la réduit, et dans les deux cas le flux
+   reste tel qu'il est.
+
+   L'opérateur voit alors la référence à sa juste taille pendant qu'il se
+   place, au lieu d'une image qui déborde. */
 function poserEchelleCalque(pc) {
-  const zoomer = (el, facteur) => {
-    const t = 100 * facteur;
-    el.style.width = t + "%";
-    el.style.height = t + "%";
-    el.style.left = (-(t - 100) / 2) + "%";
-    el.style.top = (-(t - 100) / 2) + "%";
-  };
-  if (pc >= 100) {
-    zoomer($("calque"), pc / 100);
-    zoomer($("flux"), 1);
-  } else {
-    zoomer($("calque"), 1);
-    zoomer($("flux"), 100 / pc);
-  }
+  const t = Math.max(1, pc);        /* jamais zéro ni négatif */
+  const c = $("calque");
+  c.style.width = t + "%";
+  c.style.height = t + "%";
+  c.style.left = (-(t - 100) / 2) + "%";
+  c.style.top = (-(t - 100) / 2) + "%";
+
+  /* Le flux garde sa taille naturelle, en toute circonstance. */
+  const f = $("flux");
+  f.style.width = "100%";
+  f.style.height = "100%";
+  f.style.left = "0%";
+  f.style.top = "0%";
 }
 
 $("zoom-ref").oninput = () => {
