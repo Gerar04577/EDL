@@ -166,6 +166,17 @@
   .cote-a-cote img { width:100%; border-radius:8px; display:block; }
   .cote-a-cote figcaption { font-size:12px; color:#8a8a8a; margin-top:4px; text-align:center; }
   .cache { display:none; }
+  /* LE RÉCAPITULATIF — quatre groupes nettement séparés. */
+  .titre-recap { font-size:12px; font-weight:700; letter-spacing:.08em;
+    text-transform:uppercase; color:#6b6459; margin:14px 0 4px;
+    padding-bottom:3px; border-bottom:2px solid #d9d4cc; }
+  .titre-recap:first-of-type { margin-top:8px; }
+  .rl { display:flex; justify-content:space-between; gap:12px;
+    padding:5px 0; border-bottom:1px solid #eceae5; font-size:14px; }
+  .rl > span:first-child { color:#6b6459; flex:0 1 auto; }
+  .rl > span:last-child { font-weight:600; text-align:right;
+    word-break:break-word; }
+  .rl.vide > span:last-child { font-weight:400; color:#9a938a; }
   /* MÊME PIÈGE, MÊME REMÈDE, PARTOUT.
 
      Tout identifiant qui pose un display l'emporte sur .cache et ne peut
@@ -380,7 +391,26 @@
 </div>
 
 <div class="bloc">
-  <h2>5. Journal</h2>
+  <h2>5. Récapitulatif</h2>
+  <p class="note">Toutes les caractéristiques au même endroit, à jour en
+  permanence. C'est ce cadre qu'il faut capturer pour rendre compte d'un
+  essai — plus besoin de parcourir les quatre sections précédentes.</p>
+
+  <h3 class="titre-recap">Référence</h3>
+  <div id="recap-reference"></div>
+
+  <h3 class="titre-recap">Caméra</h3>
+  <div id="recap-camera"></div>
+
+  <h3 class="titre-recap">Réglages</h3>
+  <div id="recap-reglages"></div>
+
+  <h3 class="titre-recap">Mesure</h3>
+  <div id="recap-mesure"></div>
+</div>
+
+<div class="bloc">
+  <h2>6. Journal</h2>
   <p class="note" id="journal">En attente.</p>
 </div>
 
@@ -909,7 +939,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 7.5";
+const VERSION = "essai 8.0";
 
 
 const $ = (id) => document.getElementById(id);
@@ -1007,6 +1037,22 @@ function noter(t, c) {
    fichier d'origine vaut mieux que n'importe quelle vignette. */
 let odPile = [];
 
+/* ÉCHAPPEMENT DU TEXTE — LA FONCTION QUI MANQUAIT.
+
+   Elle existe dans le banc OneDrive, d'où j'ai repris ce code ; elle
+   n'existait pas ici. L'appel levait « Can't find variable: ech » au
+   milieu du chargement, et le message d'échec s'affichait alors que la
+   photographie était bien arrivée — masquant du même coup la ligne qui
+   devait dire par quelle taille.
+
+   C'est la faute du paragraphe 2.3 : reprendre du code sans vérifier ce
+   que les fonctions attendent. */
+function ech(t) {
+  return String(t == null ? "" : t)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 async function odApercu(element, driveId) {
   const r = refDe(element, driveId);
   const base = r.driveId ? `/drives/${r.driveId}/items/${r.id}`
@@ -1020,13 +1066,30 @@ async function odApercu(element, driveId) {
       if (lien) return { url: lien, via: "fichier d'origine" };
     }
   }
+  /* CHAQUE REFUS SE DIT.
+
+     Le 05/09, la référence arrivait en 600×800 — donc « large » — sans
+     qu'on sache si c1920x1920 avait été refusé ou seulement pas tenté.
+     Une taille qui échoue en silence, c'est le défaut du paragraphe 2.4 :
+     le repli automatique masquait le problème. */
   for (const t of RECALAGE.tailles_apercu) {
     try {
       const res = await appelGraph(`${base}/thumbnails/0/${t}`);
-      if (!res.ok) continue;
+      if (!res.ok) {
+        noter("Taille " + t + " refusée par Graph : " + res.status + ".",
+          "attention");
+        continue;
+      }
       const v = await res.json();
-      if (v && v.url) return { url: v.url, via: t };
-    } catch (_) { /* taille suivante */ }
+      if (v && v.url) {
+        noter("Taille " + t + " acceptée" +
+          (v.width ? " — " + v.width + "×" + v.height : "") + ".", "ok");
+        return { url: v.url, via: t };
+      }
+      noter("Taille " + t + " : réponse sans adresse.", "attention");
+    } catch (e) {
+      noter("Taille " + t + " en erreur : " + e.message, "attention");
+    }
   }
   throw new Error("Aucun aperçu pour " + (element.name || "ce fichier"));
 }
@@ -1154,12 +1217,24 @@ async function odChoisir(element, driveId) {
     $("etat-onedrive").textContent =
       element.name + " — chargée par " + a.via + ".";
     $("etat-onedrive").className = "note ok";
-    if ($("detail-ref")) {
-      $("detail-ref").innerHTML =
-        "<strong>" + ech(element.name) + "</strong><br>" +
-        "Chargée depuis OneDrive par " + ech(a.via) + "<br>" +
-        Math.round(blob.size / 1024) + " Ko";
+    /* L'affichage du détail est accessoire : s'il échoue, la référence est
+       chargée quand même et on le dit au journal plutôt que d'annoncer un
+       échec qui n'a pas eu lieu. */
+    try {
+      if ($("detail-ref")) {
+        $("detail-ref").innerHTML =
+          "<strong>" + ech(element.name) + "</strong><br>" +
+          "Chargée depuis OneDrive par " + ech(a.via) + "<br>" +
+          Math.round(blob.size / 1024) + " Ko";
+      }
+    } catch (e2) {
+      noter("Détail non affiché : " + e2.message, "attention");
     }
+    RECAP.ref_nom = element.name;
+    RECAP.ref_origine = "OneDrive";
+    RECAP.ref_taille = a.via;
+    RECAP.ref_poids = Math.round(blob.size / 1024) + " Ko";
+    majRecap();
     noter("Référence OneDrive : " + element.name + " — " + a.via +
       ", " + Math.round(blob.size / 1024) + " Ko.", "ok");
   } catch (e) {
@@ -1203,6 +1278,8 @@ $("btn-onedrive").onclick = async () => {
 };
 
 $("btn-pellicule").onclick = () => {
+  RECAP.ref_origine = "pellicule (converti par iOS)";
+  RECAP.ref_taille = "fichier converti";
   if ($("detail-ref")) $("detail-ref").textContent = "Chargée depuis la pellicule.";
   $("fichier").click();
 };
@@ -1389,6 +1466,7 @@ async function diagnostiquerObjectif(piste) {
     if (r.zoom !== undefined) morceaux.push("zoom déclaré " + Number(r.zoom).toFixed(2));
     if (r.facingMode) morceaux.push("face " + r.facingMode);
     if (r.frameRate) morceaux.push(Math.round(r.frameRate) + " im/s");
+    RECAP.cam_objectif = piste.label || "sans libellé";
     noter("Objectif de la visée : " + morceaux.join(", ") + ".", "ok");
 
     /* Le champ de vision, quand la piste le déclare : c'est la seule
@@ -1461,6 +1539,7 @@ $("btn-camera").onclick = async () => {
          comparent toutes les mesures faites ensuite. */
       referencePixels = (r.width || 0) * (r.height || 0);
       zoomCamBornes = { min: cap.zoom.min, max: cap.zoom.max };
+      RECAP.cam_bornes = cap.zoom.min.toFixed(2) + " à " + cap.zoom.max.toFixed(2) + " ×";
       zoomCamValeur = p0.getSettings().zoom || 1;
       zoomCamPose = false;
 
@@ -1857,6 +1936,8 @@ async function affinerZoomDansZone(v, dx, dy, cl, ch) {
   };
 
   let best = { z: depart, s: -1 };
+  RECAP.zoom_manuel = depart.toFixed(2) + " ×";
+  majRecap();
   noter("Réglage manuel retenu : " + depart.toFixed(2) + " × — affinage sur " +
     Math.exp(lo).toFixed(2) + " à " + Math.exp(hi).toFixed(2) + " ×.", "ok");
 
@@ -1872,6 +1953,8 @@ async function affinerZoomDansZone(v, dx, dy, cl, ch) {
   }
 
   await poserZoomBrut(best.z);
+  RECAP.zoom_cale = best.z.toFixed(2) + " × (" + Math.round(best.s * 100) + " %)";
+  majRecap();
   noter("Zoom caméra calé à " + best.z.toFixed(2) + " × (" +
     Math.round(best.s * 100) + " %) — le zoom de la RÉFÉRENCE prend la " +
     "suite.", "ok");
@@ -1986,7 +2069,93 @@ function piloterZoomCamera(v, dx, dy, cl, ch, echelle, score) {
   poserZoomCamera(zoomCamValeur * Math.pow(100 / echelle, 0.85), "Affinage");
 }
 
+/* ============================================================
+   LE RÉCAPITULATIF
+
+   Tout ce qui caractérise un essai, rassemblé et tenu à jour. Les valeurs
+   étaient éparpillées dans les quatre sections précédentes : pour rendre
+   compte d'un essai il fallait quatre captures d'écran, et il en manquait
+   toujours une.
+
+   Une seule source par ligne : on lit l'état réel, on ne recopie pas ce
+   qu'on croit avoir posé. C'est la règle « mesurer avant de conclure »
+   appliquée à l'affichage lui-même.
+   ============================================================ */
+const RECAP = {
+  ref_nom: "—", ref_origine: "—", ref_taille: "—", ref_poids: "—",
+  cam_objectif: "—", cam_bornes: "—",
+  zoom_manuel: "—", zoom_cale: "—", echelle: "—", score: "—"
+};
+
+function ligneRecap(nom, valeur) {
+  const vide = (valeur === "—" || valeur === "" || valeur == null);
+  return '<div class="rl' + (vide ? " vide" : "") + '"><span>' +
+    ech(nom) + "</span><span>" + ech(vide ? "—" : valeur) + "</span></div>";
+}
+
+function majRecap() {
+  const v = $("flux");
+  const piste = fluxCamera ? fluxCamera.getVideoTracks()[0] : null;
+  const r = piste && piste.getSettings ? piste.getSettings() : {};
+
+  $("recap-reference").innerHTML =
+    ligneRecap("Nom du fichier", RECAP.ref_nom) +
+    ligneRecap("Origine", RECAP.ref_origine) +
+    ligneRecap("Taille obtenue de Graph", RECAP.ref_taille) +
+    ligneRecap("Dimensions d'origine", refL && refH ? refL + "×" + refH : "—") +
+    ligneRecap("Dimensions analysées",
+      imageRefChargee ? (imageRefChargee.width || imageRefChargee.naturalWidth) +
+      "×" + (imageRefChargee.height || imageRefChargee.naturalHeight) : "—") +
+    ligneRecap("Poids", RECAP.ref_poids) +
+    ligneRecap("Contours détectés", $("densite").textContent);
+
+  $("recap-camera").innerHTML =
+    ligneRecap("État", fluxCamera ? "allumée" : "éteinte") +
+    ligneRecap("Objectif employé", RECAP.cam_objectif) +
+    ligneRecap("Bornes du zoom", RECAP.cam_bornes) +
+    ligneRecap("Flux", (r.width && r.height) ? r.width + "×" + r.height : "—") +
+    ligneRecap("Largeur demandée", $("lib-flux") ? $("lib-flux").textContent : "—") +
+    ligneRecap("Cadence", r.frameRate ? Math.round(r.frameRate) + " im/s" : "—");
+
+  $("recap-reglages").innerHTML =
+    ligneRecap("Mise en place", (DELAI_MISE_EN_PLACE / 1000) + " s") +
+    ligneRecap("Qualité JPEG", $("lib-qualite").textContent) +
+    ligneRecap("Seuil des contours faibles", Math.round(SEUIL_CONTOUR * 100) + " %") +
+    ligneRecap("Normalisation du contraste", NORMALISER ? "oui" : "non") +
+    ligneRecap("Dilatation des contours", DILATATION ? "oui" : "non") +
+    ligneRecap("Opacité de la référence", $("val-opacite").textContent) +
+    ligneRecap("Seuil de déclenchement", $("val-seuil").textContent) +
+    ligneRecap("Durée d'immobilité", $("val-stab").textContent) +
+    ligneRecap("Affinage — bande", "±" + Math.round((ZONE_ZOOM - 1) * 100) +
+      " % en " + PALIERS_ZONE + " paliers") +
+    ligneRecap("Recherche d'échelle",
+      $("recherche-echelle").checked ? "active" : "arrêtée") +
+    ligneRecap("Échelle automatique",
+      $("echelle-auto").checked ? "oui" : "non");
+
+  $("recap-mesure").innerHTML =
+    ligneRecap("Phase", !fluxCamera ? "—"
+      : attenteEnCours() ? "mise en place"
+      : viseeClose ? "visée close"
+      : phaseVisee === "camera" ? "zoom caméra" : "zoom référence") +
+    ligneRecap("Zoom manuel de départ", RECAP.zoom_manuel) +
+    ligneRecap("Zoom caméra actuel",
+      fluxCamera ? zoomCamValeur.toFixed(2) + " ×" : "—") +
+    ligneRecap("Zoom calé par l'affinage", RECAP.zoom_cale) +
+    ligneRecap("Échelle de la référence", RECAP.echelle) +
+    ligneRecap("Étendue observée",
+      $("etendue").textContent) +
+    ligneRecap("Score courant", RECAP.score) +
+    ligneRecap("Temps par analyse",
+      $("duree").textContent) +
+    ligneRecap("Analyses par seconde",
+      $("cadence").textContent);
+}
+
 function analyser() {
+  /* Le récapitulatif suit l'état réel, à chaque image. */
+  try { majRecap(); } catch (e) { /* jamais bloquant */ }
+
   /* PREMIÈRE INSTRUCTION, AVANT TOUTE SORTIE ANTICIPÉE.
 
      Le rafraîchissement était placé au milieu d'analyser, après le
@@ -2069,6 +2238,9 @@ function analyser() {
   }
 
   const pourcent = Math.max(0, Math.round(m.score * 100));
+  RECAP.score = pourcent + " %";
+  RECAP.echelle = (Math.round(pc * 10) / 10) + " %" +
+    (echelleFigee ? " (figée)" : " (en recherche)");
   dernierScore = pourcent;
 
   const seuil = Number($("seuil").value);
