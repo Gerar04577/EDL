@@ -438,6 +438,19 @@ const RECALAGE = {
      le zoom à la main. */
   delai_mise_en_place: 15000,
 
+  /* ÉCHELLE DE DÉPART DU CALQUE, PENDANT LA MISE EN PLACE.
+
+     Elle était à 100 %, donc la référence débordait de l'écran pendant
+     les quinze secondes où l'opérateur est censé s'en servir pour se
+     placer. Le calque n'était utilisable qu'APRÈS, une fois l'échelle
+     trouvée — trop tard.
+
+     65 % est la moyenne des échelles mesurées le 05/09 sur des
+     photographies prises à 1× : 58, 69 et 73 %. Ce n'est pas une valeur
+     juste, c'est un point de départ plausible ; la recherche l'ajuste
+     dès la fin de la mise en place. */
+  echelle_depart: 65,
+
   /* Bande explorée autour du réglage manuel, et nombre de mesures.
      L'exploration large a été abandonnée le 03/09 : au-delà d'un facteur
      3, les mesures se contredisent — 18 % à 1,53 × puis 222 % à 6,48 ×
@@ -939,7 +952,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 8.3";
+const VERSION = "essai 8.4";
 
 
 const $ = (id) => document.getElementById(id);
@@ -1598,9 +1611,10 @@ $("btn-camera").onclick = async () => {
        à 18:40, bloqué sur 1 pendant que les réglages bougeaient quand
        même. La mise en place ne dépend pas du zoom : elle vaut dans tous
        les cas. */
-    $("zoom-ref").value = 100;
-    $("val-zoom-ref").textContent = "100 % (mise en place)";
-    poserEchelleCalque(100);
+    $("zoom-ref").value = RECALAGE.echelle_depart;
+    $("val-zoom-ref").textContent =
+      RECALAGE.echelle_depart + " % (mise en place)";
+    poserEchelleCalque(RECALAGE.echelle_depart);
     echelleFigee = null; echelleRetenue = null; echecs = 0;
     phaseVisee = "camera"; balayageFait = false; balayageEnCours = false;
     viseeClose = false;
@@ -2685,9 +2699,10 @@ $("btn-recommencer").onclick = () => {
      et il a droit au même temps qu'au premier relevé. */
   demarrerMisePlace();
   if (zoomCamBornes) poserZoomBrut(zoomCamBornes.min);
-  $("zoom-ref").value = 100;
-  $("val-zoom-ref").textContent = "100 % (mise en place)";
-  poserEchelleCalque(100);
+  $("zoom-ref").value = RECALAGE.echelle_depart;
+  $("val-zoom-ref").textContent =
+    RECALAGE.echelle_depart + " % (mise en place)";
+  poserEchelleCalque(RECALAGE.echelle_depart);
   noter("Visée rouverte — " + (DELAI_MISE_EN_PLACE / 1000) +
     " s de mise en place, caméra au plus large.", "ok");
   stableDepuis = 0;
