@@ -952,7 +952,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 8.5";
+const VERSION = "essai 8.6";
 
 
 const $ = (id) => document.getElementById(id);
@@ -2462,7 +2462,41 @@ $("zoom-cam-auto").onchange = () => {
 
 /* ZOOM DE LA CAMÉRA — la voie propre quand l'appareil l'accepte : c'est
    le champ du flux qu'on élargit, donc la cause qu'on corrige. */
-$("zoom-cam").oninput = async () => {
+/* LE CURSEUR N'ENVOIE PLUS UNE COMMANDE PAR CRAN TRAVERSÉ.
+
+   Constaté le 05/09 à 13:02 : seize commandes de zoom dans la même
+   seconde — 0,50, 0,80, 0,95, 1,10, 1,25, 1,45, 1,90, 2,05, 2,15, 2,35,
+   2,50, 3,05, 3,30 — c'est-à-dire toutes les valeurs survolées par le
+   doigt en allant d'un bout à l'autre.
+
+   Chaque commande demande un quart de seconde à la piste pour se
+   reconfigurer. Seize en une seconde, elle n'a jamais fini de se poser
+   quand la suivante arrive : elle court après le doigt. Et si un geste
+   tardif arrive au moment où l'affinage démarre, l'objectif bouge pendant
+   les mesures et les paliers ne veulent plus rien dire.
+
+   L'affichage suit le doigt à chaque cran — l'opérateur voit sa valeur en
+   temps réel. L'OBJECTIF, lui, n'est commandé qu'une fois le doigt
+   immobile depuis un tiers de seconde. Une seule pose, à la valeur
+   finale. */
+const REPOS_CURSEUR = 350;
+let minuteurCurseur = null;
+
+$("zoom-cam").oninput = () => {
+  /* L'affichage, immédiat : le doigt doit voir où il va. */
+  const brut = Number($("zoom-cam").value) / 100;
+  $("val-zoom-cam").textContent = brut.toFixed(2) + " ×";
+
+  /* La commande, différée : chaque nouveau cran repousse l'échéance, donc
+     seule la dernière valeur atteint l'objectif. */
+  if (minuteurCurseur) clearTimeout(minuteurCurseur);
+  minuteurCurseur = setTimeout(() => {
+    minuteurCurseur = null;
+    poserZoomDepuisCurseur();
+  }, REPOS_CURSEUR);
+};
+
+async function poserZoomDepuisCurseur() {
   if (!fluxCamera) return;
   const z = Number($("zoom-cam").value) / 100;
   /* LE RÉGLAGE MANUEL EST LE POINT DE DÉPART, PLUS UNE INTERRUPTION.
@@ -2536,7 +2570,7 @@ $("zoom-cam").oninput = async () => {
     $("val-zoom-cam").textContent = "refusé";
     noter("Zoom caméra refusé : " + err.name, "ko");
   }
-};
+}
 
 /* Le libellé disait l'ÉTAT — « automatique : NON » — ce qui se lit comme
    une action et laisse croire que le bouton est mort quand on le presse.
