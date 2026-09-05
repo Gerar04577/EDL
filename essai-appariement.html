@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Appariement sortie → entrée</title>
+
+<!--
+  BANC D'ESSAI — RETROUVER LA VUE D'ENTRÉE QUI CORRESPOND.
+
+  LA QUESTION POSÉE. Pendant l'état des lieux de SORTIE, on photographie
+  librement. Le banc doit dire laquelle des photographies d'ENTRÉE montre
+  la même chose. C'est la recherche inverse de la visée : là, on choisit
+  la référence puis on cadre ; ici, on cadre puis on cherche la référence.
+
+  LE CAS DIFFICILE EST CELUI D'AUJOURD'HUI. Les photographies d'entrée
+  sont toutes mélangées dans un seul dossier, sans indication de pièce.
+  Le tri par pièce, prévu pour l'an prochain avec mur gauche et mur droit,
+  ne changera pas une ligne du classement : il réduira seulement le lot de
+  candidates. Le banc mesure donc le cas le plus dur, et il chiffre au
+  passage ce que le tri fera gagner.
+
+  CE QU'IL MESURE, ET POURQUOI CE N'EST PAS LE GAGNANT.
+
+  Un banc qui n'affiche que sa réponse ne prouve rien : on retient les
+  fois où il a eu raison. Celui-ci affiche le CLASSEMENT COMPLET avec les
+  scores, et surtout l'ÉCART ENTRE LE PREMIER ET LE DEUXIÈME. Un premier à
+  61 % suivi d'un deuxième à 58 %, c'est un tirage au sort déguisé, même
+  quand la réponse est juste. Et il tient un TAUX DE RÉUSSITE cumulé sur
+  la série d'essais : trois impressions ne valent pas une mesure.
+
+  CE QU'IL NE FAIT PAS. Il n'écrit rien, ne supprime rien, ne dépose rien
+  dans OneDrive. Il lit. auth.js, graph.js, comparaison-edl.js et
+  recalage.js sont inclus tels quels, jamais modifiés : le banc s'adapte à
+  eux, jamais l'inverse.
+
+  À ouvrir dans SAFARI, pas depuis l'icône de l'application.
+-->
+
+<style>
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; padding:calc(14px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom));
+    font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    color:#1a1a1a; background:#f7f6f3; }
+  h1 { font-size:19px; margin:0 0 2px; }
+  .sous { color:#6b6b6b; font-size:14px; margin:0 0 16px; }
+  .bloc { background:#fff; border:1px solid #e3e0da; border-radius:12px;
+    padding:14px; margin-bottom:12px; }
+  .bloc h2 { font-size:12px; text-transform:uppercase; letter-spacing:.07em;
+    color:#8a8a8a; margin:0 0 10px; font-weight:600; }
+  button { width:100%; padding:14px; font-size:16px; font-weight:600;
+    border:1px solid #2f7d63; border-radius:10px; background:#c9ecdb;
+    color:#12503d; margin-bottom:8px; -webkit-appearance:none; }
+  button.secondaire { background:#dbe9f7; color:#1a4a80; border-color:#7fa9d4; }
+  button.choix { text-align:left; font-weight:500; font-size:15px;
+    padding:12px 14px; background:#fff; border-color:#d0ccc4; color:#1a1a1a; }
+  button:disabled { opacity:.45; }
+  .note { font-size:13px; color:#6b6b6b; margin:6px 0; }
+  .ko { color:#b03a2e; } .ok { color:#1f7a4d; } .attention { color:#8a5a12; }
+  .cache { display:none; }
+  input[type=range] { width:100%; height:44px; margin:2px 0 10px;
+    -webkit-appearance:none; background:transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height:10px;
+    border-radius:5px; background:#dcd8d0; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none;
+    width:32px; height:32px; margin-top:-11px; border-radius:50%;
+    background:#2f7d63; border:3px solid #fff;
+    box-shadow:0 1px 4px rgba(0,0,0,.3); }
+  .ligne { display:flex; justify-content:space-between; gap:12px;
+    padding:7px 0; border-bottom:1px solid #f0eeea; font-size:14px; }
+  .ligne:last-child { border-bottom:0; }
+  .ligne span:last-child { color:#4a4a4a; font-variant-numeric:tabular-nums; }
+  .bascule { display:flex; align-items:center; gap:10px; padding:4px 0 8px;
+    font-size:15px; font-weight:500; }
+  .bascule input { width:30px; height:30px; margin:0; flex:none; }
+
+  .vignettes { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .vignettes figure { margin:0; }
+  .vignettes img { width:100%; aspect-ratio:3/4; object-fit:cover;
+    border-radius:8px; display:block; background:#f0eeea; }
+  .vignettes figcaption { font-size:12px; color:#8a8a8a; text-align:center;
+    margin-top:3px; }
+
+  /* La photographie à identifier, en grand. */
+  #sortie-vue { width:100%; max-height:44vh; object-fit:contain;
+    border-radius:12px; background:#000; display:block; margin-bottom:10px; }
+
+  /* LE CLASSEMENT. Chaque rang porte sa vignette, son score et sa barre :
+     l'œil compare les longueurs bien plus vite que les nombres, et c'est
+     l'ÉCART entre les deux premières barres qui dit si la réponse tient. */
+  .rang { display:flex; gap:10px; align-items:center; padding:8px 0;
+    border-bottom:1px solid #f0eeea; }
+  .rang:last-child { border-bottom:0; }
+  .rang img { width:64px; height:85px; object-fit:cover; border-radius:6px;
+    background:#f0eeea; flex:none; }
+  .rang .corps { flex:1; min-width:0; }
+  .rang .nom { font-size:13px; font-weight:600; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; }
+  .rang .det { font-size:12px; color:#8a8a8a; font-variant-numeric:tabular-nums; }
+  .rang .barre { height:8px; border-radius:4px; background:#e8e5df;
+    margin-top:5px; overflow:hidden; }
+  .rang .barre i { display:block; height:100%; background:#2f7d63; }
+  .rang.premier { background:#f3faf6; }
+  .rang.premier .barre i { background:#1f7a4d; }
+  .rang .marquer { width:auto; margin:6px 0 0; padding:6px 10px;
+    font-size:12px; font-weight:600; }
+
+  #verdict { font-size:15px; font-weight:600; margin:0 0 8px; }
+  #journal { font-size:12px; line-height:1.55; max-height:220px;
+    overflow-y:auto; }
+</style>
+</head>
+<body>
+
+<h1>Appariement sortie → entrée</h1>
+<p class="sous">Une photographie de sortie, et le banc cherche la vue
+d'entrée correspondante · <strong id="version"></strong></p>
+
+<div class="bloc">
+  <h2>1. Connexion</h2>
+  <button id="btn-connexion">Reprendre la session de l'application</button>
+  <p class="note" id="etat-connexion">Non connecté.</p>
+</div>
+
+<div class="bloc cache" id="bloc-dossiers">
+  <h2>2. Choisir le dossier d'entrée</h2>
+  <div id="chemin" class="note"></div>
+  <div id="liste"></div>
+  <button class="secondaire cache" id="btn-remonter">Remonter</button>
+</div>
+
+<div class="bloc cache" id="bloc-photos">
+  <h2>3. Photographies d'entrée</h2>
+  <p class="note" id="etat-photos"></p>
+  <div class="vignettes" id="vignettes"></div>
+</div>
+
+<div class="bloc cache" id="bloc-sortie">
+  <h2>4. La photographie de sortie</h2>
+  <p class="note">Sur iPhone, le bouton propose « Prendre une photo » ou
+  « Choisir dans la photothèque ». Les deux conviennent.</p>
+  <input type="file" id="fichier" accept="image/*" class="cache">
+  <button id="btn-sortie">Prendre ou choisir la photographie</button>
+  <img id="sortie-vue" class="cache" alt="">
+  <p class="note" id="etat-sortie"></p>
+</div>
+
+<div class="bloc cache" id="bloc-reglages">
+  <h2>5. Réglages de la recherche</h2>
+  <div class="ligne"><span>Candidates examinées de près</span>
+    <span id="val-k">8</span></div>
+  <input type="range" id="k" min="1" max="40" step="1" value="8">
+  <p class="note">Le pré-tri classe TOUTES les entrées à l'échelle 100 %,
+  vite et grossièrement. Seules les meilleures passent au recalage
+  complet, avec recherche d'échelle. Ce curseur dit combien.</p>
+
+  <div class="bascule"><input type="checkbox" id="tout-fin">
+    <label for="tout-fin">Recalage complet sur TOUTES les entrées</label></div>
+  <p class="note">Beaucoup plus lent, mais c'est la seule façon de savoir
+  si le pré-tri laisse échapper la bonne réponse. À lancer une fois sur
+  une série, pas à chaque essai.</p>
+
+  <button id="btn-chercher" disabled>Chercher la correspondance</button>
+  <p class="note" id="etat-recherche"></p>
+</div>
+
+<div class="bloc cache" id="bloc-resultat">
+  <h2>6. Classement</h2>
+  <p id="verdict"></p>
+  <div id="classement"></div>
+</div>
+
+<div class="bloc cache" id="bloc-score">
+  <h2>7. Mesure sur la série</h2>
+  <p class="note">Marque la bonne réponse sous le classement, même quand
+  le banc s'est trompé. Sans cela, il n'y a pas de mesure — seulement des
+  impressions.</p>
+  <div class="ligne"><span>Essais notés</span><span id="s-total">0</span></div>
+  <div class="ligne"><span>Bonne réponse en 1<sup>re</sup> position</span><span id="s-premier">0</span></div>
+  <div class="ligne"><span>Bonne réponse dans les 3 premières</span><span id="s-trois">0</span></div>
+  <div class="ligne"><span>Bonne réponse retenue par le pré-tri</span><span id="s-pretri">0</span></div>
+  <div class="ligne"><span>Écart moyen 1<sup>re</sup> / 2<sup>e</sup></span><span id="s-ecart">—</span></div>
+  <button class="secondaire" id="btn-vider">Effacer la série</button>
+</div>
+
+<div class="bloc">
+  <h2>Journal</h2>
+  <div id="journal"></div>
+</div>
+
+<script src="msal-browser.min.js"></script>
+<script src="config.js"></script>
+<script src="db.js"></script>
+<script src="auth.js"></script>
+<script src="graph.js"></script>
+<script src="comparaison-edl.js"></script>
+<script src="recalage.js"></script>
+
+<script>
+/* Version du banc. À incrémenter à chaque dépôt : sans elle, on ne sait
+   pas si l'iPhone sert la page qu'on vient de déposer ou la précédente. */
+const VERSION = "appariement 1.0";
+
+/* L'adresse de redirection est ramenée à celle de l'application — la seule
+   que Microsoft accepte. Elle n'est pas employée puisque le banc n'ouvre
+   pas de session, mais MSAL la vérifie à l'initialisation. CONFIG n'est
+   pas modifié sur le disque : seule la valeur en mémoire de cette page
+   l'est, le temps de son exécution. */
+if (typeof CONFIG !== "undefined" && CONFIG.microsoft) {
+  CONFIG.microsoft.redirect_uri =
+    location.origin + location.pathname.replace(/[^/]*$/, "");
+}
+const $ = (id) => document.getElementById(id);
+
+let pile = [];            // chemin de navigation
+let photos = [];          // les photographies d'entrée du dossier
+let liens = {};           // vignettes affichables, par identifiant
+let empreintes = {};      // contours 48×48 des entrées, par identifiant
+let imagesFines = {};     // images décodées pour le recalage complet
+let sortie = null;        // { image, largeur, hauteur, nom }
+let dernierClassement = null;
+
+function noter(t, c) {
+  const j = $("journal");
+  j.innerHTML = `<span class="${c||""}">${new Date().toLocaleTimeString("fr-BE")} — ${t}</span><br>` + j.innerHTML;
+}
+function ech(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g,
+    c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+/* ======================================================================
+   LE CŒUR DU BANC — COMPARER DEUX PHOTOGRAPHIES
+
+   On réemploie le noyau de recalage.js sans y toucher : reduireT,
+   contoursT et chercherT sont ceux que la visée emploie, vérifiés contre
+   le banc de cadrage le 05/09. Ce qui est propre à ce banc, c'est la
+   manière de découper les deux images avant de les leur donner.
+   ====================================================================== */
+
+/* PREMIÈRE DIFFICULTÉ : LES PROPORTIONS.
+
+   La visée compare un flux vidéo à une référence, et rogne le flux aux
+   proportions de la référence. Ici, deux photographies, l'une prise il y a
+   un an, l'autre à l'instant — rien ne garantit le même format. Redimen-
+   sionner chacune en 96 × 96 les déformerait DIFFÉREMMENT : une entrée
+   3/4 et une sortie 9/16 rendraient des contours incomparables, et le
+   banc conclurait à une différence qui n'existe pas.
+
+   On prend donc dans CHAQUE image la plus grande fenêtre centrée ayant
+   les proportions de la SORTIE. Les deux subissent alors la même
+   déformation, donc aucune. */
+function fenetreRatio(l, h, ratio) {
+  let fl = l, fh = Math.round(l / ratio);
+  if (fh > h) { fh = h; fl = Math.round(h * ratio); }
+  return { dx: Math.round((l - fl) / 2), dy: Math.round((h - fh) / 2), l: fl, h: fh };
+}
+
+/* Contours d'une image, dans une fenêtre centrée de proportions données,
+   resserrée d'un facteur z. z = 1 prend toute la fenêtre ; z = 2 n'en
+   garde que le quart central. C'est le même rognage que contoursFluxT
+   applique au flux de la visée. */
+const toileT = document.createElement("canvas");
+const ctxT = toileT.getContext("2d", { willReadFrequently: true });
+
+function contoursCadre(img, ratio, z, T) {
+  const l = img.width, h = img.height;
+  const f = fenetreRatio(l, h, ratio);
+  const sl = Math.max(8, Math.round(f.l / z)), sh = Math.max(8, Math.round(f.h / z));
+  const sx = f.dx + Math.round((f.l - sl) / 2), sy = f.dy + Math.round((f.h - sh) / 2);
+  if (toileT.width !== T) { toileT.width = T; toileT.height = T; }
+  ctxT.drawImage(img, sx, sy, sl, sh, 0, 0, T, T);
+  return contoursT(reduireT(ctxT.getImageData(0, 0, T, T).data, T, T, T), T);
+}
+
+/* DEUXIÈME DIFFICULTÉ : L'ÉCHELLE.
+
+   La photographie de sortie n'a aucune raison d'avoir été prise au même
+   zoom que celle d'entrée. pc dit la taille de l'ENTRÉE rapportée à la
+   SORTIE, exactement comme dans la visée :
+     pc > 100 — l'entrée montre moins large : on la rogne ;
+     pc < 100 — c'est la sortie qui montre moins large : on rogne la
+                sortie.
+   Jamais les deux : rogner des deux côtés reviendrait à ne rien faire. */
+function scoreA(entree, ratio, pc, T) {
+  const a = pc >= 100 ? contoursCadre(entree, ratio, pc / 100, T)
+                      : contoursCadre(entree, ratio, 1, T);
+  const b = pc >= 100 ? contoursCadre(sortie.image, ratio, 1, T)
+                      : contoursCadre(sortie.image, ratio, 100 / pc, T);
+  return chercherT(a, b, T).score;
+}
+
+/* Recalage complet d'une candidate : recherche d'échelle par section
+   dorée en 48, puis mesure finale en 96 à l'échelle retenue. La section
+   dorée est celle de recalage.js — même code, même convergence. */
+function recalerCandidate(entree) {
+  const ratio = sortie.image.width / sortie.image.height;
+  /* sectionDoree rend { echelle, score, essais } — echelle en pour cent,
+     bornée à 25-125 par L_MIN et L_MAX de recalage.js. Le score qu'elle
+     rapporte est celui de la recherche, mesuré en 48 ; on le remesure en
+     96 à l'échelle retenue, comme la visée le fait. */
+  const r = sectionDoree((pc) => scoreA(entree, ratio, pc, TAILLE_ECH), 0.02, 7, null);
+  return { pc: r.echelle, score: scoreA(entree, ratio, r.echelle, TAILLE),
+           essais: r.essais };
+}
+
+/* ---- 1. Connexion ------------------------------------------------------
+   LE BANC N'OUVRE PAS DE SESSION. Microsoft n'autorise la connexion que
+   depuis les adresses déclarées pour l'application ; celle du banc ne
+   l'est pas. La session de l'application est conservée dans le stockage
+   local, sur la même origine : initAuth la retrouve sans redirection. */
+$("btn-connexion").onclick = async () => {
+  const b = $("btn-connexion");
+  b.disabled = true; b.textContent = "Lecture de la session…";
+  try {
+    await initAuth();
+    if (!estConnecte()) {
+      b.disabled = false; b.textContent = "Reprendre la session de l'application";
+      $("etat-connexion").textContent =
+        "Aucune session ouverte. Ouvre l'application, connecte-toi, puis reviens.";
+      $("etat-connexion").className = "note attention";
+      return noter("Aucune session dans le stockage local.", "attention");
+    }
+    $("etat-connexion").textContent = "Session reprise — " + (nomUtilisateur() || "");
+    $("etat-connexion").className = "note ok";
+    b.classList.add("cache");
+    noter("Session de l'application reprise.", "ok");
+    await ouvrirRacine();
+  } catch (e) {
+    b.disabled = false; b.textContent = "Reprendre la session de l'application";
+    $("etat-connexion").textContent = "Échec : " + e.message;
+    $("etat-connexion").className = "note ko";
+    noter("Échec : " + e.message, "ko");
+  }
+};
+
+/* ---- 2. Navigation dans les dossiers ---------------------------------- */
+async function ouvrirRacine() {
+  try {
+    const racine = await obtenirRefRacineImmobilier();
+    pile = [{ ref: racine, nom: CONFIG.onedrive.dossier_racine }];
+    $("bloc-dossiers").classList.remove("cache");
+    await afficherDossier();
+  } catch (e) {
+    noter("Racine introuvable : " + e.message, "ko");
+  }
+}
+
+async function afficherDossier() {
+  const courant = pile[pile.length - 1];
+  $("chemin").textContent = pile.map(p => p.nom).join(" / ");
+  $("btn-remonter").classList.toggle("cache", pile.length <= 1);
+  $("liste").innerHTML = "<p class='note'>Lecture…</p>";
+
+  let enfants;
+  try { enfants = await enfantsDeRef(courant.ref); }
+  catch (e) { $("liste").innerHTML = ""; return noter("Lecture impossible : " + e.message, "ko"); }
+
+  const dossiers = enfants.filter(e => e.folder || e.remoteItem);
+  const estEdle = (d) =>
+    String(d.name || "").trim().toUpperCase() === CONFIG.onedrive.sous_dossier_edle;
+
+  $("liste").innerHTML = dossiers.map((d, i) =>
+    `<button class="choix" data-i="${i}">${ech(d.name)}${
+      estEdle(d) ? "   ← photographies d'entrée" : ""}</button>`).join("")
+    || "<p class='note'>Aucun sous-dossier.</p>";
+
+  $("liste").querySelectorAll("[data-i]").forEach(b => b.onclick = async () => {
+    const d = dossiers[Number(b.getAttribute("data-i"))];
+    pile.push({ ref: refDe(d, courant.ref.driveId), nom: d.name });
+    if (estEdle(d)) await chargerPhotos(); else await afficherDossier();
+  });
+
+  if (dossiers.some(estEdle)) noter("Dossier EDLE repéré ici.", "ok");
+}
+
+$("btn-remonter").onclick = async () => {
+  pile.pop();
+  $("bloc-photos").classList.add("cache");
+  $("bloc-sortie").classList.add("cache");
+  $("bloc-reglages").classList.add("cache");
+  await afficherDossier();
+};
+
+/* ---- 3. Les photographies d'entrée, PAR LE CHEMIN DE L'APPLICATION ----- */
+async function chargerPhotos() {
+  const courant = pile[pile.length - 1];
+  $("bloc-photos").classList.remove("cache");
+  $("etat-photos").textContent = "Lecture du dossier…";
+  $("vignettes").innerHTML = "";
+  empreintes = {}; imagesFines = {};
+
+  let enfants;
+  try { enfants = await enfantsDeRef(courant.ref); }
+  catch (e) { return noter("Lecture impossible : " + e.message, "ko"); }
+
+  /* Le sous-dossier Photos des visites récentes, sinon le niveau courant. */
+  const sous = enfants.find(e => (e.folder || e.remoteItem) &&
+    String(e.name || "").toLowerCase() === "photos");
+  let liste = enfants, refPhotos = courant.ref;
+  if (sous) {
+    refPhotos = refDe(sous, courant.ref.driveId);
+    try { liste = await enfantsDeRef(refPhotos); } catch (_) {}
+  }
+
+  photos = liste
+    .filter(e => (e.file || (e.remoteItem && e.remoteItem.file)) &&
+                 /\.(jpe?g|png|heic|heif|webp)$/i.test(e.name || ""))
+    .map(e => {
+      const r = refDe(e, refPhotos.driveId);
+      return { nom_fichier: e.name, onedrive_item_id: r.id, drive_id: r.driveId };
+    })
+    .sort((a, b) => String(a.nom_fichier).localeCompare(String(b.nom_fichier)));
+
+  if (!photos.length) {
+    $("etat-photos").textContent = "Aucune photographie dans ce dossier.";
+    $("etat-photos").className = "note ko";
+    return noter("Aucune photographie.", "ko");
+  }
+
+  $("etat-photos").textContent = photos.length + " photographie(s). Vignettes…";
+  $("etat-photos").className = "note";
+  $("vignettes").innerHTML = photos.map((p, i) =>
+    `<figure><img id="vig-${i}" alt=""><figcaption>${ech(p.nom_fichier)}</figcaption></figure>`).join("");
+
+  for (let i = 0; i < photos.length; i++) {
+    try {
+      const u = await apercuPhotoEntree(photos[i], false);
+      liens[photos[i].onedrive_item_id] = u;
+      const e = $("vig-" + i); if (e) e.src = u;
+    } catch (_) { /* une vignette manquante n'empêche pas la mesure */ }
+  }
+
+  $("etat-photos").textContent = photos.length + " photographie(s) d'entrée, toutes " +
+    "candidates — aucun tri par pièce cette année.";
+  $("etat-photos").className = "note ok";
+  noter(photos.length + " photographie(s) d'entrée chargée(s).", "ok");
+  $("bloc-sortie").classList.remove("cache");
+  $("bloc-reglages").classList.remove("cache");
+  $("k").max = Math.max(1, photos.length);
+}
+
+/* LES EMPREINTES DU PRÉ-TRI.
+
+   Calculées une seule fois par photographie, puis gardées en mémoire :
+   changer de photographie de sortie ne les recalcule pas. On les tire de
+   l'aperçu « medium » — 132 × 176 et six kilo-octets mesurés le 30/08 —
+   parce que 48 × 48 de contours n'a que faire d'une image de 1920 pixels,
+   et que trente aperçus « large » coûteraient deux mégaoctets en 4G. */
+async function empreinteDe(p) {
+  const cle = p.onedrive_item_id;
+  if (empreintes[cle]) return empreintes[cle];
+  const a = await apercuBlobEntree(p, false);
+  const img = await createImageBitmap(a.blob, { imageOrientation: "from-image" });
+  empreintes[cle] = img;                 // on garde l'image, pas les contours :
+  return img;                            // le ratio de la sortie n'est pas encore connu
+}
+
+/* L'image de meilleure définition, pour le recalage complet des seules
+   candidates retenues. « c1920x1920 » conserve les proportions — c'est la
+   mesure du 30/08 qui l'a établi, « large » rendant 600 × 800. */
+async function imageFineDe(p) {
+  const cle = p.onedrive_item_id;
+  if (imagesFines[cle]) return imagesFines[cle];
+  const a = await apercuBlobEntree(p, true);
+  imagesFines[cle] = await createImageBitmap(a.blob, { imageOrientation: "from-image" });
+  return imagesFines[cle];
+}
+
+/* ---- 4. La photographie de sortie -------------------------------------- */
+$("btn-sortie").onclick = () => $("fichier").click();
+$("fichier").onchange = async (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  try {
+    /* imageOrientation « from-image » : sans elle, une photographie prise
+       en tenant l'iPhone de travers arrive couchée, et tous les contours
+       avec. */
+    const img = await createImageBitmap(f, { imageOrientation: "from-image" });
+    sortie = { image: img, nom: f.name || "photographie", poids: f.size };
+    $("sortie-vue").src = URL.createObjectURL(f);
+    $("sortie-vue").classList.remove("cache");
+    $("etat-sortie").textContent = img.width + " × " + img.height + " · " +
+      Math.round(f.size / 1024) + " Ko";
+    $("etat-sortie").className = "note ok";
+    $("btn-chercher").disabled = false;
+    noter("Photographie de sortie reçue : " + img.width + " × " + img.height + ".", "ok");
+  } catch (err) {
+    $("etat-sortie").textContent = "Lecture impossible : " + err.message;
+    $("etat-sortie").className = "note ko";
+    noter("Lecture impossible : " + err.message, "ko");
+  }
+};
+
+/* ---- 5. La recherche ---------------------------------------------------- */
+$("k").oninput = () => { $("val-k").textContent = $("k").value; };
+
+$("btn-chercher").onclick = async () => {
+  if (!sortie || !photos.length) return;
+  const b = $("btn-chercher");
+  b.disabled = true; b.textContent = "Recherche…";
+  $("bloc-resultat").classList.add("cache");
+
+  const ratio = sortie.image.width / sortie.image.height;
+  const tout = $("tout-fin").checked;
+  const K = tout ? photos.length : Math.min(Number($("k").value), photos.length);
+
+  try {
+    /* ---- PRÉ-TRI : toutes les entrées, échelle 100 %, en 48 × 48 -------
+       Grossier par construction — il ne cherche pas l'échelle. Son rôle
+       n'est pas de désigner la bonne, c'est d'écarter celles qui n'ont
+       manifestement rien à voir, à un coût qui permet de les passer
+       toutes. */
+    const t0 = performance.now();
+    const cSortie48 = contoursCadre(sortie.image, ratio, 1, TAILLE_ECH);
+    const brut = [];
+    for (let i = 0; i < photos.length; i++) {
+      $("etat-recherche").textContent = "Pré-tri " + (i + 1) + " / " + photos.length + "…";
+      let img;
+      try { img = await empreinteDe(photos[i]); }
+      catch (_) { continue; }
+      const c = contoursCadre(img, ratio, 1, TAILLE_ECH);
+      brut.push({ p: photos[i], pretri: chercherT(c, cSortie48, TAILLE_ECH).score });
+    }
+    const t1 = performance.now();
+    brut.sort((a, b2) => b2.pretri - a.pretri);
+
+    /* ---- RECALAGE COMPLET sur les K premières ------------------------- */
+    const retenues = brut.slice(0, K);
+    for (let i = 0; i < retenues.length; i++) {
+      $("etat-recherche").textContent = "Recalage " + (i + 1) + " / " + retenues.length + "…";
+      let img;
+      try { img = await imageFineDe(retenues[i].p); }
+      catch (_) { img = empreintes[retenues[i].p.onedrive_item_id]; }
+      const r = recalerCandidate(img);
+      retenues[i].pc = r.pc;
+      retenues[i].score = r.score;
+    }
+    const t2 = performance.now();
+    retenues.sort((a, b2) => b2.score - a.score);
+
+    dernierClassement = {
+      retenues, brut,
+      msPretri: Math.round(t1 - t0), msFin: Math.round(t2 - t1),
+      nPretri: brut.length, K
+    };
+    afficherClassement();
+    noter("Pré-tri " + Math.round(t1 - t0) + " ms sur " + brut.length +
+      " · recalage " + Math.round(t2 - t1) + " ms sur " + retenues.length + ".", "ok");
+  } catch (e) {
+    noter("Recherche interrompue : " + e.message, "ko");
+    $("etat-recherche").textContent = "Interrompue : " + e.message;
+    $("etat-recherche").className = "note ko";
+  }
+  b.disabled = false; b.textContent = "Chercher la correspondance";
+};
+
+/* ---- 6. Le classement --------------------------------------------------- */
+function afficherClassement() {
+  const d = dernierClassement;
+  if (!d || !d.retenues.length) return;
+  const r = d.retenues;
+  const premier = r[0], second = r[1];
+  const ecart = second ? (premier.score - second.score) * 100 : null;
+
+  /* CE QUI COMPTE N'EST PAS LE SCORE DU PREMIER, C'EST SON AVANCE.
+
+     Une bonne réponse à 61 % devant une mauvaise à 58 % n'est pas une
+     réponse : c'est un tirage au sort qui est tombé du bon côté. Le
+     verdict le dit franchement plutôt que d'afficher un gagnant. */
+  let mot, cls;
+  if (ecart == null) { mot = "Une seule candidate examinée."; cls = "attention"; }
+  else if (ecart >= 12) { mot = "Réponse nette."; cls = "ok"; }
+  else if (ecart >= 5) { mot = "Réponse probable, à vérifier de l'œil."; cls = "attention"; }
+  else { mot = "AUCUNE avance réelle — le classement ne tranche pas."; cls = "ko"; }
+
+  $("verdict").innerHTML = `<span class="${cls}">${mot}</span>`;
+  $("verdict").className = "";
+  $("etat-recherche").textContent = "Pré-tri : " + d.msPretri + " ms sur " +
+    d.nPretri + " · recalage complet : " + d.msFin + " ms sur " + d.K +
+    (ecart == null ? "" : " · avance du 1er sur le 2e : " + ecart.toFixed(1) + " point(s)");
+  $("etat-recherche").className = "note";
+
+  $("classement").innerHTML = r.map((c, i) => {
+    const u = liens[c.p.onedrive_item_id] || "";
+    return `<div class="rang ${i === 0 ? "premier" : ""}">
+      <img src="${ech(u)}" alt="">
+      <div class="corps">
+        <div class="nom">${i + 1}. ${ech(c.p.nom_fichier)}</div>
+        <div class="det">score ${(c.score * 100).toFixed(1)} %
+          · échelle ${c.pc ? c.pc.toFixed(0) : "—"} %
+          · pré-tri ${(c.pretri * 100).toFixed(1)} %</div>
+        <div class="barre"><i style="width:${Math.max(0, Math.min(100, c.score * 100))}%"></i></div>
+        <button class="secondaire marquer" data-i="${i}">C'était celle-ci</button>
+      </div></div>`;
+  }).join("");
+
+  $("classement").querySelectorAll("[data-i]").forEach(b => b.onclick = () => {
+    noterEssai(Number(b.getAttribute("data-i")));
+  });
+
+  $("bloc-resultat").classList.remove("cache");
+  $("bloc-score").classList.remove("cache");
+}
+
+/* ---- 7. La mesure sur la série ------------------------------------------
+   UN BANC QUI NE COMPTE PAS SES ÉCHECS N'EST PAS UN BANC. La série est
+   conservée dans le stockage local : elle survit à la fermeture de la
+   page, et se poursuit d'un essai à l'autre. */
+const CLE_SERIE = "essai-appariement-serie";
+
+function serie() {
+  try { return JSON.parse(localStorage.getItem(CLE_SERIE)) || []; }
+  catch (_) { return []; }
+}
+function noterEssai(rang) {
+  const d = dernierClassement;
+  if (!d) return;
+  const bonne = d.retenues[rang];
+  /* Le pré-tri a-t-il retenu la bonne réponse ? Si elle n'était pas dans
+     les K premières, on ne peut pas le savoir depuis ce classement — mais
+     alors elle n'y serait pas affichée du tout. Une bonne réponse absente
+     du classement se note en relançant avec le recalage complet. */
+  const s = serie();
+  s.push({
+    rang: rang + 1,
+    ecart: d.retenues[1] ? (d.retenues[0].score - d.retenues[1].score) * 100 : null,
+    rangPretri: d.brut.findIndex(x => x.p.onedrive_item_id === bonne.p.onedrive_item_id) + 1,
+    K: d.K,
+    quand: new Date().toISOString()
+  });
+  localStorage.setItem(CLE_SERIE, JSON.stringify(s));
+  majSerie();
+  noter("Essai noté : la bonne réponse était au rang " + (rang + 1) +
+    " du classement, au rang " + s[s.length - 1].rangPretri + " du pré-tri.",
+    rang === 0 ? "ok" : "attention");
+}
+function majSerie() {
+  const s = serie();
+  const n = s.length;
+  const pct = (k) => n ? Math.round(k / n * 100) + " % (" + k + "/" + n + ")" : "—";
+  $("s-total").textContent = n;
+  $("s-premier").textContent = pct(s.filter(e => e.rang === 1).length);
+  $("s-trois").textContent = pct(s.filter(e => e.rang <= 3).length);
+  $("s-pretri").textContent = pct(s.filter(e => e.rangPretri > 0 && e.rangPretri <= e.K).length);
+  const ec = s.filter(e => e.ecart != null).map(e => e.ecart);
+  $("s-ecart").textContent = ec.length
+    ? (ec.reduce((a, b) => a + b, 0) / ec.length).toFixed(1) + " point(s)" : "—";
+  if (n) $("bloc-score").classList.remove("cache");
+}
+$("btn-vider").onclick = () => {
+  if (!confirm("Effacer toute la série d'essais ?")) return;
+  localStorage.removeItem(CLE_SERIE);
+  majSerie();
+  noter("Série effacée.", "attention");
+};
+
+/* ---- Démarrage ---------------------------------------------------------- */
+$("version").textContent = "· " + VERSION;
+document.title = "Appariement — " + VERSION;
+$("val-k").textContent = $("k").value;
+majSerie();
+noter(VERSION + " — prêt. Reprends la session, puis ouvre un dossier EDLE.");
+</script>
+</body>
+</html>
