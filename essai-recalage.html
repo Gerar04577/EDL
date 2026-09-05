@@ -939,7 +939,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 8.0";
+const VERSION = "essai 8.1";
 
 
 const $ = (id) => document.getElementById(id);
@@ -1970,55 +1970,9 @@ async function affinerZoomDansZone(v, dx, dy, cl, ch) {
   echelleFigee = null; echelleRetenue = null; echecs = 0;
 }
 
-/* APPROCHE EN PLUSIEURS PASSES.
-
-   Un seul coup ne suffit pas quand l'écart de cadrage est grand. Mesure
-   du 02/09 : référence prise à 5×, caméra à 1×. La vraie échelle vaut
-   20 %, l'estimation en a trouvé 37 et a posé 2,71 × au lieu de 5,00.
-
-   La raison tient à ce qu'on compare : la référence entière contre un
-   rognage au cinquième du flux. Deux images très pauvres, dont la
-   ressemblance est plate autour du maximum — la mesure se pose quelque
-   part entre la vraie valeur et 100 %, toujours du côté de 100.
-
-   Le remède est de recommencer depuis le nouveau cadrage. À 2,71 ×, il
-   ne reste qu'un facteur 1,8 à trouver, et là la mesure est fiable.
-   Chaque passe part d'un flux plus proche, donc d'une mesure meilleure.
-
-   AMORTISSEMENT. La mesure tirant vers 100 %, la correction dépasse la
-   cible au tour suivant. On n'applique donc que 85 % de l'écart, en
-   logarithme : on approche par en dessous plutôt que d'osciller. */
-async function approcherZoom(v, dx, dy, cl, ch) {
-  /* Six passes, bande d'arrêt 95–105 %. Simulé sur le biais mesuré le
-     02/09 : le cas le plus dur — référence 5×, caméra 1× — converge à
-     4,83 × en cinq passes ; le cas 0,5× atteint 0,51 × en trois. */
-  for (let passe = 1; passe <= 6; passe++) {
-    const e = estimerEchelleLarge(v, dx, dy, cl, ch);
-    if (e.v < 0.25) {
-      noter("Passe " + passe + " : mesure trop faible (échelle " +
-        Math.round(e.pc) + " %, score " + Math.round(e.v * 100) +
-        " %) — on s'arrête là.", "attention");
-      zoomCamPose = false;              /* on retentera */
-      return;
-    }
-    if (e.pc >= 95 && e.pc <= 105) {
-      noter("Passe " + passe + " : échelle " + Math.round(e.pc) + " % — zoom " +
-        zoomCamValeur.toFixed(2) + " × retenu.", "ok");
-      return;
-    }
-    const vise = zoomCamValeur * Math.pow(100 / e.pc, 0.85);
-    noter("Passe " + passe + " : échelle " + Math.round(e.pc) + " % (score " +
-      Math.round(e.v * 100) + " %) — de " + zoomCamValeur.toFixed(2) +
-      " × vers " + vise.toFixed(2) + " ×.", "ok");
-    const bouge = await poserZoomCamera(vise, "Passe " + passe);
-    if (!bouge) return;
-    /* Laisser l'exposition et la mise au point se refaire : mesurer sur
-       une image encore en transition fausse la passe suivante. */
-    await new Promise(r => setTimeout(r, 350));
-  }
-  noter("Approche terminée à " + zoomCamValeur.toFixed(2) +
-    " × — l'affinage lent prend le relais.", "ok");
-}
+/* approcherZoom a été retirée le 05/09 : plus aucun appel depuis que
+   l'affinage en zone étroite l'a remplacée. Du code mort qui laissait
+   croire à un second mécanisme d'approche. */
 
 /* Le pilote, appelé à chaque analyse. Il ne fait rien la plupart du
    temps — c'est voulu. */
@@ -2499,6 +2453,28 @@ $("zoom-cam").oninput = async () => {
       " × — l'affinage repartira de là.", "ok");
   }
   echelleFigee = null; echelleRetenue = null; echecs = 0;
+
+  /* LE CURSEUR NE DOIT PAS COMMANDER L'OBJECTIF PENDANT L'AFFINAGE.
+
+     Constaté le 05/09 : au milieu des paliers, le journal montre des
+     poses à 0,85, 1,35 et 1,60 × — des valeurs qui n'appartiennent à
+     aucun palier. Ce sont les derniers gestes de l'opérateur sur le
+     curseur, partis en rafale, qui arrivent alors que le balayage a
+     commencé.
+
+     Chaque palier mesure donc un cadrage qui n'est pas celui qu'il a posé,
+     et le sommet retenu ne veut rien dire. C'est la cause des affinages
+     qui butent en bas de plage depuis ce matin.
+
+     Pendant l'affinage, le curseur ne fait plus qu'afficher : il ne pose
+     plus rien. La valeur qu'il montre est rétablie à la fin. */
+  if (balayageEnCours) {
+    noter("Curseur ignoré pendant l'affinage — attends la fin.", "attention");
+    $("zoom-cam").value = Math.round(zoomCamValeur * 100);
+    $("val-zoom-cam").textContent = zoomCamValeur.toFixed(2) + " ×";
+    return;
+  }
+
   const piste = fluxCamera.getVideoTracks()[0];
   try {
     await piste.applyConstraints({ advanced: [{ zoom: z }] });
