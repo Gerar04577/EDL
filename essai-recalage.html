@@ -939,7 +939,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 8.1";
+const VERSION = "essai 8.2";
 
 
 const $ = (id) => document.getElementById(id);
@@ -2575,10 +2575,28 @@ function prendre() {
 
      La prise reproduit désormais ce que l'analyse a mesuré : au-dessus de
      100 %, le flux entier ; en dessous seulement, on le rogne. */
-  const pc = Number($("zoom-ref").value);
-  const zc = Math.max(1, 100 / pc);
-  const pl = Math.round(cl / zc), ph = Math.round(ch / zc);
-  const ox = dx + Math.round((cl - pl) / 2), oy = dy + Math.round((ch - ph) / 2);
+  /* PLUS AUCUN ROGNAGE À LA PRISE — DÉCIDÉ LE 05/09.
+
+     Ce que l'échelle corrige n'est pas un défaut de cadrage à reproduire :
+     c'est l'écart de champ entre le flux du navigateur et l'appareil
+     natif. Mesuré ce jour : même depuis le même endroit, à 0,50 × — la
+     borne basse de l'objectif — le flux ne voit toujours pas ce que la
+     photographie voyait. L'échelle descend à 58, 69, 73 % pour réduire la
+     référence et la faire tenir dedans.
+
+     Rogner la prise d'autant coûtait la moitié des pixels : 2087×2782 au
+     lieu de 3024×4032, sur une image qui doit documenter un dégât.
+
+     Le partage est donc net. La RÉFÉRENCE est réduite pour la mesure —
+     c'est le rôle du zoom de la référence, et il fonctionne. Le FLUX est
+     pris entier, sans rien retirer.
+
+     Conséquence assumée : la photographie de sortie couvre un champ plus
+     large que celle d'entrée. Les deux ne se superposent pas au pixel —
+     elles ne s'y superposaient déjà pas — mais une vue plus large ne perd
+     aucune information, alors qu'un rognage en perd. */
+  const pl = cl, ph = ch;
+  const ox = dx, oy = dy;
 
   /* PLUS DE PLAFOND À 1600.
 
