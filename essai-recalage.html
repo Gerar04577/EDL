@@ -313,16 +313,6 @@
     <p class="note" id="etat-zoom-cam">À tester une fois la caméra allumée.</p>
     <div class="ligne"><span>Flux pendant le zoom</span>
       <span id="res-zoom">—</span></div>
-    <div class="ligne"><span>Contours du flux — moyenne</span>
-      <span id="res-contours">—</span></div>
-    <div class="ligne"><span>Objectif employé</span>
-      <span id="res-objectif">—</span></div>
-    <p class="note">La résolution ne prouve rien : une image agrandie garde
-    sa taille en pixels et perd sa finesse. C'est la <strong>moyenne</strong>
-    du gradient qui tranche — pas la part, qui monte quand les arêtes
-    s'étalent. Vise un sujet texturé, relève-la à 1,00 × puis à 2,00 ×
-    sans bouger. Si elle tient, le 2× est le recadrage du capteur. Si elle
-    tombe de moitié, c'est un grossissement numérique.</p>
 
     <label class="bascule">
       <input type="checkbox" id="echelle-auto" checked>
@@ -989,7 +979,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 9.0";
+const VERSION = "essai 8.8";
 
 
 const $ = (id) => document.getElementById(id);
@@ -998,7 +988,6 @@ let boucle = null, auto = false, dernierScore = 0;
 let compteur = 0, dernierRelevé = Date.now(), sommeDurees = 0;
 let priseURL = null;
 let referencePixels = 0;
-let objectifCourant = "";
 /* RECHERCHE DU ZOOM CAMÉRA — état.
 
    La recherche d'échelle et celle du zoom ne coûtent pas la même chose.
@@ -1008,15 +997,20 @@ let objectifCourant = "";
    section dorée transposée telle quelle prendrait trois secondes, l'image
    sautant à chaque palier pendant que l'opérateur tient l'appareil.
 
-   D'où deux temps : une estimation UNIQUE au démarrage, qui pose le zoom
-   d'un coup à la bonne valeur, puis un affinage LENT qui ne corrige que
-   si l'écart persiste. */
+   D'où un temps unique : l'affinage en zone étroite, cinq paliers autour
+   du réglage manuel, à la fin de la mise en place. Ensuite l'objectif ne
+   bouge plus — la référence prend le relais et c'est elle seule qui
+   corrige.
+
+   IL N'Y A PLUS D'AFFINAGE LENT (essai 8.8). Cet en-tête en annonçait un
+   second, « qui ne corrige que si l'écart persiste » : il était devenu
+   inatteignable, le pilote sortant avant lui. Le code correspondant est
+   supprimé, et cette description avec. */
 let zoomCamAuto = true;       // cochée d'avance : rien à faire pour l'opérateur
 let zoomCamPose = false;      // l'estimation initiale a-t-elle eu lieu
 let zoomCamOccupe = false;    // un applyConstraints est en cours
 let zoomCamValeur = 1;        // dernière valeur appliquée
 let zoomCamBornes = null;     // { min, max } de l'appareil
-let zoomCamDernier = 0;       // horodatage du dernier ajustement
 let zoomCamEssais = 0;        // tentatives d'estimation depuis la coche
 let zoomCamPlainte = false;   // le refus a-t-il déjà été signalé
 
@@ -1518,8 +1512,6 @@ async function diagnostiquerObjectif(piste) {
     if (r.facingMode) morceaux.push("face " + r.facingMode);
     if (r.frameRate) morceaux.push(Math.round(r.frameRate) + " im/s");
     RECAP.cam_objectif = piste.label || "sans libellé";
-    objectifCourant = piste.label || "sans libellé";
-    if ($("res-objectif")) $("res-objectif").textContent = objectifCourant;
     noter("Objectif de la visée : " + morceaux.join(", ") + ".", "ok");
 
     /* Le champ de vision, quand la piste le déclare : c'est la seule
@@ -1893,35 +1885,10 @@ function estimerEchelleLarge(v, dx, dy, cl, ch) {
   return meilleur;
 }
 
-/* Pose le zoom une fois, attend la reconfiguration, relit la résolution.
-   Toute pose invalide l'échelle figée : le champ vient de changer. */
-async function poserZoomCamera(z, motif) {
-  if (!fluxCamera || zoomCamOccupe) return false;
-  const b = zoomCamBornes || { min: 1, max: 1 };
-  const cible = Math.min(b.max, Math.max(b.min, z));
-  if (Math.abs(cible - zoomCamValeur) < 0.03) return false;
-  zoomCamOccupe = true;
-  const piste = fluxCamera.getVideoTracks()[0];
-  try {
-    await piste.applyConstraints({ advanced: [{ zoom: cible }] });
-    await new Promise(r => setTimeout(r, 250));
-    zoomCamValeur = cible;
-    $("zoom-cam").value = Math.round(cible * 100);
-    $("val-zoom-cam").textContent = cible.toFixed(2) + " ×";
-    const st = piste.getSettings();
-    const res = (st.width || 0) + "×" + (st.height || 0);
-    $("res-zoom").textContent = res;
-    echelleFigee = null; echelleRetenue = null; echecs = 0;
-    noter(motif + " : zoom caméra à " + cible.toFixed(2) + " × — flux " + res + ".", "ok");
-    return true;
-  } catch (err) {
-    noter("Zoom caméra refusé : " + err.name, "ko");
-    return false;
-  } finally {
-    zoomCamOccupe = false;
-    zoomCamDernier = performance.now();
-  }
-}
+/* poserZoomCamera a été supprimée le 05/09 (essai 8.8) : son unique
+   appelant était le bloc d'affinage lent, lui-même inatteignable. Le
+   balayage emploie poserZoomBrut, qui suit. */
+
 
 /* Pose le zoom sans rien écrire : le balayage en fait seize d'affilée,
    un journal par pose serait illisible. */
@@ -2057,23 +2024,16 @@ function piloterZoomCamera(v, dx, dy, cl, ch, echelle, score) {
   if (phaseVisee !== "camera") return;
   if (balayageEnCours) return;
 
-  if (!balayageFait) {
-    affinerZoomDansZone(v, dx, dy, cl, ch);
-    return;
-  }
-  return;
+  /* LE PILOTE S'ARRÊTE ICI.
 
-  /* SECOND TEMPS — affinage lent. On ne corrige que si l'écart persiste,
-     que l'alignement est déjà crédible, et jamais plus d'une fois toutes
-     les deux secondes. Corriger sur du bruit ferait osciller l'objectif
-     sous le doigt de l'opérateur. */
-  if (performance.now() - zoomCamDernier < 2000) return;
-  /* Le seuil était à 0,35 : trop haut. Un score bas est justement la
-     conséquence du cadrage faux qu'on veut corriger — l'affinage ne
-     partait donc jamais là où il servait le plus. */
-  if (score < 0.20) return;
-  if (echelle >= 92 && echelle <= 108) return;
-  poserZoomCamera(zoomCamValeur * Math.pow(100 / echelle, 0.85), "Affinage");
+     Le bloc « second temps » qui suivait — affinage lent conditionné à
+     un score de 0,20, une échelle hors de 92-108 % et deux secondes
+     d'attente — était placé après un return inconditionnel : il n'a
+     jamais été exécuté depuis que l'affinage en zone étroite est
+     devenu le seul mécanisme. Supprimé le 05/09, comme approcherZoom
+     l'a été le matin même, et pour la même raison : du code mort
+     laisse croire à un mécanisme qui n'existe pas. */
+  if (!balayageFait) affinerZoomDansZone(v, dx, dy, cl, ch);
 }
 
 /* ============================================================
@@ -2121,7 +2081,6 @@ function majRecap() {
     ligneRecap("Objectif employé", RECAP.cam_objectif) +
     ligneRecap("Bornes du zoom", RECAP.cam_bornes) +
     ligneRecap("Flux", (r.width && r.height) ? r.width + "×" + r.height : "—") +
-    ligneRecap("Contours du flux", $("res-contours").textContent) +
     ligneRecap("Largeur demandée", $("lib-flux") ? $("lib-flux").textContent : "—") +
     ligneRecap("Cadence", r.frameRate ? Math.round(r.frameRate) + " im/s" : "—");
 
@@ -2575,7 +2534,6 @@ $("echelle-auto").onchange = () => {
 $("zoom-cam-auto").onchange = () => {
   zoomCamAuto = $("zoom-cam-auto").checked;
   zoomCamPose = false;
-  zoomCamDernier = 0;
   zoomCamEssais = 0;
   zoomCamPlainte = false;
   phaseVisee = "camera";
@@ -2693,76 +2651,8 @@ async function poserZoomDepuisCurseur() {
       ? Math.round((1 - pixels / referencePixels) * 100) : 0;
     $("res-zoom").textContent = res + (perte > 2 ? "  (−" + perte + " %)" : "");
     $("res-zoom").className = perte > 2 ? "attention" : "ok";
-    /* LA RÉSOLUTION NE PROUVE RIEN — LA DENSITÉ DE CONTOURS, SI.
-
-       Mesuré : le flux reste à 3024×4032 à tous les zooms. Rassurant,
-       mais sans portée : une image agrandie artificiellement garde la
-       même taille en pixels, elle perd seulement sa finesse.
-
-       La question est ailleurs. Le capteur principal fait 48 Mpx. Le 2×
-       de l'appareil natif prend le quart central de ce capteur : il reste
-       exactement 12 Mpx, soit 3024×4032, sans qu'un seul pixel soit
-       inventé. Rien ne dit que Safari fasse pareil : il peut prendre le
-       quart central d'une image déjà réduite à 12 Mpx et l'étirer au
-       double. Le résultat ferait toujours 3024×4032, avec quatre fois
-       moins de détail réel.
-
-       La densité de contours tranche. Une image nette a beaucoup
-       d'arêtes détectées ; une image étirée est floue, ses arêtes
-       s'étalent et le compte tombe.
-
-       PROTOCOLE : viser un sujet texturé et immobile — carrelage, mur
-       crépi, plinthe. Relever la densité à 1,00 × puis à 2,00 ×, sans
-       bouger. Si elle se maintient, Safari reproduit le recadrage du
-       capteur. Si elle chute, c'est un grossissement numérique. */
-    let mesureContours = "";
-    try {
-      const vv = $("flux");
-      if (vv && vv.videoWidth && imageRefChargee) {
-        const rapport = refL / refH;
-        let cl2 = vv.videoWidth, ch2 = Math.round(vv.videoWidth / rapport);
-        if (ch2 > vv.videoHeight) {
-          ch2 = vv.videoHeight; cl2 = Math.round(vv.videoHeight * rapport);
-        }
-        const dx2 = Math.round((vv.videoWidth - cl2) / 2);
-        const dy2 = Math.round((vv.videoHeight - ch2) / 2);
-        const cf = contoursFluxT(vv, dx2, dy2, cl2, ch2, 100, TAILLE);
-        const df = densiteContoursT(cf, TAILLE);
-        mesureContours = " — contours part " + (df.part * 100).toFixed(1) +
-          " %, MOYENNE " + df.moyenne.toFixed(1);
-        /* C'EST LA MOYENNE QU'IL FAUT LIRE, PAS LA PART.
-
-           Éprouvé sur un carrelage simulé avec vraie interpolation
-           bilinéaire : entre le recadrage du capteur et le grossissement
-           numérique, la moyenne du gradient tombe de 300 à 145 — la
-           moitié. La part, elle, MONTE de 47 à 69 %, parce que les arêtes
-           s'étalent sur plus de pixels tout en s'affaiblissant.
-
-           Lire la part conduirait donc à la conclusion inverse. */
-        $("res-contours").textContent =
-          df.moyenne.toFixed(0) + "  (part " + (df.part * 100).toFixed(0) + " %)";
-        $("res-contours").className = "ok";
-      }
-    } catch (e) { mesureContours = " — densité non mesurée"; }
-
-    /* L'OBJECTIF PEUT CHANGER SANS PRÉVENIR.
-
-       Le libellé de la piste n'est lu qu'à l'allumage. Or sous 1 ×, iOS
-       bascule sur l'ultra grand angle — autre capteur, et distorsion en
-       barillet qui fausse la mesure géométriquement : les droites d'un
-       carrelage cessent d'être droites, et Sobel les suit fidèlement.
-       Si l'objectif change, il faut le voir. */
-    const libelle = piste.label || "sans libellé";
-    if (libelle !== objectifCourant) {
-      noter("CHANGEMENT D'OBJECTIF à " + z.toFixed(2) + " × : « " +
-        objectifCourant + " » devient « " + libelle + " ».", "attention");
-      objectifCourant = libelle;
-      $("res-objectif").textContent = libelle;
-    }
-
     noter("Zoom caméra à " + z.toFixed(2) + " × — flux " + res +
-      (perte > 2 ? ", soit " + perte + " % de pixels en moins" : ", pleine résolution") +
-      mesureContours + ".",
+      (perte > 2 ? ", soit " + perte + " % de pixels en moins" : ", pleine résolution") + ".",
       perte > 2 ? "attention" : "ok");
   } catch (err) {
     $("val-zoom-cam").textContent = "refusé";
