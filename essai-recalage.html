@@ -313,6 +313,16 @@
     <p class="note" id="etat-zoom-cam">À tester une fois la caméra allumée.</p>
     <div class="ligne"><span>Flux pendant le zoom</span>
       <span id="res-zoom">—</span></div>
+    <div class="ligne"><span>Contours du flux — moyenne</span>
+      <span id="res-contours">—</span></div>
+    <div class="ligne"><span>Objectif employé</span>
+      <span id="res-objectif">—</span></div>
+    <p class="note">La résolution ne prouve rien : une image agrandie garde
+    sa taille en pixels et perd sa finesse. C'est la <strong>moyenne</strong>
+    du gradient qui tranche — pas la part, qui monte quand les arêtes
+    s'étalent. Vise un sujet texturé, relève-la à 1,00 × puis à 2,00 ×
+    sans bouger. Si elle tient, le 2× est le recadrage du capteur. Si elle
+    tombe de moitié, c'est un grossissement numérique.</p>
 
     <label class="bascule">
       <input type="checkbox" id="echelle-auto" checked>
@@ -979,7 +989,7 @@ function sectionDoree(evaluer, precision, nAmorce, autour) {
 
 /* Version du banc d'essai. À incrémenter à chaque dépôt : sans elle, on
    ne sait jamais si l'iPhone affiche la dernière copie ou celle du cache. */
-const VERSION = "essai 8.7";
+const VERSION = "essai 9.0";
 
 
 const $ = (id) => document.getElementById(id);
@@ -988,6 +998,7 @@ let boucle = null, auto = false, dernierScore = 0;
 let compteur = 0, dernierRelevé = Date.now(), sommeDurees = 0;
 let priseURL = null;
 let referencePixels = 0;
+let objectifCourant = "";
 /* RECHERCHE DU ZOOM CAMÉRA — état.
 
    La recherche d'échelle et celle du zoom ne coûtent pas la même chose.
@@ -1507,6 +1518,8 @@ async function diagnostiquerObjectif(piste) {
     if (r.facingMode) morceaux.push("face " + r.facingMode);
     if (r.frameRate) morceaux.push(Math.round(r.frameRate) + " im/s");
     RECAP.cam_objectif = piste.label || "sans libellé";
+    objectifCourant = piste.label || "sans libellé";
+    if ($("res-objectif")) $("res-objectif").textContent = objectifCourant;
     noter("Objectif de la visée : " + morceaux.join(", ") + ".", "ok");
 
     /* Le champ de vision, quand la piste le déclare : c'est la seule
@@ -2108,6 +2121,7 @@ function majRecap() {
     ligneRecap("Objectif employé", RECAP.cam_objectif) +
     ligneRecap("Bornes du zoom", RECAP.cam_bornes) +
     ligneRecap("Flux", (r.width && r.height) ? r.width + "×" + r.height : "—") +
+    ligneRecap("Contours du flux", $("res-contours").textContent) +
     ligneRecap("Largeur demandée", $("lib-flux") ? $("lib-flux").textContent : "—") +
     ligneRecap("Cadence", r.frameRate ? Math.round(r.frameRate) + " im/s" : "—");
 
@@ -2679,8 +2693,76 @@ async function poserZoomDepuisCurseur() {
       ? Math.round((1 - pixels / referencePixels) * 100) : 0;
     $("res-zoom").textContent = res + (perte > 2 ? "  (−" + perte + " %)" : "");
     $("res-zoom").className = perte > 2 ? "attention" : "ok";
+    /* LA RÉSOLUTION NE PROUVE RIEN — LA DENSITÉ DE CONTOURS, SI.
+
+       Mesuré : le flux reste à 3024×4032 à tous les zooms. Rassurant,
+       mais sans portée : une image agrandie artificiellement garde la
+       même taille en pixels, elle perd seulement sa finesse.
+
+       La question est ailleurs. Le capteur principal fait 48 Mpx. Le 2×
+       de l'appareil natif prend le quart central de ce capteur : il reste
+       exactement 12 Mpx, soit 3024×4032, sans qu'un seul pixel soit
+       inventé. Rien ne dit que Safari fasse pareil : il peut prendre le
+       quart central d'une image déjà réduite à 12 Mpx et l'étirer au
+       double. Le résultat ferait toujours 3024×4032, avec quatre fois
+       moins de détail réel.
+
+       La densité de contours tranche. Une image nette a beaucoup
+       d'arêtes détectées ; une image étirée est floue, ses arêtes
+       s'étalent et le compte tombe.
+
+       PROTOCOLE : viser un sujet texturé et immobile — carrelage, mur
+       crépi, plinthe. Relever la densité à 1,00 × puis à 2,00 ×, sans
+       bouger. Si elle se maintient, Safari reproduit le recadrage du
+       capteur. Si elle chute, c'est un grossissement numérique. */
+    let mesureContours = "";
+    try {
+      const vv = $("flux");
+      if (vv && vv.videoWidth && imageRefChargee) {
+        const rapport = refL / refH;
+        let cl2 = vv.videoWidth, ch2 = Math.round(vv.videoWidth / rapport);
+        if (ch2 > vv.videoHeight) {
+          ch2 = vv.videoHeight; cl2 = Math.round(vv.videoHeight * rapport);
+        }
+        const dx2 = Math.round((vv.videoWidth - cl2) / 2);
+        const dy2 = Math.round((vv.videoHeight - ch2) / 2);
+        const cf = contoursFluxT(vv, dx2, dy2, cl2, ch2, 100, TAILLE);
+        const df = densiteContoursT(cf, TAILLE);
+        mesureContours = " — contours part " + (df.part * 100).toFixed(1) +
+          " %, MOYENNE " + df.moyenne.toFixed(1);
+        /* C'EST LA MOYENNE QU'IL FAUT LIRE, PAS LA PART.
+
+           Éprouvé sur un carrelage simulé avec vraie interpolation
+           bilinéaire : entre le recadrage du capteur et le grossissement
+           numérique, la moyenne du gradient tombe de 300 à 145 — la
+           moitié. La part, elle, MONTE de 47 à 69 %, parce que les arêtes
+           s'étalent sur plus de pixels tout en s'affaiblissant.
+
+           Lire la part conduirait donc à la conclusion inverse. */
+        $("res-contours").textContent =
+          df.moyenne.toFixed(0) + "  (part " + (df.part * 100).toFixed(0) + " %)";
+        $("res-contours").className = "ok";
+      }
+    } catch (e) { mesureContours = " — densité non mesurée"; }
+
+    /* L'OBJECTIF PEUT CHANGER SANS PRÉVENIR.
+
+       Le libellé de la piste n'est lu qu'à l'allumage. Or sous 1 ×, iOS
+       bascule sur l'ultra grand angle — autre capteur, et distorsion en
+       barillet qui fausse la mesure géométriquement : les droites d'un
+       carrelage cessent d'être droites, et Sobel les suit fidèlement.
+       Si l'objectif change, il faut le voir. */
+    const libelle = piste.label || "sans libellé";
+    if (libelle !== objectifCourant) {
+      noter("CHANGEMENT D'OBJECTIF à " + z.toFixed(2) + " × : « " +
+        objectifCourant + " » devient « " + libelle + " ».", "attention");
+      objectifCourant = libelle;
+      $("res-objectif").textContent = libelle;
+    }
+
     noter("Zoom caméra à " + z.toFixed(2) + " × — flux " + res +
-      (perte > 2 ? ", soit " + perte + " % de pixels en moins" : ", pleine résolution") + ".",
+      (perte > 2 ? ", soit " + perte + " % de pixels en moins" : ", pleine résolution") +
+      mesureContours + ".",
       perte > 2 ? "attention" : "ok");
   } catch (err) {
     $("val-zoom-cam").textContent = "refusé";
