@@ -1,7 +1,12 @@
 <!DOCTYPE html>
-<!-- EDL — index 2.32.1 (05/09/2026) : CSS des contours, du cadre vert,
-     du chronomètre de mise en place et des deux boutons de mode. Rien
-     d'autre n'est touché dans ce fichier. -->
+<!-- EDL — index 2.32.2 (12/09/2026) : panneau de visée — déclencheur rond
+     remonté sous les boutons de mode, et classe « large » pour les trois
+     réglages (barre pleine largeur, bouton de 34 px). Rien d'autre n'est
+     touché dans ce fichier ; aucun autre curseur de l'application n'est
+     concerné, la règle est portée par une classe.
+
+     2.32.1 (05/09/2026) : CSS des contours, du cadre vert, du chronomètre
+     de mise en place et des deux boutons de mode. -->
 <html lang="fr">
 <head>
 <meta charset="utf-8">
@@ -185,11 +190,34 @@
   /* Sous l'image : ce qu'on touche en visant. */
   #visee-sous-image { background:#fff; border:1px solid #e3e0da;
     border-radius:12px; padding:10px 14px 14px; margin:-2px 0 12px; }
-  #visee-declencheur { display:flex; justify-content:center; margin:8px 0 0; }
+  /* Le déclencheur est REMONTÉ : juste sous les deux boutons de mode, donc
+     à trois centimètres du bas de l'image, et non plus après les trois
+     réglages. Bras tendu, le pouce ne descend pas jusqu'en bas de l'écran. */
+  #visee-declencheur { display:flex; justify-content:center; margin:2px 0 12px; }
   #visee-obturateur { width:74px; height:74px; padding:0; margin:0;
     border-radius:50%; background:#fff; border:4px solid #1a1a1a;
     box-shadow:0 0 0 3px #fff inset, 0 2px 8px rgba(0,0,0,.25); }
   #visee-obturateur:active { background:#dcd8d0; transform:scale(.94); }
+
+  /* LES TROIS RÉGLAGES SOUS L'IMAGE : barre sur toute la largeur, bouton
+     de 34 px. Agrandir le bouton impose -webkit-appearance:none SUR LE
+     CURSEUR AUSSI, ce qui efface du même coup la barre native : elle est
+     donc redessinée ici. La règle est portée par une CLASSE, jamais par
+     input[type=range] : les curseurs des autres écrans — transparence,
+     immobilité, qualité — gardent l'apparence d'iOS. */
+  input[type=range].large { -webkit-appearance:none; appearance:none;
+    width:100%; margin:6px 0 2px; background:transparent; }
+  input[type=range].large::-webkit-slider-runnable-track { height:6px;
+    border-radius:3px; background:#e3e0da; }
+  input[type=range].large::-webkit-slider-thumb { -webkit-appearance:none;
+    appearance:none; width:34px; height:34px; margin-top:-14px;
+    border-radius:50%; background:#fff; border:2px solid #2f7d63;
+    box-shadow:0 1px 3px rgba(0,0,0,.3); }
+  input[type=range].large:disabled::-webkit-slider-thumb { border-color:#b4b2a9; }
+  input[type=range].large::-moz-range-track { height:6px;
+    border-radius:3px; background:#e3e0da; }
+  input[type=range].large::-moz-range-thumb { width:34px; height:34px;
+    border-radius:50%; background:#fff; border:2px solid #2f7d63; }
 
   /* LA PHOTOGRAPHIE QU'ON VIENT DE GARDER.
      Le liseré ne dure que tant qu'il reste une constatation à écrire :

@@ -1,4 +1,9 @@
-/* EDL — Mode d'emploi   ·   aide 2.34.2 (11/09/2026)
+/* EDL — Mode d'emploi   ·   aide 2.34.3 (12/09/2026)
+
+   2.34.3 : section 5 bis complétée. Les deux explications retirées de
+   l'écran de visée (Cadre / Contours, et le réglage du zoom de la caméra
+   avec l'affinage à ±25 % en cinq paliers) sont reprises ici, ainsi que la
+   nouvelle place du déclencheur rond.
 
    2.33.1 : références du bail (fin du bail aussi à l'entrée, avenant joint
    à Biche, Nimy et Petite Guirlande), civilité, confirmation de l'avenant.
@@ -326,6 +331,14 @@ var AIDE = [
       "point tu retrouves le cadrage. Le curseur règle la transparence : le " +
       "va-et-vient entre 0 et 100 % est souvent le plus efficace.",
 
+      "CADRE ET CONTOURS, les deux boutons sous l'image. Ce sont deux façons " +
+      "de lire la photographie d'entrée, et elles s'activent indépendamment " +
+      "l'une de l'autre. CADRE trace les bords de la référence en vert : tu " +
+      "vois la zone à retrouver, sans rien masquer de la caméra. CONTOURS " +
+      "remplace l'image par ses seules arêtes — tu n'as plus deux images qui " +
+      "se mélangent, mais deux jeux de lignes à faire coïncider. Sur une " +
+      "pièce chargée, c'est le plus lisible des deux.",
+
       "LE SCORE. Il compare les CONTOURS, pas les couleurs : un changement " +
       "d'éclairage entre l'entrée et la sortie ne le fait pas varier. Le cadre " +
       "verdit à 60 %, valeur éprouvée sur le terrain. En dessous, une consigne " +
@@ -344,13 +357,28 @@ var AIDE = [
       "photographie à vue : tu as la vignette d'entrée sous les yeux, tu " +
       "sais ce que tu cherches.",
 
+      "LE ZOOM DE LA CAMÉRA SE RÈGLE À LA MAIN, au premier curseur sous " +
+      "l'image. C'est à toi de le caler pendant la mise en place : tu sais, " +
+      "toi, ce que tu regardes. Les bornes de l'objectif s'affichent en gris " +
+      "à droite du titre dès que la caméra est allumée — sur l'iPhone 16 Pro " +
+      "Max, de 0,50 à 10,00 fois. La valeur du moment reste à droite de la " +
+      "ligne et suit le curseur.",
+
+      "CE QUE L'APPLICATION FAIT ENSUITE. Elle n'explore pas toute la plage : " +
+      "elle affine seulement dans une bande étroite autour de TON réglage, " +
+      "plus ou moins 25 %, en cinq paliers. Passé cette bande, c'est le zoom " +
+      "de la référence qui prend le relais. D'où l'importance du réglage à la " +
+      "main : placé loin du compte, l'affinage cherche au mauvais endroit.",
+
       "UN CURSEUR DE SECOURS reste disponible sous l'image : « Zoom de la " +
       "référence ». Le toucher arrête la recherche automatique ; le bouton " +
       "juste en dessous la relance.",
 
       "LE BOUTON AUTO est dans l'image, en bas à droite. Vert avec un point " +
-      "quand il est actif. Le déclencheur rond, lui, est juste sous l'image, " +
-      "à portée de pouce.",
+      "quand il est actif. Le déclencheur rond, lui, est juste sous les deux " +
+      "boutons Cadre et Contours, donc tout près de l'image : bras tendu, le " +
+      "pouce n'a pas à descendre jusqu'au bas de l'écran. Les trois réglages " +
+      "viennent après lui.",
 
       "LA PHOTOGRAPHIE DE SORTIE SERA PLUS CLAIRE que celle d'entrée, et ce " +
       "n'est pas réglable : le navigateur n'a pas accès au traitement d'image " +

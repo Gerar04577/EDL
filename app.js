@@ -1,4 +1,11 @@
-/* EDL — Écrans   ·   app 2.34.2 (11/09/2026)
+/* EDL — Écrans   ·   app 2.34.3 (12/09/2026)
+
+   2.34.3 : panneau de visée allégé. Les deux paragraphes d'explication
+   (« Deux façons de lire la référence… » et l'état du zoom caméra) sont
+   retirés de l'écran et repris au mode d'emploi, section 5 bis. Les bornes
+   de l'objectif s'affichent désormais en gris à droite du titre « Zoom de
+   la CAMÉRA ». Le déclencheur rond remonte sous les boutons Cadre/Contours.
+   Les trois curseurs du panneau prennent la classe « large » (index 2.32.2).
 
    2.34.2 : à l'écran des identités, les blocs « Avenant au bail — dates du
    bail » et « Prêt de meubles — mobilier prêté » prennent le style rouge et
@@ -3730,33 +3737,27 @@ function dessinerVisee(message) {
           <button id="visee-btn-cadre" class="mini secondaire">Cadre</button>
           <button id="visee-btn-contours" class="mini secondaire">Contours</button>
         </div>
-        <p class="note">Deux façons de lire la référence. <strong>Cadre</strong>
-        trace ses bords en vert : on voit la zone à retrouver.
-        <strong>Contours</strong> remplace l'image par ses seules arêtes —
-        deux jeux de lignes à faire coïncider, au lieu de deux images qui
-        se mélangent. Les deux s'activent indépendamment.</p>
-
-        <div class="ligne"><span>Zoom de la CAMÉRA — règle-le à la main</span>
-          <span id="visee-val-zoomcam">—</span></div>
-        <input type="range" id="visee-zoomcam" min="50" max="1000" step="1"
-          value="100" disabled>
-        <p class="note" id="visee-etat-zoomcam">Allume la caméra pour connaître
-        les bornes de l'objectif.</p>
-
-        <div class="ligne"><span>Seuil de déclenchement</span>
-          <span id="visee-val-seuil">${reglagesVisee().seuil} %</span></div>
-        <input type="range" id="visee-seuil-haut" min="30" max="95" step="1"
-          value="${reglagesVisee().seuil}">
-
-        <div class="ligne"><span>Zoom de la RÉFÉRENCE</span>
-          <span id="visee-val-zoom">${RECALAGE.echelle_depart} % (mise en place)</span></div>
-        <input type="range" id="visee-zoom" min="25" max="125" step="1"
-          value="${RECALAGE.echelle_depart}">
-        <button class="mini secondaire pleine" id="visee-zoom-defaut">Relancer la recherche d'échelle</button>
 
         <div id="visee-declencheur">
           <button id="visee-obturateur" aria-label="Prendre la photo"></button>
         </div>
+
+        <div class="ligne"><span>Zoom de la CAMÉRA
+          <span id="visee-bornes-zoomcam" class="gris"></span></span>
+          <span id="visee-val-zoomcam">—</span></div>
+        <input type="range" id="visee-zoomcam" class="large" min="50" max="1000"
+          step="1" value="100" disabled>
+
+        <div class="ligne"><span>Seuil de déclenchement</span>
+          <span id="visee-val-seuil">${reglagesVisee().seuil} %</span></div>
+        <input type="range" id="visee-seuil-haut" class="large" min="30" max="95"
+          step="1" value="${reglagesVisee().seuil}">
+
+        <div class="ligne"><span>Zoom de la RÉFÉRENCE</span>
+          <span id="visee-val-zoom">${RECALAGE.echelle_depart} % (mise en place)</span></div>
+        <input type="range" id="visee-zoom" class="large" min="25" max="125"
+          step="1" value="${RECALAGE.echelle_depart}">
+        <button class="mini secondaire pleine" id="visee-zoom-defaut">Relancer la recherche d'échelle</button>
       </div>
 
       <button id="visee-allumer">Allumer la caméra</button>
@@ -3937,12 +3938,15 @@ function brancherVisee() {
     zc.max = Math.round(V.zoomCam.max * 100);
     zc.value = Math.round(zoomCamValeur * 100);
     $("visee-val-zoomcam").textContent = zoomCamValeur.toFixed(2) + " ×";
-    $("visee-etat-zoomcam").textContent = "Réglable de " +
-      V.zoomCam.min.toFixed(2) + " × à " + V.zoomCam.max.toFixed(2) +
-      " ×. L'affinage cherchera ±" + Math.round((RECALAGE.zone_zoom - 1) * 100) +
-      " % autour de ton réglage, en " + RECALAGE.paliers_zone +
-      " paliers, puis le zoom de la référence prendra le relais.";
-    $("visee-etat-zoomcam").className = "note ok";
+    /* Les bornes de l'objectif tiennent maintenant à droite du titre. Le
+       paragraphe qui les portait a disparu de l'écran : sans la garde
+       ci-dessous, $() renverrait null et la TypeError couperait la fonction
+       AVANT le branchement de oninput et onchange — le curseur resterait
+       muet, sans message d'erreur. L'explication de l'affinage est passée
+       au mode d'emploi, section 5 bis. */
+    const bornes = $("visee-bornes-zoomcam");
+    if (bornes) bornes.textContent = V.zoomCam.min.toFixed(2) + " – " +
+      V.zoomCam.max.toFixed(2) + " ×";
     zc.oninput = () => {
       const z = Number(zc.value) / 100;
       $("visee-val-zoomcam").textContent = z.toFixed(2) + " ×";
