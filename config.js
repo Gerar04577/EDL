@@ -1,4 +1,4 @@
-/* EDL — Configuration   ·   config 2.34.0 (11/09/2026)
+/* EDL — Configuration   ·   config 2.34.1 (11/09/2026)
    Toutes les valeurs susceptibles de changer sont ici, et nulle part ailleurs.
    Aucune clé secrète dans ce fichier : la clé Gemini vit dans Make.
 
@@ -10,7 +10,7 @@
 
 var CONFIG = {
 
-  version_app: "2.34.0",
+  version_app: "2.34.1",
 
   /* Protocole de signature imprimé en page 1 du procès-verbal.
      TEXTE DÉFINITIF, validé par l'avocat le 25/08/2026. Toute modification

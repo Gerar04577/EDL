@@ -1,4 +1,4 @@
-/* EDL — Mode d'emploi   ·   aide 2.34.0 (11/09/2026)
+/* EDL — Mode d'emploi   ·   aide 2.34.1 (11/09/2026)
 
    2.33.1 : références du bail (fin du bail aussi à l'entrée, avenant joint
    à Biche, Nimy et Petite Guirlande), civilité, confirmation de l'avenant.
@@ -108,7 +108,13 @@ var AIDE = [
       "clause internet oui ou non. À la SORTIE, il ne commande que la ligne " +
       "de référence : aucune page n'est jointe.",
 
-      "PRÊT DE MEUBLES SAMADHI — seulement à Biche, Nimy, Petite Guirlande et " +
+      "AVERTISSEMENT — à l'entrée, à Biche, Nimy, Petite Guirlande et La Fermette, " +
+      "« Commencer la visite » ouvre d'abord une fenêtre qui rappelle l'avenant et le " +
+      "prêt de meubles (OUI ou NON). Vérifie avec le locataire : ils ne peuvent plus " +
+      "être ajoutés ensuite. « Modifier » te ramène au récapitulatif.",
+
+      "PRÊT DE MEUBLES SAMADHI — dans le bloc rouge « Bail », sous l'avenant. " +
+      "Seulement à Biche, Nimy, Petite Guirlande et " +
       "La Fermette ; ailleurs l'option n'existe pas. À l'ENTRÉE, « oui » joint " +
       "au procès-verbal la page de prêt de la S.A. SAMADHI, après l'avenant et " +
       "avant les signatures. Tu la signes deux fois en une : comme mandataire " +

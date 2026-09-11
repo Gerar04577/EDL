@@ -1,4 +1,8 @@
-/* EDL — Procès-verbal en PDF   ·   pdf 2.34.0 (11/09/2026)
+/* EDL — Procès-verbal en PDF   ·   pdf 2.34.1 (11/09/2026)
+
+   2.34.1 : titres des pages « avenant au bail » et « prêt de meubles » en
+   rouge et gras (même rouge que le bloc « Bail » de l'application). Le
+   texte imprimé est inchangé.
 
    2.34.0 : page « prêt de meubles » de la S.A. SAMADHI jointe au PV
    d'ENTRÉE (après l'avenant, avant les signatures), refusée sans
@@ -31,7 +35,10 @@
 */
 
 /* Marque de version : comparée à celle d'app.js avant toute fabrication. */
-var VERSION_PDF_JS = "2.34.0";
+var VERSION_PDF_JS = "2.34.1";
+
+/* Rouge des titres d'avenant et de prêt : #c0392b, celui du bloc « Bail ». */
+var PDF_ROUGE_TITRE = [192, 57, 43];
 
 var PDF_MARGE = 18;
 var PDF_LARGEUR = 210;
@@ -380,7 +387,9 @@ function texteAvenant(V, m) {
 function pageAvenant(doc, p, V, m) {
   const t = texteAvenant(V, m);
   doc.addPage(); p.y = PDF_MARGE;
+  doc.setTextColor(...PDF_ROUGE_TITRE);
   p.paragraphe(t.titre, { gras: true, taille: 12 });
+  doc.setTextColor(0);
   doc.setDrawColor(31, 78, 95); doc.setLineWidth(0.4);
   doc.line(PDF_MARGE, p.y - 2, PDF_LARGEUR - PDF_MARGE, p.y - 2);
   p.saut(6);
@@ -479,7 +488,9 @@ function textePret(V, c) {
 function pagePret(doc, p, V, c) {
   const t = textePret(V, c);
   doc.addPage(); p.y = PDF_MARGE;
+  doc.setTextColor(...PDF_ROUGE_TITRE);
   p.paragraphe(t.titre, { gras: true, taille: 12 });
+  doc.setTextColor(0);
   doc.setDrawColor(31, 78, 95); doc.setLineWidth(0.4);
   doc.line(PDF_MARGE, p.y - 2, PDF_LARGEUR - PDF_MARGE, p.y - 2);
   p.saut(6);

@@ -1,4 +1,9 @@
-/* EDL — Écrans   ·   app 2.34.0 (11/09/2026)
+/* EDL — Écrans   ·   app 2.34.1 (11/09/2026)
+
+   2.34.1 : l'interrupteur du prêt de meubles passe dans le bloc rouge
+   « Bail », sous l'avenant ; avertissement avant « Commencer la visite »
+   (entrée seulement, Biche, Nimy, Petite Guirlande, La Fermette) rappelant
+   l'avenant et le prêt, avec « Commencer la visite » et « Modifier ».
 
    2.34.0 : prêt de meubles de la S.A. SAMADHI — interrupteur réservé à
    Biche, Nimy, Petite Guirlande et La Fermette ; description du mobilier
@@ -31,7 +36,7 @@
    Étape 3 : démarrage d'une visite. La capture arrive à l'étape suivante. */
 
 /* Marque de version : les autres fichiers doivent porter la même. */
-var VERSION_APP_JS = "2.34.0";
+var VERSION_APP_JS = "2.34.1";
 
 var E = {
   installee: false,
@@ -775,6 +780,17 @@ function dessinerOptions() {
               procès-verbal d'entrée, juste avant les signatures. Civilité de chaque
               preneur à l'écran des identités.</p>`
         : ""}
+      <!-- Prêt de meubles : dans le bloc rouge, sous l'avenant (2.34.1). -->
+      ${pretDispo
+        ? inter("pret_meubles", b.type === "EDLE" ? "Prêt de meubles Samadhi — page jointe"
+                                                   : "Prêt de meubles Samadhi", b.pret_meubles)
+        : `<div class="ligne"><span>Prêt de meubles Samadhi</span><span class="val">${
+            pretImmeuble ? "indisponible avec ce bailleur" : "aucun pour cet immeuble"}</span></div>`}
+      ${pretDispo && b.type === "EDLE" && b.pret_meubles
+        ? `<p class="note">La page est jointe au procès-verbal d'entrée, avant les
+             signatures. La description du mobilier se fait à l'écran des identités :
+             elle est obligatoire.</p>`
+        : ""}
       ${b.type === "EDLS"
         ? `<p class="note">Le décret wallon impose au procès-verbal de sortie la
               référence à la date du bail, à tout avenant et à la durée
@@ -791,16 +807,6 @@ function dessinerOptions() {
     <div class="bloc"><h2>Options</h2>
       ${b.type === "EDLS" ? inter("chiffrage", "Chiffrage des dégâts", b.chiffrage)
         : `<p class="note">Le chiffrage ne concerne que les états des lieux de sortie.</p>`}
-      ${pretDispo
-        ? inter("pret_meubles", b.type === "EDLE" ? "Prêt de meubles Samadhi — page jointe"
-                                                   : "Prêt de meubles Samadhi", b.pret_meubles)
-        : `<div class="ligne"><span>Prêt de meubles Samadhi</span><span class="val">${
-            pretImmeuble ? "indisponible avec ce bailleur" : "aucun pour cet immeuble"}</span></div>`}
-      ${pretDispo && b.type === "EDLE" && b.pret_meubles
-        ? `<p class="note">La page est jointe au procès-verbal d'entrée, avant les
-             signatures. La description du mobilier se fait à l'écran des identités :
-             elle est obligatoire.</p>`
-        : ""}
     </div>
     <div class="bloc"><h2>Destination</h2>
       <div class="ligne"><span>Bailleur</span><span class="val">${
@@ -850,8 +856,51 @@ function dessinerOptions() {
   $("vue").querySelectorAll("[data-opt]").forEach(x => x.onclick = () => {
     const k = x.getAttribute("data-opt"); b[k] = !b[k]; dessinerOptions();
   });
-  $("btn-creer").onclick = () => lancerVisite();
+  $("btn-creer").onclick = async () => {
+    /* Avertissement : entrée seulement, et seulement dans un immeuble qui a
+       le prêt de meubles (Biche, Nimy, Petite Guirlande, La Fermette). Ni
+       l'avenant ni le prêt ne peuvent être ajoutés après le début. */
+    if (b.type === "EDLE" && pretImmeuble) {
+      const lignes = [];
+      if (immeubleAvecAvenant) lignes.push(["Avenant au bail", b.bail_avenant ? "OUI" : "NON"]);
+      lignes.push(["Prêt de meubles Samadhi",
+                   pretDispo ? (b.pret_meubles ? "OUI" : "NON") : "indisponible avec ce bailleur"]);
+      if (!(await avertirAvantVisite(lignes))) return;       // « Modifier » : on reste ici
+    }
+    lancerVisite();
+  };
   $("btn-retour").onclick = () => dessinerComposition(false);
+}
+
+/* Fenêtre « Avant de commencer ». Résout true pour « Commencer la visite »,
+   false pour « Modifier ». Une seule fenêtre à la fois : un second appui
+   sur le bouton ne l'ouvre pas deux fois. */
+function avertirAvantVisite(lignes) {
+  return new Promise(resoudre => {
+    if (document.getElementById("avert-visite")) { resoudre(false); return; }
+    const fond = document.createElement("div");
+    fond.className = "voile";
+    fond.id = "avert-visite";
+    const plusieurs = lignes.length > 1;
+    fond.innerHTML = `<div class="boite">
+      <h2>Avant de commencer</h2>
+      ${lignes.map(([libelle, valeur]) => `<div class="ligne"><span>${echapper(libelle)}</span>
+        <span class="val" style="color:#c0392b;font-weight:700;font-size:17px">${
+          echapper(valeur)}</span></div>`).join("")}
+      <div class="avert" style="margin:12px 0 4px">Vérifie avec le locataire : ${plusieurs
+        ? "ils ne pourront plus être ajoutés" : "il ne pourra plus être ajouté"}
+        après le début de la visite.</div>
+      <button id="avert-commencer">Commencer la visite</button>
+      <button class="secondaire" id="avert-modifier">Modifier</button>
+    </div>`;
+    document.body.appendChild(fond);
+    const fermer = (reponse) => {
+      if (fond.parentNode) fond.parentNode.removeChild(fond);
+      resoudre(reponse);
+    };
+    fond.querySelector("#avert-commencer").onclick = () => fermer(true);
+    fond.querySelector("#avert-modifier").onclick = () => fermer(false);
+  });
 }
 
 /* Rappel à l'écran des années que l'avenant imprimera pour le contrat

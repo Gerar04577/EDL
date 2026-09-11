@@ -1,4 +1,6 @@
-/* EDL — Démarrage d'une visite   ·   visite 2.34.0 (11/09/2026)
+/* EDL — Démarrage d'une visite   ·   visite 2.34.1 (11/09/2026)
+
+   2.34.1 : marque de version seulement ; aucun changement de fonctionnement.
 
    2.34.0 : prêt de meubles de la S.A. SAMADHI joint au PV d'entrée
    (immeuble, description du mobilier, prise de connaissance) ; une V2
@@ -20,7 +22,7 @@
    du logement qu'une visite entière sans savoir où déposer les fichiers. */
 
 /* Marque de version : comparée au démarrage à celle d'app.js. */
-var VERSION_VISITE_JS = "2.34.0";
+var VERSION_VISITE_JS = "2.34.1";
 
 /* Étape 1 — le dossier de l'unité, dans le dossier de l'immeuble.
    Renvoie soit une résolution unique, soit la liste des candidats
