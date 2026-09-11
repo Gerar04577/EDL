@@ -1,4 +1,13 @@
-/* EDL — Démarrage d'une visite
+/* EDL — Démarrage d'une visite   ·   visite 2.33.1 (11/09/2026)
+
+   2.33.1 : « avenant au bail » toujours « non » pour les quatre immeubles
+   sans avenant ; une nouvelle version (V2…) doit refaire confirmer la
+   prise de connaissance de l'avenant.
+
+   2.33.0 : la fin du bail est conservée aussi à l'entrée ; avenant au bail
+   joint au PV d'entrée (modèle de l'immeuble, clause internet) ; civilité
+   de chaque preneur.
+
    Résolution du dossier de destination, puis création de la visite.
    Règle : l'application ne crée JAMAIS de dossier. Si le dossier attendu
    n'existe pas, la visite ne démarre pas. Mieux vaut un blocage à la porte
@@ -154,6 +163,9 @@ async function nouvelleVersion(visiteSignee, motif) {
   copie.statut = "en_cours";
   copie.date_signature = null;
   copie.preuve = {};
+  /* La prise de connaissance de l'avenant vaut pour la version signée,
+     pas pour celle-ci : elle doit être confirmée à nouveau. */
+  if (copie.avenant) copie.avenant.prise_connaissance_le = null;
   copie.signatures = undefined;
   delete copie.signatures;
 
@@ -349,6 +361,9 @@ async function creerVisite(param) {
         CONFIG.auteur_constatations_defaut || null,
       preneurs: (param.preneurs || []).map(nom => ({
         nom_complet: nom,
+        /* MR ou MME, choisie à l'écran des identités. Ne sert qu'à
+           l'avenant au bail ; vide, elle s'imprime en pointillés. */
+        civilite: null,
         qualite: "Locataire",
         numero_carte_identite: null,
         identite_verifiee: false,
@@ -394,20 +409,34 @@ async function creerVisite(param) {
        de démarrer, quitte à ce que la ligne s'imprime en tiret. */
     bail: {
       debut: param.bail_debut || null,
-      /* La fin de bail ne concerne que la sortie. Même logique que
-         chiffrage_actif ci-dessus : une valeur saisie puis devenue sans
-         objet ne doit pas rester dans la visite. */
-      fin: param.type === "EDLS" ? (param.bail_fin || null) : null,
+      /* Conservée à l'entrée comme à la sortie depuis 2.33.0 : l'avenant
+         au bail, joint au PV d'entrée, reprend les deux dates du bail et
+         en tire les années du contrat d'énergie. */
+      fin: param.bail_fin || null,
       /* Quatrième élément du 4° de l'article 27, §5 : « tout avenant ».
          Une case à cocher suffit — le procès-verbal doit signaler qu'il
          en existe un, pas le reproduire. */
-      avenant: param.bail_avenant === true,
+      avenant: param.bail_avenant === true &&
+        typeof modeleAvenantImmeuble === "function" &&
+        modeleAvenantImmeuble(param.immeuble_id) !== null,
     },
     /* Observations et réserves du preneur, consignées AVANT signature.
        Sans cette possibilité, le caractère contradictoire de l'état des
        lieux peut être contesté — décret wallon du 15 mars 2018, art. 27. */
     reserves: [],
     pret_meubles: { actif: param.pret_meubles === true, articles: [] },
+    /* Avenant au bail relatif au calcul des charges, joint au PV.
+       ENTRÉE SEULEMENT, et seulement pour un immeuble qui a son modèle.
+       Le modèle est noté par son immeuble : pdf.js vérifie à l'impression
+       qu'il est bien celui de la visite. La prise de connaissance est
+       horodatée à l'écran de lecture. */
+    avenant: (param.type === "EDLE" && param.bail_avenant === true &&
+              typeof modeleAvenantImmeuble === "function" &&
+              modeleAvenantImmeuble(param.immeuble_id))
+      ? { modele: param.immeuble_id,
+          internet: param.avenant_internet !== false,
+          prise_connaissance_le: null }
+      : null,
     comparaison: null,
     chiffrage: null,
     preuve: {},

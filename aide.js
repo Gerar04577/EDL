@@ -1,4 +1,7 @@
-/* EDL — Mode d'emploi
+/* EDL — Mode d'emploi   ·   aide 2.33.1 (11/09/2026)
+
+   2.33.1 : références du bail (fin du bail aussi à l'entrée, avenant joint
+   à Biche, Nimy et Petite Guirlande), civilité, confirmation de l'avenant.
 
    Écrit pour quelqu'un qui n'a pas participé à la conception : chaque
    écran est décrit dans l'ordre où on le rencontre, avec ce qu'il faut
@@ -91,14 +94,19 @@ var AIDE = [
       "les lieux. Les baux se renouvellent chaque année : un locataire de " +
       "trois ans en est à son troisième.",
 
-      "FIN DU BAIL — à la sortie seulement. Elle décide de la rédaction de " +
-      "la clause de libération de la garantie : accord direct si le terme " +
-      "est atteint, accord prenant effet au terme sinon. Laissée vide, " +
-      "c'est la seconde qui s'imprime, la plus prudente.",
+      "FIN DU BAIL — à l'entrée comme à la sortie. À la sortie, elle décide " +
+      "de la rédaction de la clause de libération de la garantie : accord " +
+      "direct si le terme est atteint, accord prenant effet au terme sinon. " +
+      "Laissée vide, c'est la seconde qui s'imprime, la plus prudente. À " +
+      "l'entrée, elle sert à l'avenant au bail.",
 
-      "AVENANT AU BAIL — oui ou non. L'avenant de charges joint au bail en " +
-      "est un. Le procès-verbal doit signaler qu'il en existe un, pas le " +
-      "reproduire.",
+      "AVENANT AU BAIL — seulement à Biche, Nimy et Petite Guirlande ; les " +
+      "quatre autres immeubles n'en ont pas et le procès-verbal indique « non ». " +
+      "À l'ENTRÉE, « oui » joint au procès-verbal la page d'avenant de " +
+      "l'immeuble, juste avant les signatures : dates du bail, contrat " +
+      "d'énergie du 01/06 de l'année de début au 01/06 de l'année de fin, " +
+      "clause internet oui ou non. À la SORTIE, il ne commande que la ligne " +
+      "de référence : aucune page n'est jointe.",
 
       "AUTEUR DES CONSTATATIONS — dans le bloc du bailleur, prérempli à ton " +
       "nom. Change-le si quelqu'un d'autre a fait la visite. Le décret " +
@@ -425,8 +433,11 @@ var AIDE = [
       "Bouton « Terminer la visite », puis « Passer à la signature ». Quatre étapes :",
       "IDENTITÉ — relève le numéro de la CARTE d'identité, celui du recto. Jamais le " +
       "numéro de Registre national : sa collecte est interdite au bailleur. Note aussi " +
-      "l'adresse électronique, elle sert à envoyer le document.",
-      "LECTURE — fais défiler le document entier avec le locataire, puis coche qu'il l'a lu.",
+      "l'adresse électronique, elle sert à envoyer le document. Si l'avenant est joint, " +
+      "choisis la civilité, MR ou MME, de chaque preneur : vide, elle s'imprime en pointillés.",
+      "LECTURE — fais défiler le document entier avec le locataire, puis coche qu'il l'a lu. " +
+      "Si l'avenant est joint, coche AUSSI qu'il en a pris connaissance : sans cette " +
+      "seconde confirmation, ni les réserves ni la signature ne sont accessibles.",
       "RÉSERVES — pose la question : « souhaitez-vous faire consigner des observations " +
       "ou des réserves ? » Consigne-les dans ses termes. S'il n'en a aucune, le document " +
       "le dira.",

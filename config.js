@@ -1,10 +1,13 @@
-/* EDL — Configuration
+/* EDL — Configuration   ·   config 2.33.1 (11/09/2026)
    Toutes les valeurs susceptibles de changer sont ici, et nulle part ailleurs.
-   Aucune clé secrète dans ce fichier : la clé Gemini vit dans Make. */
+   Aucune clé secrète dans ce fichier : la clé Gemini vit dans Make.
+
+   2.33.0 : avenant au bail relatif au calcul des charges — un modèle PAR
+   IMMEUBLE (Biche, Nimy, Petite Guirlande) et puce ajoutée au protocole. */
 
 var CONFIG = {
 
-  version_app: "2.32.1",
+  version_app: "2.33.1",
 
   /* Protocole de signature imprimé en page 1 du procès-verbal.
      TEXTE DÉFINITIF, validé par l'avocat le 25/08/2026. Toute modification
@@ -21,6 +24,16 @@ var CONFIG = {
     "L'identité des signataires a été vérifiée sur présentation de la carte d'identité, " +
     "en présence des deux parties.",
   ],
+
+  /* Puce AJOUTÉE au protocole, imprimée UNIQUEMENT quand l'avenant au bail
+     est joint au procès-verbal d'entrée. Les cinq puces ci-dessus restent
+     intactes pour tous les autres procès-verbaux. Texte validé par Gérard
+     le 11/09/2026. */
+  protocole_avenant:
+    "Le preneur reconnaît avoir pris connaissance de l'avenant au bail relatif au " +
+    "calcul des charges, reproduit au présent document dont il fait partie intégrante. " +
+    "Sa signature finale atteste de cette prise de connaissance et vaut signature de " +
+    "cet avenant.",
 
   /* Identité du bailleur. Elle DIFFÈRE selon l'immeuble : trois
      propriétaires distincts, et une confusion rendrait le procès-verbal
@@ -98,6 +111,139 @@ var CONFIG = {
 
   // Immeubles dont les compteurs électriques sont en simple horaire par défaut
   immeubles_simple_horaire: ["biche", "petite-guirlande", "nimy"],
+
+  // --- Avenant au bail (calcul des charges) ------------------------------
+  /* UN MODÈLE PAR IMMEUBLE. LES TEXTES DIFFÈRENT ET NE SE MÉLANGENT JAMAIS.
+
+     Repris mot pour mot des fichiers Word de Gérard (Avenant_Biche_2025,
+     Avenant_Nimy_2025, Avenant_Guirlande_2025), dans l'ordre de chacun.
+     Seules corrections, validées le 11/09/2026 :
+       — Biche : « le locataire à son propre compteur » → « a » ;
+       — Nimy : accolade ouvrante « { » → parenthèse « ( » ;
+       — Petite Guirlande : code postal 7000 ajouté ; « Biffer en cas de
+         désaccord » retiré (la clause devient un oui / non) ;
+       — les trois : « en 3 exemplaires » retiré, ligne « Le locataire »
+         retirée (la signature est celle du bloc « Signatures » du PV).
+     Nimy n'avait pas de clause internet : elle est ajoutée, placée comme
+     à Biche (avant le paragraphe du contrat d'énergie).
+
+     Un immeuble ABSENT de cette liste n'a pas d'avenant — Havré, Vannes,
+     La Fermette et Egmont : ni interrupteur, ni page, et « non » au
+     procès-verbal. Il n'existe aucun modèle par défaut.
+
+     Champs variables, remplacés à l'impression :
+       {DEBUT} {FIN}             dates du bail saisies à l'écran de démarrage
+       {ANNEE_DEBUT} {ANNEE_FIN} leurs années, pour le contrat d'énergie
+       {LOCATAIRE}               civilité + nom, pour chaque preneur
+       {NUMERO}                  numéro du studio, lu dans le dossier OneDrive
+       {DOSSIER}                 nom du dossier OneDrive, si ce n'est pas un studio
+       {INTERNET}                clause internet, oui ou non
+       {DATE}                    date de signature
+     Une valeur manquante s'imprime en pointillés, jamais inventée. */
+  avenants: {
+
+    biche: {
+      immeuble_id: "biche",
+      source: "Avenant_Biche_2025.docx",
+      titre: "AVENANT AU BAIL DE LOCATION DU {DEBUT} au {FIN}",
+      coordonnees: "Coordonnées du locataire : {LOCATAIRE}",
+      unite_studio: "Locataire du studio {NUMERO} -rue de la Biche 10 à 7000 Mons",
+      unite_autre: "Locataire de « {DOSSIER} » -rue de la Biche 10 à 7000 Mons",
+      internet_oui: "Le locataire souhaite souscrire l'abonnement annuel internet à 10€ par " +
+        "mois à payer en même temps que le loyer et les charges.",
+      internet_non: "Le locataire ne souhaite pas souscrire l'abonnement annuel internet à " +
+        "10€ par mois.",
+      paragraphes: [
+        "A propos du calcul des charges :",
+        "Pour l'eau, les charges sont calculées par le relevé de l'index des compteurs " +
+          "individuels de passage.",
+        "Pour l'électricité, le locataire a son propre compteur.",
+        "Pour l’eau et l’électricité, une correction des index des compteurs individuels " +
+          "en fonction des compteurs généraux sera adaptée autant que de besoin.",
+        "Pour les charges communes (électricité et entretien des communs), les frais seront " +
+          "divisés par le nombre des logements de l'immeuble",
+        "{INTERNET}",
+        "Pour le calcul des charges, le prix de l'énergie est fixé par un contrat fixe signé " +
+          "le 01/06/{ANNEE_DEBUT} ( électricité) jusqu’au 01/06/{ANNEE_FIN}. A partir de cette " +
+          "date, les provisions des charges seront adaptées chaque mois, si le contrat n’est " +
+          "pas reconductible en fixe, en fonction de la variation des prix de l'énergie pour " +
+          "éviter les mauvaises surprises au décompte final. Ce sera le cas où, il ne sera " +
+          "possible que de signer un contrat variable avec un fournisseur d'énergie, ou que " +
+          "le prix des contrats fixes aura considérablement augmenté.",
+      ],
+      fait: "Fait le {DATE}",
+    },
+
+    nimy: {
+      immeuble_id: "nimy",
+      source: "Avenant_Nimy_2025.docx",
+      titre: "AVENANT AU BAIL DE LOCATION DU {DEBUT} au {FIN}",
+      coordonnees: "Coordonnées du locataire : {LOCATAIRE}",
+      unite_studio: "Locataire du studio numéro {NUMERO} rue de Nimy 94 à 7000 MONS",
+      unite_autre: "Locataire de « {DOSSIER} » rue de Nimy 94 à 7000 MONS",
+      /* Clause absente du modèle Word de Nimy : reprise de Biche. */
+      internet_oui: "Le locataire souhaite souscrire l'abonnement annuel internet à 10€ par " +
+        "mois à payer en même temps que le loyer et les charges.",
+      internet_non: "Le locataire ne souhaite pas souscrire l'abonnement annuel internet à " +
+        "10€ par mois.",
+      paragraphes: [
+        "A propos du calcul des charges :",
+        "Pour le chauffage, les charges sont calculées en divisant la consommation globale " +
+          "de l'immeuble par 9. Pour l'eau froide et chaude; elles sont divisées par 11. Pour " +
+          "l'électricité, les charges sont calculées par le relevé de l'index des compteurs " +
+          "de passage. (Pour les charges du chauffage :studios 10 et 11 uniquement " +
+          "électricité, puisque le chauffage est électrique )",
+        "Pour l'électricité, l'entretien des communs, l’entretien de la chaudière, les " +
+          "charges sont divisées par 11",
+        "Pour l’eau et l’électricité, une correction des index des compteurs individuels " +
+          "en fonction des compteurs généraux sera adaptée autant que de besoin.",
+        "{INTERNET}",
+        "Pour le calcul des charges, le prix de l'énergie est fixé par un contrat fixe signé " +
+          "le 01/06/{ANNEE_DEBUT} ( électricité) jusqu’au 01/06/{ANNEE_FIN}. A partir de cette " +
+          "date, les provisions des charges seront adaptées chaque mois, si le contrat n’est " +
+          "pas reconductible en fixe, en fonction de la variation des prix de l'énergie pour " +
+          "éviter les mauvaises surprises au décompte final. Ce sera le cas où, il ne sera " +
+          "possible que de signer un contrat variable avec un fournisseur d'énergie, ou que " +
+          "le prix des contrats fixes aura considérablement augmenté.",
+      ],
+      fait: "Fait le {DATE}",
+    },
+
+    "petite-guirlande": {
+      immeuble_id: "petite-guirlande",
+      source: "Avenant_Guirlande_2025.docx",
+      titre: "AVENANT AU BAIL DE LOCATION DU {DEBUT} au {FIN}",
+      coordonnees: "Coordonnées du locataire : {LOCATAIRE}",
+      unite_studio: "Locataire du studio numéro {NUMERO} rue de la Petite Guirlande 16 à 7000 MONS",
+      unite_autre: "Locataire de « {DOSSIER} » rue de la Petite Guirlande 16 à 7000 MONS",
+      internet_oui: "Le locataire souhaite souscrire l'abonnement annuel internet à 10€ par " +
+        "mois à payer en même temps que le loyer et les charges.",
+      internet_non: "Le locataire ne souhaite pas souscrire l'abonnement annuel internet à " +
+        "10€ par mois.",
+      paragraphes: [
+        "A propos du calcul des charges :",
+        "Pour le calcul des charges, le prix de l'énergie est fixé par un contrat fixe signé " +
+          "le 01/06/{ANNEE_DEBUT} ( électricité) jusqu’au 01/06/{ANNEE_FIN}. A partir de cette " +
+          "date, les provisions des charges seront adaptées chaque mois, si le contrat n’est " +
+          "pas reconductible en fixe, en fonction de la variation des prix de l'énergie pour " +
+          "éviter les mauvaises surprises au décompte final. Ce sera le cas où, il ne sera " +
+          "possible que de signer un contrat variable avec un fournisseur d'énergie, ou que " +
+          "le prix des contrats fixes aura considérablement augmenté.",
+        "Les charges de chauffage et d’eau chaude sont calculées par la société ISTA, en " +
+          "fonction des répartiteurs radiofréquence. Pour l'eau froide, les charges sont " +
+          "calculées en divisant par 6 la consommation globale des studios de l'immeuble via " +
+          "le compteur de passage« eau studios».",
+        "Pour l'électricité, les charges sont calculées par le relevé de l'index des " +
+          "compteurs de passage.",
+        "Pour l’eau et l’électricité, une correction des index des compteurs individuels " +
+          "en fonction des compteurs généraux sera adaptée autant que de besoin.",
+        "Les charges pour l'électricité, l'entretien des communs, l'entretien de la " +
+          "chaudière seront divisées par 8",
+        "{INTERNET}",
+      ],
+      fait: "Fait le {DATE}",
+    },
+  },
 
   // --- Photos ------------------------------------------------------------
   photo: {

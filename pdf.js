@@ -1,4 +1,9 @@
-/* EDL — Procès-verbal en PDF
+/* EDL — Procès-verbal en PDF   ·   pdf 2.33.0 (11/09/2026)
+
+   2.33.0 : page « avenant au bail » (calcul des charges) jointe au PV
+   d'ENTRÉE, modèle propre à chaque immeuble ; puce du protocole, portée et
+   bloc des signatures complétés quand l'avenant est joint. Sans avenant,
+   le document est inchangé.
 
    Fabriqué dans le navigateur de l'iPhone, sans aucun service extérieur :
    le chemin de la signature ne doit dépendre de rien.
@@ -240,11 +245,121 @@ function creerPlume(doc) {
   };
 }
 
+// --- Avenant au bail ------------------------------------------------------
+
+/* Modèle d'avenant pour un immeuble, ou null. Sert aux écrans. Le modèle
+   doit porter lui-même l'identifiant de l'immeuble : une clé mal recopiée
+   dans la configuration ne peut pas faire imprimer le texte d'un autre. */
+function modeleAvenantImmeuble(immeubleId) {
+  const m = (CONFIG.avenants || {})[immeubleId];
+  return (m && m.immeuble_id === immeubleId) ? m : null;
+}
+
+/* Modèle d'avenant d'une visite, ou null. Trois verrous :
+   — JAMAIS à la sortie ;
+   — seulement si l'avenant a été joint à la création de la visite ;
+   — le modèle est celui de L'IMMEUBLE DE LA VISITE.
+   Une discordance ARRÊTE la fabrication du document : imprimer l'avenant
+   d'un autre immeuble serait pire que ne rien imprimer. */
+function modeleAvenant(V) {
+  if (!V || V.type !== "EDLE" || !V.avenant) return null;
+  const id = V.bien && V.bien.immeuble_id;
+  const m = modeleAvenantImmeuble(id);
+  if (!m || V.avenant.modele !== id) {
+    throw new Error("Avenant : le modèle « " + (V.avenant.modele || "?") +
+      " » ne correspond pas à l'immeuble de la visite « " + (id || "?") + " »");
+  }
+  return m;
+}
+
+var AVENANT_POINTILLES = "..........";
+
+/* Les champs de date d'iOS rendent « AAAA-MM-JJ » : lus comme texte, sans
+   passer par Date, pour qu'aucun fuseau horaire ne décale un jour. */
+function dateSaisieFr(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
+  return m ? m[3] + "/" + m[2] + "/" + m[1] : null;
+}
+function anneeSaisie(iso) {
+  const m = /^(\d{4})-\d{2}-\d{2}/.exec(iso || "");
+  return m ? m[1] : null;
+}
+
+/* Remplace les champs {NOM}. Un champ inconnu arrête tout : une accolade
+   imprimée dans un document signé ne se rattrape pas. */
+function remplirAvenant(texte, valeurs) {
+  return String(texte).replace(/\{([A-Z_]+)\}/g, (tout, cle) => {
+    if (!(cle in valeurs)) throw new Error("Avenant : champ inconnu " + tout);
+    const v = valeurs[cle];
+    return (v === null || v === undefined || v === "") ? AVENANT_POINTILLES : String(v);
+  });
+}
+
+/* Le texte complet de l'avenant, tel qu'il sera imprimé. Séparé du dessin
+   pour pouvoir être contrôlé tel quel. */
+function texteAvenant(V, m) {
+  const bail = V.bail || {};
+  const dossier = (V.bien && V.bien.dossier_unite_onedrive) || "";
+  const t = (typeof extraireTypeEtNumero === "function")
+    ? extraireTypeEtNumero(dossier) : { type: null, num: null };
+
+  const preneurs = (V.parties && V.parties.preneurs) || [];
+  const locataire = preneurs.map(x =>
+    (x.civilite || AVENANT_POINTILLES) + " " + (x.nom_complet || AVENANT_POINTILLES)
+  ).join(" et ");
+
+  const valeurs = {
+    DEBUT: dateSaisieFr(bail.debut),
+    FIN: dateSaisieFr(bail.fin),
+    ANNEE_DEBUT: anneeSaisie(bail.debut),
+    ANNEE_FIN: anneeSaisie(bail.fin),
+    LOCATAIRE: locataire,
+    NUMERO: (t.type === "STUDIO" && t.num != null) ? String(t.num) : null,
+    DOSSIER: dossier,
+    INTERNET: null,
+    DATE: dateCourteFr(V.date_signature || new Date().toISOString()),
+  };
+  valeurs.INTERNET = remplirAvenant(
+    V.avenant.internet === false ? m.internet_non : m.internet_oui, valeurs);
+
+  return {
+    titre: remplirAvenant(m.titre, valeurs),
+    entete: [
+      remplirAvenant(m.coordonnees, valeurs),
+      remplirAvenant(t.type === "STUDIO" && t.num != null ? m.unite_studio : m.unite_autre, valeurs),
+    ],
+    corps: m.paragraphes.map(x => remplirAvenant(x, valeurs)),
+    fait: remplirAvenant(m.fait, valeurs),
+  };
+}
+
+/* Une page à part, avant les signatures : celles-ci la suivent et la
+   couvrent, et elle est comprise dans l'empreinte du document. */
+function pageAvenant(doc, p, V, m) {
+  const t = texteAvenant(V, m);
+  doc.addPage(); p.y = PDF_MARGE;
+  p.paragraphe(t.titre, { gras: true, taille: 12 });
+  doc.setDrawColor(31, 78, 95); doc.setLineWidth(0.4);
+  doc.line(PDF_MARGE, p.y - 2, PDF_LARGEUR - PDF_MARGE, p.y - 2);
+  p.saut(6);
+  t.entete.forEach(l => { p.paragraphe(l); p.saut(2); });
+  p.saut(4);
+  t.corps.forEach(l => { p.paragraphe(l); p.saut(3); });
+  p.saut(3);
+  p.paragraphe(t.fait);
+  p.saut(8);
+}
+
 async function genererPV(visite) {
   const doc = nouveauDocument();
   const p = creerPlume(doc);
   const V = visite;
   const sortie = V.type === "EDLS";
+  /* Calculé avant tout dessin : une discordance de modèle arrête ici. */
+  const avenant = modeleAvenant(V);
+  if (avenant && !CONFIG.protocole_avenant) {
+    throw new Error("Avenant : la puce du protocole est absente de la configuration");
+  }
 
   // --- 1. En-tête et protocole -------------------------------------------
   p.titre(sortie ? "PROCÈS-VERBAL D'ÉTAT DES LIEUX DE SORTIE"
@@ -255,6 +370,7 @@ async function genererPV(visite) {
 
   p.sousTitre("Protocole de signature");
   (CONFIG.protocole && CONFIG.protocole.length ? CONFIG.protocole : PROTOCOLE_PROVISOIRE)
+    .concat(avenant ? [CONFIG.protocole_avenant] : [])
     .forEach(t => { p.paragraphe("• " + t, { retrait: 2 }); p.saut(1.5); });
   if (!CONFIG.protocole || !CONFIG.protocole.length) {
     p.saut(2);
@@ -540,7 +656,7 @@ async function genererPV(visite) {
      bail, ce qui les rend opposables sans avenant. Réservées d'un bloc :
      coupées par un saut de page, elles seraient signées à moitié lues. */
   {
-    const hauteurPortee = sortie ? 92 : 74;
+    const hauteurPortee = (sortie ? 92 : 74) + (avenant ? 12 : 0);
     if (p.y + hauteurPortee > PDF_HAUTEUR - PDF_MARGE) { doc.addPage(); p.y = PDF_MARGE; }
     p.bandeauFixe(4, "Portée du présent procès-verbal");
 
@@ -562,9 +678,13 @@ async function genererPV(visite) {
     p.saut(2);
 
     p.paragraphe("La signature du présent procès-verbal porte sur les constatations " +
-      "matérielles qu'il contient. Elle ne vaut pas solde de tout compte. Demeurent " +
+      "matérielles qu'il contient" +
+      (avenant ? " ainsi que sur l'avenant au bail relatif au calcul des charges" : "") +
+      ". Elle ne vaut pas solde de tout compte. Demeurent " +
       "entiers et étrangers au présent document : le décompte des charges et " +
-      "consommations à intervenir, les loyers, indexations, taxes et primes " +
+      "consommations à intervenir" +
+      (avenant ? ", dont les modalités sont fixées par cet avenant" : "") +
+      ", les loyers, indexations, taxes et primes " +
       "d'assurance échus et impayés, ainsi que toute indemnité contractuelle.");
     p.saut(2);
 
@@ -592,6 +712,9 @@ async function genererPV(visite) {
     }
     p.saut(5);
   }
+
+  // --- 7 ter. Avenant au bail (entrée seulement) ---------------------------
+  if (avenant) pageAvenant(doc, p, V, avenant);
 
   // --- 8. Signatures ------------------------------------------------------
   /* Mention expresse, imprimée UNIQUEMENT si des photographies restent à
@@ -637,7 +760,7 @@ async function genererPV(visite) {
   }
 
   const signataires = 1 + (V.parties.preneurs || []).length;
-  const hauteurBloc = 40 + Math.ceil(signataires / 2) * 34;
+  const hauteurBloc = 40 + Math.ceil(signataires / 2) * 34 + (avenant ? 10 : 0);
   if (p.y + hauteurBloc > PDF_HAUTEUR - PDF_MARGE) { doc.addPage(); p.y = PDF_MARGE; }
 
   p.bandeauFixe(0, "Signatures");
@@ -645,11 +768,15 @@ async function genererPV(visite) {
   p.saut(2);
   p.paragraphe("Chaque signataire confirme avoir participé contradictoirement à l'état " +
     "des lieux, avoir pris connaissance du rapport qui lui est présenté ainsi que des " +
-    "photographies qui en font partie, et avoir eu la possibilité de faire consigner ses " +
+    "photographies qui en font partie" +
+    (avenant ? " et de l'avenant au bail relatif au calcul des charges" : "") +
+    ", et avoir eu la possibilité de faire consigner ses " +
     "observations et réserves avant sa validation.");
   p.saut(2);
   p.paragraphe("En apposant sa signature ci-dessous, il manifeste sa volonté de valider le " +
-    "présent état des lieux, sous réserve des observations et réserves qui y sont " +
+    "présent état des lieux" +
+    (avenant ? " et d'approuver cet avenant" : "") +
+    ", sous réserve des observations et réserves qui y sont " +
     "expressément consignées.");
   p.saut(2);
   p.paragraphe("Le présent état des lieux fait partie intégrante du bail dont il ne peut " +

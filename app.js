@@ -1,4 +1,15 @@
-/* EDL — Écrans   ·   app 2.32.1 (05/09/2026)
+/* EDL — Écrans   ·   app 2.33.1 (11/09/2026)
+
+   2.33.1 : interrupteur « Avenant au bail » réservé à Biche, Nimy et Petite
+   Guirlande (les quatre autres immeubles n'ont pas d'avenant) ; signature
+   refusée si la prise de connaissance de l'avenant n'est pas enregistrée ;
+   avertissement quand l'année de fin du bail n'est pas postérieure au début.
+
+   2.33.0 : avenant au bail relatif au calcul des charges, joint au PV
+   d'ENTRÉE à Biche, Nimy et Petite Guirlande — chacun son modèle. Champ
+   « Fin du bail » affiché aussi à l'entrée, clause internet oui / non,
+   civilité MR / MME par preneur, confirmation distincte de la prise de
+   connaissance de l'avenant avant les réserves et les signatures.
 
    2.32.1 : intégration du banc essai-recalage (essai 8.8) dans la visée
    guidée — seuil 45 %, qualité 0,92, échelle de départ 65 %, zoom de la
@@ -669,6 +680,8 @@ function ecranOptions() {
   E.ecran = "options";
   if (E.brouillon.chiffrage === undefined) E.brouillon.chiffrage = false;
   if (E.brouillon.pret_meubles === undefined) E.brouillon.pret_meubles = false;
+  /* Clause internet de l'avenant : préréglée sur oui. */
+  if (E.brouillon.avenant_internet === undefined) E.brouillon.avenant_internet = true;
   if (!E.brouillon.bailleur)
     E.brouillon.bailleur = bailleurParDefaut(E.brouillon.immeuble_id);
   dessinerOptions();
@@ -686,6 +699,16 @@ function dessinerOptions() {
 
   const attendu = bailleurParDefaut(b.immeuble_id);
   const ecart = b.bailleur.cle !== attendu.cle;
+
+  /* SEULS Biche, Nimy et Petite Guirlande ont un avenant. Pour les quatre
+     autres immeubles, l'interrupteur n'existe pas et le procès-verbal
+     indique « non ». La PAGE n'est jointe qu'à l'entrée ; à la sortie,
+     l'interrupteur ne commande que la ligne de référence exigée par le
+     décret (art. 27, §5, 4°). */
+  const immeubleAvecAvenant = modeleAvenantImmeuble(b.immeuble_id) !== null;
+  if (!immeubleAvecAvenant) b.bail_avenant = false;
+  const modeleAv = (b.type === "EDLE" && immeubleAvecAvenant)
+    ? modeleAvenantImmeuble(b.immeuble_id) : null;
 
   vue(`<div class="avert"><strong>ATTENTION À L'IDENTITÉ DU PROPRIÉTAIRE !</strong>
       Trois propriétaires différents selon l'immeuble. Le nom retenu ici sera
@@ -714,21 +737,31 @@ function dessinerOptions() {
       <div class="ligne"><span>Début du bail</span>
         <input type="date" id="bail-debut" value="${b.bail_debut || ""}"
                style="width:auto;text-align:right"></div>
-      ${b.type === "EDLS"
-        ? `<div class="ligne"><span>Fin du bail</span>
-             <input type="date" id="bail-fin" value="${b.bail_fin || ""}"
-                    style="width:auto;text-align:right"></div>`
+      <div class="ligne"><span>Fin du bail</span>
+        <input type="date" id="bail-fin" value="${b.bail_fin || ""}"
+               style="width:auto;text-align:right"></div>
+      ${immeubleAvecAvenant
+        ? inter("bail_avenant", modeleAv ? "Avenant au bail — page jointe" : "Avenant au bail",
+                b.bail_avenant)
+        : `<div class="ligne"><span>Avenant au bail</span><span class="val">aucun pour cet immeuble</span></div>`}
+      ${modeleAv && b.bail_avenant
+        ? `${inter("avenant_internet", "Abonnement internet 10 € par mois", b.avenant_internet)}
+           <p class="note" id="note-energie">${echapper(noteEnergie(b))}</p>
+           <p class="note">Modèle de ${echapper(b.immeuble_nom)}. La page est jointe au
+              procès-verbal d'entrée, juste avant les signatures. Civilité de chaque
+              preneur à l'écran des identités.</p>`
         : ""}
-      ${inter("bail_avenant", "Avenant au bail", b.bail_avenant)}
       ${b.type === "EDLS"
         ? `<p class="note">Le décret wallon impose au procès-verbal de sortie la
               référence à la date du bail, à tout avenant et à la durée
               d'occupation. La date de l'état des lieux d'entrée, elle, est
               reprise automatiquement de la comparaison. Tout peut rester vide :
               la visite démarre quand même.</p>`
-        : `<p class="note">La date de début et l'existence d'un avenant figurent
+        : `<p class="note">La date de début${immeubleAvecAvenant
+              ? " et l'existence d'un avenant figurent" : " figure"}
               parmi les références du bail attendues au procès-verbal d'entrée.
-              Elles peuvent rester vides.</p>`}
+              ${immeubleAvecAvenant ? "Elles peuvent" : "Elle peut"} rester vide${
+              immeubleAvecAvenant ? "s" : ""}.</p>`}
     </div>
 
     <div class="bloc"><h2>Options</h2>
@@ -763,6 +796,11 @@ function dessinerOptions() {
   };
   champDate("bail-debut", "bail_debut");
   champDate("bail-fin", "bail_fin");
+  /* La note du contrat d'énergie suit les dates, sans redessin. */
+  ["bail-debut", "bail-fin"].forEach(id => {
+    const e = $(id), n = $("note-energie");
+    if (e && n) e.addEventListener("change", () => { n.textContent = noteEnergie(b); });
+  });
 
   /* Même principe pour l'auteur : on enregistre à la frappe, sans
      redessiner. Vidé, il retombe sur le nom par défaut au moment de créer
@@ -781,6 +819,18 @@ function dessinerOptions() {
   });
   $("btn-creer").onclick = () => lancerVisite();
   $("btn-retour").onclick = () => dessinerComposition(false);
+}
+
+/* Rappel à l'écran des années que l'avenant imprimera pour le contrat
+   d'énergie : elles viennent des deux dates du bail, et de rien d'autre. */
+function noteEnergie(b) {
+  const a = anneeSaisie(b.bail_debut), f = anneeSaisie(b.bail_fin);
+  if (!a || !f) return "Dates du bail à compléter : sans elles, l'avenant s'imprime en pointillés.";
+  const texte = "Contrat d'énergie imprimé : du 01/06/" + a + " au 01/06/" + f + ".";
+  /* Avertissement seulement : la règle voulue reste appliquée telle quelle. */
+  return (parseInt(f, 10) <= parseInt(a, 10))
+    ? texte + " ATTENTION : l'année de fin n'est pas postérieure à l'année de début — vérifie les dates."
+    : texte;
 }
 
 async function lancerVisite() {
@@ -2136,6 +2186,9 @@ async function ecranCloture(visite) {
 function ecranIdentites(message) {
   E.ecran = "identites";
   const V = VISITE;
+  let avenantJoint = false;
+  try { avenantJoint = modeleAvenant(V) !== null; }
+  catch (e) { return erreurEcran(e.message, () => ecranCloture(VISITE)); }
   titre("Identité des signataires", "Étape 1 sur 3");
 
   vue(`${message ? `<div class="succes">${echapper(message)}</div>` : ""}
@@ -2148,6 +2201,14 @@ function ecranIdentites(message) {
     ${(V.parties.preneurs || []).map((x, i) => `<div class="bloc">
       <h2>Preneur ${i + 1}</h2>
       <div class="ligne"><span>Nom</span><span class="val">${echapper(x.nom_complet)}</span></div>
+      ${avenantJoint
+        ? `<div class="ligne"><span>Civilité (avenant)</span>
+             <select data-civilite="${i}" style="width:auto">
+               <option value=""${x.civilite ? "" : " selected"}>— choisir —</option>
+               ${["MR", "MME"].map(c => `<option value="${c}"${
+                 x.civilite === c ? " selected" : ""}>${c}</option>`).join("")}
+             </select></div>`
+        : ""}
       <div class="ligne"><span>Carte d'identité</span>
         <input class="saisie-carte" inputmode="numeric" maxlength="15"
           placeholder="000-0000000-00" data-carte="${i}"
@@ -2195,6 +2256,14 @@ function ecranIdentites(message) {
       await ecrirePreneur(i, "numero_carte_identite", inp.value.trim() || null);
     };
   });
+  /* Civilité : enregistrée au choix, sans redessin — un redessin
+     refermerait le menu d'iOS. */
+  $("vue").querySelectorAll("[data-civilite]").forEach(sel => {
+    sel.onchange = async () => {
+      const i = parseInt(sel.getAttribute("data-civilite"), 10);
+      await ecrirePreneur(i, "civilite", sel.value || null);
+    };
+  });
   $("vue").querySelectorAll("[data-mail]").forEach(inp => {
     inp.onchange = async () => {
       const i = parseInt(inp.getAttribute("data-mail"), 10);
@@ -2225,6 +2294,7 @@ function ecranIdentites(message) {
 async function ecranLecture() {
   E.ecran = "lecture";
   E.luEtApprouve = false;
+  E.avenantLu = false;
   titre("Lecture du document", "Étape 2 sur 3");
   vue(`<p class="note">Préparation du document…</p>`);
 
@@ -2235,6 +2305,8 @@ async function ecranLecture() {
                        () => ecranIdentites());
   }
   E.apercu = doc;
+  /* genererPV a déjà vérifié le modèle : ceci ne peut plus échouer. */
+  const avenantJoint = modeleAvenant(VISITE) !== null;
 
   const url = noterApercu(URL.createObjectURL(doc.output("blob")));
   vue(`<div class="bloc"><h2>À faire lire au locataire</h2>
@@ -2248,17 +2320,42 @@ async function ecranLecture() {
         <span class="segments">
           <button class="seg" id="lu-oui">oui</button>
         </span></div>
+      ${avenantJoint
+        ? `<div class="interrupteur"><span>Le locataire déclare avoir pris connaissance
+             de l'avenant au bail relatif au calcul des charges</span>
+             <span class="segments">
+               <button class="seg" id="avenant-lu">oui</button>
+             </span></div>`
+        : ""}
       <p class="note">La lecture est distincte de la signature. L'écran suivant
       permettra au locataire de faire consigner ses observations et réserves.</p>
     </div>
     <button id="btn-reserves" disabled>Observations et réserves</button>
     <button class="secondaire" id="btn-retour">Retour</button>`);
 
+  /* Les deux confirmations sont distinctes et toutes deux exigées quand
+     l'avenant est joint : la lecture du document, puis la prise de
+     connaissance de l'avenant. */
+  const majSuite = () => {
+    $("btn-reserves").disabled = !E.luEtApprouve || (avenantJoint && !E.avenantLu);
+  };
   $("lu-oui").onclick = () => {
     E.luEtApprouve = !E.luEtApprouve;
     $("lu-oui").className = "seg" + (E.luEtApprouve ? " actif" : "");
-    $("btn-reserves").disabled = !E.luEtApprouve;
+    majSuite();
   };
+  if (avenantJoint) {
+    $("avenant-lu").onclick = async () => {
+      E.avenantLu = !E.avenantLu;
+      $("avenant-lu").className = "seg" + (E.avenantLu ? " actif" : "");
+      majSuite();
+      /* Horodatée dans le fichier de la visite ; retirée si décochée. */
+      const quand = E.avenantLu ? new Date().toISOString() : null;
+      VISITE = await modifierVisite(VISITE.visit_id, v => {
+        if (v.avenant) v.avenant.prise_connaissance_le = quand;
+      }) || VISITE;
+    };
+  }
   $("btn-reserves").onclick = () => ecranReserves();
   $("btn-retour").onclick = () => ecranIdentites();   // vue() libère l'aperçu
 }
@@ -2389,15 +2486,17 @@ function ecranSignatures() {
     blocs.push({ id: "preneur" + i, role: "Le preneur", nom: x.nom_complet }));
 
   const nbReserves = (V.reserves || []).length;
+  const avenantJoint = (() => { try { return modeleAvenant(V) !== null; } catch (_) { return false; } })();
 
   vue(`<div class="bloc"><h2>À lire avant de signer</h2>
       <p class="approuve">LU ET APPROUVÉ</p>
       <p class="note">Chaque signataire confirme avoir participé contradictoirement
       à l'état des lieux, avoir pris connaissance du rapport et des photographies
-      qui en font partie, et avoir eu la possibilité de faire consigner ses
+      qui en font partie${avenantJoint
+        ? " et de l'avenant au bail relatif au calcul des charges" : ""}, et avoir eu la possibilité de faire consigner ses
       observations et réserves avant sa validation.</p>
       <p class="note">En apposant sa signature, il manifeste sa volonté de valider
-      le présent état des lieux${nbReserves
+      le présent état des lieux${avenantJoint ? " et d'approuver cet avenant" : ""}${nbReserves
         ? ", sous réserve des " + nbReserves + " observation(s) consignée(s)" : ""}.</p>
     </div>
     <div class="bloc"><h2>Signer du doigt</h2>
@@ -2497,6 +2596,18 @@ function majBoutonSigner(blocs) {
 
 async function signerEtDeposer(blocs) {
   const b = $("btn-signer");
+
+  /* Dernier verrou : un avenant joint ne se signe pas sans prise de
+     connaissance enregistrée, quel que soit le chemin suivi jusqu'ici. */
+  let avenantJoint;
+  try { avenantJoint = modeleAvenant(VISITE) !== null; }
+  catch (e) { return erreurEcran(e.message, () => ecranLecture()); }
+  if (avenantJoint && !(VISITE.avenant && VISITE.avenant.prise_connaissance_le)) {
+    return erreurEcran("La prise de connaissance de l'avenant au bail n'est pas " +
+      "enregistrée. Reviens à la lecture du document et fais-la confirmer.",
+      () => ecranLecture());
+  }
+
   b.disabled = true; b.textContent = "Fabrication du document…";
 
   const signatures = { bailleur: null, preneurs: [] };
