@@ -1,4 +1,8 @@
-/* EDL — Démarrage d'une visite   ·   visite 2.33.2 (11/09/2026)
+/* EDL — Démarrage d'une visite   ·   visite 2.34.0 (11/09/2026)
+
+   2.34.0 : prêt de meubles de la S.A. SAMADHI joint au PV d'entrée
+   (immeuble, description du mobilier, prise de connaissance) ; une V2
+   doit refaire confirmer la prise de connaissance du prêt.
 
    2.33.2 : marque de version lue au démarrage (cohérence des fichiers).
 
@@ -16,7 +20,7 @@
    du logement qu'une visite entière sans savoir où déposer les fichiers. */
 
 /* Marque de version : comparée au démarrage à celle d'app.js. */
-var VERSION_VISITE_JS = "2.33.2";
+var VERSION_VISITE_JS = "2.34.0";
 
 /* Étape 1 — le dossier de l'unité, dans le dossier de l'immeuble.
    Renvoie soit une résolution unique, soit la liste des candidats
@@ -171,6 +175,7 @@ async function nouvelleVersion(visiteSignee, motif) {
   /* La prise de connaissance de l'avenant vaut pour la version signée,
      pas pour celle-ci : elle doit être confirmée à nouveau. */
   if (copie.avenant) copie.avenant.prise_connaissance_le = null;
+  if (copie.pret) copie.pret.prise_connaissance_le = null;
   copie.signatures = undefined;
   delete copie.signatures;
 
@@ -367,7 +372,8 @@ async function creerVisite(param) {
       preneurs: (param.preneurs || []).map(nom => ({
         nom_complet: nom,
         /* MR ou MME, choisie à l'écran des identités. Ne sert qu'à
-           l'avenant au bail ; vide, elle s'imprime en pointillés. */
+           l'avenant au bail et au prêt de meubles ; vide, elle
+           s'imprime en pointillés. */
         civilite: null,
         qualite: "Locataire",
         numero_carte_identite: null,
@@ -441,6 +447,17 @@ async function creerVisite(param) {
       ? { modele: param.immeuble_id,
           internet: param.avenant_internet !== false,
           prise_connaissance_le: null }
+      : null,
+    /* Prêt de meubles de la S.A. SAMADHI, joint au PV. ENTRÉE SEULEMENT,
+       immeuble ayant son adresse de prêt, bailleur supposé par les textes
+       validés. Distinct de « pret_meubles » ci-dessus, conservé tel quel
+       pour les visites créées avant 2.34.0. Le mobilier est décrit à
+       l'écran des identités ; la prise de connaissance est horodatée à la
+       lecture. */
+    pret: (param.type === "EDLE" && param.pret_meubles === true &&
+           typeof pretPossible === "function" &&
+           pretPossible(param.immeuble_id, param.bailleur && param.bailleur.cle))
+      ? { modele: param.immeuble_id, mobilier: "", prise_connaissance_le: null }
       : null,
     comparaison: null,
     chiffrage: null,

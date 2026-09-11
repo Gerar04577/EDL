@@ -1,4 +1,9 @@
-/* EDL — Écrans   ·   app 2.33.2 (11/09/2026)
+/* EDL — Écrans   ·   app 2.34.0 (11/09/2026)
+
+   2.34.0 : prêt de meubles de la S.A. SAMADHI — interrupteur réservé à
+   Biche, Nimy, Petite Guirlande et La Fermette ; description du mobilier
+   obligatoire à l'écran des identités ; confirmation distincte à la
+   lecture ; verrou de signature ; code AV / PM dans le nom du PV.
 
    2.33.2 : les écrans de lecture, de réserves et le verrou de signature
    attendent la fin des écritures en base avant de relire la visite — un
@@ -26,7 +31,7 @@
    Étape 3 : démarrage d'une visite. La capture arrive à l'étape suivante. */
 
 /* Marque de version : les autres fichiers doivent porter la même. */
-var VERSION_APP_JS = "2.33.2";
+var VERSION_APP_JS = "2.34.0";
 
 var E = {
   installee: false,
@@ -719,6 +724,16 @@ function dessinerOptions() {
   const modeleAv = (b.type === "EDLE" && immeubleAvecAvenant)
     ? modeleAvenantImmeuble(b.immeuble_id) : null;
 
+  /* Prêt de meubles : seulement pour un immeuble qui a son adresse de prêt
+     (Biche, Nimy, Petite Guirlande, La Fermette). À l'entrée, il faut aussi
+     le bailleur que supposent les textes validés. À la sortie,
+     l'interrupteur reste sans effet sur le document, comme avant 2.34.0. */
+  const pretImmeuble = !!(CONFIG.pret_meubles && CONFIG.pret_meubles.adresses &&
+                          CONFIG.pret_meubles.adresses[b.immeuble_id]);
+  const pretDispo = pretImmeuble &&
+    (b.type === "EDLS" || pretPossible(b.immeuble_id, b.bailleur && b.bailleur.cle));
+  if (!pretDispo) b.pret_meubles = false;
+
   vue(`<div class="avert"><strong>ATTENTION À L'IDENTITÉ DU PROPRIÉTAIRE !</strong>
       Trois propriétaires différents selon l'immeuble. Le nom retenu ici sera
       celui du procès-verbal signé.</div>
@@ -776,7 +791,16 @@ function dessinerOptions() {
     <div class="bloc"><h2>Options</h2>
       ${b.type === "EDLS" ? inter("chiffrage", "Chiffrage des dégâts", b.chiffrage)
         : `<p class="note">Le chiffrage ne concerne que les états des lieux de sortie.</p>`}
-      ${inter("pret_meubles", "Prêt de meubles Samadhi", b.pret_meubles)}
+      ${pretDispo
+        ? inter("pret_meubles", b.type === "EDLE" ? "Prêt de meubles Samadhi — page jointe"
+                                                   : "Prêt de meubles Samadhi", b.pret_meubles)
+        : `<div class="ligne"><span>Prêt de meubles Samadhi</span><span class="val">${
+            pretImmeuble ? "indisponible avec ce bailleur" : "aucun pour cet immeuble"}</span></div>`}
+      ${pretDispo && b.type === "EDLE" && b.pret_meubles
+        ? `<p class="note">La page est jointe au procès-verbal d'entrée, avant les
+             signatures. La description du mobilier se fait à l'écran des identités :
+             elle est obligatoire.</p>`
+        : ""}
     </div>
     <div class="bloc"><h2>Destination</h2>
       <div class="ligne"><span>Bailleur</span><span class="val">${
@@ -2201,15 +2225,16 @@ async function relireVisiteApresEcritures(visitId) {
 
 // --- Identité des preneurs ----------------------------------------------
 
-function ecranIdentites(message) {
+function ecranIdentites(message, alerte) {
   E.ecran = "identites";
   const V = VISITE;
-  let avenantJoint = false;
-  try { avenantJoint = modeleAvenant(V) !== null; }
+  let avenantJoint = false, pretJoint = false;
+  try { avenantJoint = modeleAvenant(V) !== null; pretJoint = modelePret(V) !== null; }
   catch (e) { return erreurEcran(e.message, () => ecranCloture(VISITE)); }
   titre("Identité des signataires", "Étape 1 sur 3");
 
-  vue(`${message ? `<div class="succes">${echapper(message)}</div>` : ""}
+  vue(`${message ? `<div class="succes">${echapper(message)}</div>` : ""}${
+    alerte ? `<div class="erreur">${echapper(alerte)}</div>` : ""}
     <div class="bloc"><h2>Vérification</h2>
       <p class="note">Demande la carte d'identité et relève le <strong>numéro de la carte</strong>,
       celui inscrit au recto. <strong>Jamais le numéro de Registre national</strong> :
@@ -2228,11 +2253,20 @@ function ecranIdentites(message) {
             { bail_debut: (V.bail || {}).debut, bail_fin: (V.bail || {}).fin }))}</p>
         </div>`
       : ""}
+    ${pretJoint
+      ? `<div class="bloc"><h2>Prêt de meubles — mobilier prêté</h2>
+          <textarea id="pm-mobilier" rows="5"
+            placeholder="Décris le mobilier prêté — micro du clavier disponible">${
+            echapper((V.pret || {}).mobilier || "")}</textarea>
+          <p class="note">Obligatoire : sans description, le document ne peut pas
+          être préparé. Les retours à la ligne sont repris tels quels.</p>
+        </div>`
+      : ""}
     ${(V.parties.preneurs || []).map((x, i) => `<div class="bloc">
       <h2>Preneur ${i + 1}</h2>
       <div class="ligne"><span>Nom</span><span class="val">${echapper(x.nom_complet)}</span></div>
-      ${avenantJoint
-        ? `<div class="ligne"><span>Civilité (avenant)</span>
+      ${(avenantJoint || pretJoint)
+        ? `<div class="ligne"><span>Civilité (avenant, prêt)</span>
              <select data-civilite="${i}" style="width:auto">
                <option value=""${x.civilite ? "" : " selected"}>— choisir —</option>
                ${["MR", "MME"].map(c => `<option value="${c}"${
@@ -2303,6 +2337,16 @@ function ecranIdentites(message) {
     };
   });
 
+  /* Mobilier : enregistré à la sortie du champ, sans redessin. */
+  if ($("pm-mobilier")) {
+    $("pm-mobilier").onchange = async () => {
+      const valeur = $("pm-mobilier").value;
+      VISITE = await modifierVisite(VISITE.visit_id, v => {
+        if (v.pret) v.pret.mobilier = valeur;
+      }) || VISITE;
+    };
+  }
+
   /* Civilité : enregistrée au choix, sans redessin — un redessin
      refermerait le menu d'iOS. */
   $("vue").querySelectorAll("[data-civilite]").forEach(sel => {
@@ -2332,7 +2376,24 @@ function ecranIdentites(message) {
     ecranIdentites();
   });
 
-  $("btn-lecture").onclick = () => ecranLecture();
+  $("btn-lecture").onclick = async () => {
+    /* Prêt joint : pas de lecture sans mobilier décrit. La valeur du champ
+       est relue et enregistrée ici, au cas où le champ n'aurait pas encore
+       été quitté. */
+    if (pretJoint) {
+      const valeur = $("pm-mobilier") ? $("pm-mobilier").value : "";
+      if (!valeur.trim()) {
+        return ecranIdentites(null, "Le prêt de meubles est joint : décris le mobilier " +
+          "prêté avant de passer à la lecture.");
+      }
+      if (valeur !== ((VISITE.pret || {}).mobilier || "")) {
+        VISITE = await modifierVisite(VISITE.visit_id, v => {
+          if (v.pret) v.pret.mobilier = valeur;
+        }) || VISITE;
+      }
+    }
+    ecranLecture();
+  };
   $("btn-retour").onclick = () => ecranCloture(VISITE);
 }
 
@@ -2342,6 +2403,7 @@ async function ecranLecture() {
   E.ecran = "lecture";
   E.luEtApprouve = false;
   E.avenantLu = false;
+  E.pretLu = false;
   titre("Lecture du document", "Étape 2 sur 3");
   vue(`<p class="note">Préparation du document…</p>`);
 
@@ -2356,8 +2418,9 @@ async function ecranLecture() {
                        () => ecranIdentites());
   }
   E.apercu = doc;
-  /* genererPV a déjà vérifié le modèle : ceci ne peut plus échouer. */
+  /* genererPV a déjà vérifié les modèles : ceci ne peut plus échouer. */
   const avenantJoint = modeleAvenant(VISITE) !== null;
+  const pretJoint = modelePret(VISITE) !== null;
 
   const url = noterApercu(URL.createObjectURL(doc.output("blob")));
   vue(`<div class="bloc"><h2>À faire lire au locataire</h2>
@@ -2378,6 +2441,13 @@ async function ecranLecture() {
                <button class="seg" id="avenant-lu">oui</button>
              </span></div>`
         : ""}
+      ${pretJoint
+        ? `<div class="interrupteur"><span>Le locataire déclare avoir pris connaissance
+             du prêt de meubles consenti par la S.A. SAMADHI</span>
+             <span class="segments">
+               <button class="seg" id="pret-lu">oui</button>
+             </span></div>`
+        : ""}
       <p class="note">La lecture est distincte de la signature. L'écran suivant
       permettra au locataire de faire consigner ses observations et réserves.</p>
     </div>
@@ -2388,7 +2458,8 @@ async function ecranLecture() {
      l'avenant est joint : la lecture du document, puis la prise de
      connaissance de l'avenant. */
   const majSuite = () => {
-    $("btn-reserves").disabled = !E.luEtApprouve || (avenantJoint && !E.avenantLu);
+    $("btn-reserves").disabled = !E.luEtApprouve || (avenantJoint && !E.avenantLu) ||
+                                 (pretJoint && !E.pretLu);
   };
   $("lu-oui").onclick = () => {
     E.luEtApprouve = !E.luEtApprouve;
@@ -2404,6 +2475,17 @@ async function ecranLecture() {
       const quand = E.avenantLu ? new Date().toISOString() : null;
       VISITE = await modifierVisite(VISITE.visit_id, v => {
         if (v.avenant) v.avenant.prise_connaissance_le = quand;
+      }) || VISITE;
+    };
+  }
+  if (pretJoint) {
+    $("pret-lu").onclick = async () => {
+      E.pretLu = !E.pretLu;
+      $("pret-lu").className = "seg" + (E.pretLu ? " actif" : "");
+      majSuite();
+      const quand = E.pretLu ? new Date().toISOString() : null;
+      VISITE = await modifierVisite(VISITE.visit_id, v => {
+        if (v.pret) v.pret.prise_connaissance_le = quand;
       }) || VISITE;
     };
   }
@@ -2537,23 +2619,25 @@ function ecranSignatures() {
   E.signatures = E.signatures || { bailleur: null, preneurs: [] };
   titre("Signatures", "Étape 3 sur 3");
 
-  const blocs = [{ id: "bailleur", role: "Le bailleur",
+  const pretJointEcran = (() => { try { return modelePret(V) !== null; } catch (_) { return false; } })();
+  const blocs = [{ id: "bailleur",
+                   role: "Le bailleur" + (pretJointEcran ? ", et pour la S.A. SAMADHI, prêteur" : ""),
                    nom: V.parties.bailleur_represente_par || V.parties.bailleur }];
   (V.parties.preneurs || []).forEach((x, i) =>
     blocs.push({ id: "preneur" + i, role: "Le preneur", nom: x.nom_complet }));
 
   const nbReserves = (V.reserves || []).length;
   const avenantJoint = (() => { try { return modeleAvenant(V) !== null; } catch (_) { return false; } })();
+  const jointes = mentionsJointes(avenantJoint, pretJointEcran);
 
   vue(`<div class="bloc"><h2>À lire avant de signer</h2>
       <p class="approuve">LU ET APPROUVÉ</p>
       <p class="note">Chaque signataire confirme avoir participé contradictoirement
       à l'état des lieux, avoir pris connaissance du rapport et des photographies
-      qui en font partie${avenantJoint
-        ? " et de l'avenant au bail relatif au calcul des charges" : ""}, et avoir eu la possibilité de faire consigner ses
+      qui en font partie${echapper(jointes.connaissance)}, et avoir eu la possibilité de faire consigner ses
       observations et réserves avant sa validation.</p>
       <p class="note">En apposant sa signature, il manifeste sa volonté de valider
-      le présent état des lieux${avenantJoint ? " et d'approuver cet avenant" : ""}${nbReserves
+      le présent état des lieux${echapper(jointes.approuver)}${nbReserves
         ? ", sous réserve des " + nbReserves + " observation(s) consignée(s)" : ""}.</p>
     </div>
     <div class="bloc"><h2>Signer du doigt</h2>
@@ -2660,13 +2744,22 @@ async function signerEtDeposer(blocs) {
   /* Dernier verrou : un avenant joint ne se signe pas sans prise de
      connaissance enregistrée, quel que soit le chemin suivi jusqu'ici.
      Contrôlée EN BASE, une fois les écritures en file terminées. */
-  let avenantJoint;
-  try { avenantJoint = modeleAvenant(VISITE) !== null; }
+  let avenantJoint, pretJoint;
+  try { avenantJoint = modeleAvenant(VISITE) !== null; pretJoint = modelePret(VISITE) !== null; }
   catch (e) { return erreurEcran(e.message, () => ecranLecture()); }
-  if (avenantJoint) {
+  if (avenantJoint || pretJoint) {
     const enBase = await relireVisiteApresEcritures(VISITE.visit_id);
-    if (!(enBase && enBase.avenant && enBase.avenant.prise_connaissance_le)) {
+    if (avenantJoint && !(enBase && enBase.avenant && enBase.avenant.prise_connaissance_le)) {
       return erreurEcran("La prise de connaissance de l'avenant au bail n'est pas " +
+        "enregistrée. Reviens à la lecture du document et fais-la confirmer.",
+        () => ecranLecture());
+    }
+    if (pretJoint && !(enBase && enBase.pret && String(enBase.pret.mobilier || "").trim())) {
+      return erreurEcran("Le mobilier prêté n'est pas décrit. Reviens à l'écran des " +
+        "identités et complète la description.", () => ecranIdentites());
+    }
+    if (pretJoint && !(enBase && enBase.pret && enBase.pret.prise_connaissance_le)) {
+      return erreurEcran("La prise de connaissance du prêt de meubles n'est pas " +
         "enregistrée. Reviens à la lecture du document et fais-la confirmer.",
         () => ecranLecture());
     }
@@ -2696,7 +2789,10 @@ async function signerEtDeposer(blocs) {
     const empreinte = await empreinteSha256(donnees);
 
     b.textContent = "Dépôt dans OneDrive…";
-    const nom = `${V.type}_${V.date_signature.slice(0, 10)}_${
+    /* AV : avenant joint ; PM : prêt de meubles joint. Les modèles ont
+       déjà été vérifiés par genererPV : ces appels ne peuvent plus échouer. */
+    const codesJoints = (modeleAvenant(V) ? "_AV" : "") + (modelePret(V) ? "_PM" : "");
+    const nom = `${V.type}${codesJoints}_${V.date_signature.slice(0, 10)}_${
       nettoyerLibelle(V.bien.unite_source)}_${codeCourt(V)}.pdf`;
 
     /* Le procès-verbal suit la même règle que les photographies : s'il ne

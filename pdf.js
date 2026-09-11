@@ -1,4 +1,10 @@
-/* EDL — Procès-verbal en PDF   ·   pdf 2.33.2 (11/09/2026)
+/* EDL — Procès-verbal en PDF   ·   pdf 2.34.0 (11/09/2026)
+
+   2.34.0 : page « prêt de meubles » de la S.A. SAMADHI jointe au PV
+   d'ENTRÉE (après l'avenant, avant les signatures), refusée sans
+   description du mobilier ; mentions juridiques du prêt, combinées avec
+   celles de l'avenant ; double qualité de GERARD Julien au bloc des
+   signatures. Sans prêt joint, le document est inchangé.
 
    2.33.2 : les blocs qui ne doivent jamais être coupés — portée, mention
    des photographies non déposées, signatures — réservent leur place par
@@ -25,7 +31,7 @@
 */
 
 /* Marque de version : comparée à celle d'app.js avant toute fabrication. */
-var VERSION_PDF_JS = "2.33.2";
+var VERSION_PDF_JS = "2.34.0";
 
 var PDF_MARGE = 18;
 var PDF_LARGEUR = 210;
@@ -386,6 +392,109 @@ function pageAvenant(doc, p, V, m) {
   p.saut(8);
 }
 
+// --- Prêt de meubles de la S.A. SAMADHI --------------------------------
+
+/* Le prêt est-il POSSIBLE pour cet immeuble et ce bailleur ? Sert aux
+   écrans. Il faut une adresse propre au prêt dans la configuration, et le
+   bailleur supposé par les textes validés. */
+function pretPossible(immeubleId, bailleurCle) {
+  const c = CONFIG.pret_meubles;
+  return !!(c && c.adresses && c.adresses[immeubleId] && bailleurCle === c.bailleur_cle);
+}
+
+/* Configuration du prêt d'une visite, ou null. Verrous :
+   — JAMAIS à la sortie ;
+   — seulement si le prêt a été joint à la création de la visite ;
+   — l'immeuble noté doit être celui de la visite, avoir son adresse, et le
+     bailleur doit être celui que supposent les textes validés.
+   Une discordance ARRÊTE la fabrication du document. La description du
+   mobilier est contrôlée à part (genererPV), pour que les écrans puissent
+   savoir que le prêt est joint avant qu'elle soit saisie. */
+function modelePret(V) {
+  if (!V || V.type !== "EDLE" || !V.pret) return null;
+  const c = CONFIG.pret_meubles;
+  const id = V.bien && V.bien.immeuble_id;
+  const p = V.parties || {};
+  if (!c || !c.adresses || !c.adresses[id] || V.pret.modele !== id) {
+    throw new Error("Prêt de meubles : l'immeuble noté (« " + (V.pret.modele || "?") +
+      " ») ne correspond pas à l'immeuble de la visite ou n'a pas d'adresse (« " + (id || "?") + " »)");
+  }
+  if (p.bailleur_cle !== c.bailleur_cle || p.bailleur_represente_par !== c.representant) {
+    throw new Error("Prêt de meubles : les textes validés supposent le bailleur « " +
+      c.bailleur_cle + " » représenté par " + c.representant + ", ce qui n'est pas le cas de cette visite");
+  }
+  return c;
+}
+
+/* Mentions juridiques communes au document et à l'écran des signatures,
+   pour que les deux disent toujours exactement la même chose. Avec
+   l'avenant seul, les phrases sont celles de la 2.33.2, au caractère près. */
+function mentionsJointes(avenant, pret) {
+  const AV = "l'avenant au bail relatif au calcul des charges";
+  const PM = "le prêt de meubles consenti par la S.A. SAMADHI";
+  return {
+    portee: (avenant || pret)
+      ? " ainsi que sur " + [avenant ? AV : null, pret ? PM : null].filter(Boolean).join(" et sur ")
+      : "",
+    connaissance: (avenant || pret)
+      ? " et " + [avenant ? "de " + AV : null, pret ? "du prêt de meubles consenti par la S.A. SAMADHI" : null]
+          .filter(Boolean).join(" et ")
+      : "",
+    approuver: (avenant || pret)
+      ? " et d'approuver " + [avenant ? "cet avenant" : null, pret ? "ce prêt" : null].filter(Boolean).join(" et ")
+      : "",
+    qualiteBailleur: pret ? ", et pour la S.A. SAMADHI, prêteur — Administrateur" : "",
+  };
+}
+
+/* Le texte complet de la page, tel qu'il sera imprimé. */
+function textePret(V, c) {
+  const preneurs = (V.parties && V.parties.preneurs) || [];
+  const nombre = preneurs.length > 1 ? "plusieurs" : "un";
+  const locataires = preneurs.map(x =>
+    (x.civilite || AVENANT_POINTILLES) + " " + (x.nom_complet || AVENANT_POINTILLES)
+  ).join(" et ");
+  const dossier = (V.bien && V.bien.dossier_unite_onedrive) || "";
+  const t = (typeof extraireTypeEtNumero === "function")
+    ? extraireTypeEtNumero(dossier) : { type: null, num: null };
+  const valeurs = {
+    LOCATAIRES: locataires,
+    ADRESSE: c.adresses[V.bien.immeuble_id],
+    BOITE: (t.type === "STUDIO" && t.num != null) ? String(t.num) : dossier,
+    DATE: dateCourteFr(V.date_signature || new Date().toISOString()),
+  };
+  return {
+    titre: c.titre,
+    declaration: remplirAvenant(c.declaration[nombre], valeurs),
+    mobilier: c.mobilier,
+    description: String(V.pret.mobilier || "").trim(),
+    engagement: remplirAvenant(c.engagement[nombre], valeurs),
+    indemnite: remplirAvenant(c.indemnite[nombre], valeurs),
+    fait: remplirAvenant(c.fait, valeurs),
+    signature: c.signature,
+  };
+}
+
+/* Une page à part, après l'avenant et avant les signatures. */
+function pagePret(doc, p, V, c) {
+  const t = textePret(V, c);
+  doc.addPage(); p.y = PDF_MARGE;
+  p.paragraphe(t.titre, { gras: true, taille: 12 });
+  doc.setDrawColor(31, 78, 95); doc.setLineWidth(0.4);
+  doc.line(PDF_MARGE, p.y - 2, PDF_LARGEUR - PDF_MARGE, p.y - 2);
+  p.saut(6);
+  p.paragraphe(t.declaration); p.saut(4);
+  p.paragraphe(t.mobilier); p.saut(2);
+  /* Le mobilier tel que saisi, retours à la ligne compris. */
+  t.description.split(/\r?\n/).forEach(l => p.paragraphe(l, { retrait: 4 }));
+  p.saut(5);
+  p.paragraphe(t.engagement); p.saut(3);
+  p.paragraphe(t.indemnite); p.saut(4);
+  p.paragraphe(t.fait); p.saut(6);
+  p.paragraphe(t.signature);
+  p.saut(8);
+}
+
 async function genererPV(visite) {
   /* Fichiers de versions différentes (mise à jour publiée à moitié) : un
      procès-verbal fabriqué ainsi pourrait perdre l'avenant, la civilité ou
@@ -405,6 +514,16 @@ async function genererPV(visite) {
   if (avenant && !CONFIG.protocole_avenant) {
     throw new Error("Avenant : la puce du protocole est absente de la configuration");
   }
+  const pret = modelePret(V);
+  if (pret && !(CONFIG.protocole_pret && CONFIG.protocole_pret.length === 2)) {
+    throw new Error("Prêt de meubles : les puces du protocole sont absentes de la configuration");
+  }
+  /* Un prêt sans mobilier décrit n'a pas de sens : pas de document. */
+  if (pret && !String(V.pret.mobilier || "").trim()) {
+    throw new Error("Prêt de meubles : la description du mobilier est vide. " +
+      "Complète-la à l'écran des identités.");
+  }
+  const jointes = mentionsJointes(!!avenant, !!pret);
 
   // --- 1. En-tête et protocole -------------------------------------------
   p.titre(sortie ? "PROCÈS-VERBAL D'ÉTAT DES LIEUX DE SORTIE"
@@ -416,6 +535,7 @@ async function genererPV(visite) {
   p.sousTitre("Protocole de signature");
   (CONFIG.protocole && CONFIG.protocole.length ? CONFIG.protocole : PROTOCOLE_PROVISOIRE)
     .concat(avenant ? [CONFIG.protocole_avenant] : [])
+    .concat(pret ? CONFIG.protocole_pret : [])
     .forEach(t => { p.paragraphe("• " + t, { retrait: 2 }); p.saut(1.5); });
   if (!CONFIG.protocole || !CONFIG.protocole.length) {
     p.saut(2);
@@ -718,8 +838,7 @@ async function genererPV(visite) {
       "aucune des obligations que la loi met à charge de l'une ou l'autre partie.");
 
     clauses.push("La signature du présent procès-verbal porte sur les constatations " +
-      "matérielles qu'il contient" +
-      (avenant ? " ainsi que sur l'avenant au bail relatif au calcul des charges" : "") +
+      "matérielles qu'il contient" + jointes.portee +
       ". Elle ne vaut pas solde de tout compte. Demeurent " +
       "entiers et étrangers au présent document : le décompte des charges et " +
       "consommations à intervenir" +
@@ -759,6 +878,8 @@ async function genererPV(visite) {
 
   // --- 7 ter. Avenant au bail (entrée seulement) ---------------------------
   if (avenant) pageAvenant(doc, p, V, avenant);
+  // --- 7 quater. Prêt de meubles (entrée seulement) -------------------------
+  if (pret) pagePret(doc, p, V, pret);
 
   // --- 8. Signatures ------------------------------------------------------
   /* Mention expresse, imprimée UNIQUEMENT si des photographies restent à
@@ -806,13 +927,11 @@ async function genererPV(visite) {
   const approbation = [];
   approbation.push("Chaque signataire confirme avoir participé contradictoirement à l'état " +
     "des lieux, avoir pris connaissance du rapport qui lui est présenté ainsi que des " +
-    "photographies qui en font partie" +
-    (avenant ? " et de l'avenant au bail relatif au calcul des charges" : "") +
+    "photographies qui en font partie" + jointes.connaissance +
     ", et avoir eu la possibilité de faire consigner ses " +
     "observations et réserves avant sa validation.");
   approbation.push("En apposant sa signature ci-dessous, il manifeste sa volonté de valider le " +
-    "présent état des lieux" +
-    (avenant ? " et d'approuver cet avenant" : "") +
+    "présent état des lieux" + jointes.approuver +
     ", sous réserve des observations et réserves qui y sont " +
     "expressément consignées.");
   approbation.push("Le présent état des lieux fait partie intégrante du bail dont il ne peut " +
@@ -837,7 +956,8 @@ async function genererPV(visite) {
   approbation.forEach((t, i) => { if (i) p.saut(2); p.paragraphe(t); });
   const blocs = [];
   blocs.push({ role: "Le bailleur",
-               qualite: V.parties.bailleur_represente_par ? "Mandataire" : "Bailleur",
+               qualite: (V.parties.bailleur_represente_par ? "Mandataire" : "Bailleur") +
+                 jointes.qualiteBailleur,
                nom: V.parties.bailleur_represente_par || V.parties.bailleur,
                image: (V.signatures || {}).bailleur });
   (V.parties.preneurs || []).forEach((x, i) => {
@@ -854,18 +974,22 @@ async function genererPV(visite) {
     const x = PDF_MARGE + colonne * (largeurBloc + 8);
     const y0 = p.y;
     doc.setFontSize(9); doc.setTextColor(90);
-    doc.text(b.role + (b.qualite ? " — " + b.qualite : ""), x, y0);
+    /* L'intitulé tient dans la largeur du bloc : la double qualité de
+       Julien (prêt joint) passe sur deux lignes, le reste descend d'autant. */
+    const intitule = doc.splitTextToSize(b.role + (b.qualite ? " — " + b.qualite : ""), largeurBloc);
+    const decalage = (intitule.length - 1) * 3.8;
+    intitule.forEach((l, k) => doc.text(l, x, y0 + k * 3.8));
     doc.setTextColor(0); doc.setFontSize(10);
-    doc.text(String(b.nom || ""), x, y0 + 5);
+    doc.text(String(b.nom || ""), x, y0 + 5 + decalage);
     if (b.image) {
       try { /* Le cadre de saisie est en 3:1 ; l'imposer en 4,5:1 étirait la signature.
        On conserve les proportions et on centre dans le cadre. */
     (() => {
-      const hauteurMax = 20, ratio = 3;
+      const hauteurMax = 20 - decalage, ratio = 3;
       let larg = Math.min(largeurBloc, hauteurMax * ratio);
       let haut = larg / ratio;
       if (haut > hauteurMax) { haut = hauteurMax; larg = haut * ratio; }
-      doc.addImage(b.image, "PNG", x + (largeurBloc - larg) / 2, y0 + 7, larg, haut);
+      doc.addImage(b.image, "PNG", x + (largeurBloc - larg) / 2, y0 + 7 + decalage, larg, haut);
     })(); } catch (_) {}
     }
     doc.setDrawColor(150); doc.setLineWidth(0.3);

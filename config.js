@@ -1,13 +1,16 @@
-/* EDL — Configuration   ·   config 2.33.2 (11/09/2026)
+/* EDL — Configuration   ·   config 2.34.0 (11/09/2026)
    Toutes les valeurs susceptibles de changer sont ici, et nulle part ailleurs.
    Aucune clé secrète dans ce fichier : la clé Gemini vit dans Make.
+
+   2.34.0 : prêt de meubles de la S.A. SAMADHI — page du PV d'entrée,
+   adresses propres, textes au singulier et au pluriel, mentions juridiques.
 
    2.33.0 : avenant au bail relatif au calcul des charges — un modèle PAR
    IMMEUBLE (Biche, Nimy, Petite Guirlande) et puce ajoutée au protocole. */
 
 var CONFIG = {
 
-  version_app: "2.33.2",
+  version_app: "2.34.0",
 
   /* Protocole de signature imprimé en page 1 du procès-verbal.
      TEXTE DÉFINITIF, validé par l'avocat le 25/08/2026. Toute modification
@@ -244,6 +247,71 @@ var CONFIG = {
       fait: "Fait le {DATE}",
     },
   },
+
+  // --- Prêt de meubles de la S.A. SAMADHI -------------------------------
+  /* Source : Pre_t_Meuble_2023.pdf, image scannée, transcrite puis validée
+     mot pour mot par Gérard le 11/09/2026. Seules modifications validées :
+     « S.A. SAMADHI » partout, accord au pluriel en colocation, « Fait en
+     2 exemplaires » retiré, ligne « Le locataire » retirée (la signature
+     est celle du bloc « Signatures » du PV).
+
+     La page n'est jointe qu'au PV d'ENTRÉE, quand l'option est activée,
+     et JAMAIS sans description du mobilier.
+
+     ADRESSES PROPRES AU PRÊT — jamais reprises des textes d'avenant. Un
+     immeuble absent de cette liste (Havré, Vannes, Egmont) n'a pas
+     l'option. Les textes supposent le bailleur GERARD Jean-Marc représenté
+     par GERARD Julien, administrateur de la S.A. SAMADHI : un autre
+     bailleur rend l'option indisponible.
+
+     Champs : {LOCATAIRES} civilité + nom de chaque preneur ; {ADRESSE}
+     adresse ci-dessous ; {BOITE} numéro du studio, ou nom du dossier
+     OneDrive si ce n'est pas un studio ; {DATE} date de signature. */
+  pret_meubles: {
+    bailleur_cle: "jmg",
+    representant: "GERARD Julien",
+    adresses: {
+      biche: "rue de la Biche 10",
+      nimy: "rue de Nimy 94",
+      "petite-guirlande": "rue de la Petite Guirlande 16",
+      fermette: "rue du Pourcelet 65",
+    },
+    titre: "PRÊT DE MEUBLES",
+    declaration: {
+      un: "{LOCATAIRES}, déclare avoir reçu en prêt à titre gratuit de la S.A. SAMADHI, " +
+        "Avenue Jean Sibélius 18 Boîte 36 1070 Bruxelles.",
+      plusieurs: "{LOCATAIRES}, déclarent avoir reçu en prêt à titre gratuit de la S.A. SAMADHI, " +
+        "Avenue Jean Sibélius 18 Boîte 36 1070 Bruxelles.",
+    },
+    mobilier: "Le mobilier suivant :",
+    engagement: {
+      un: "{LOCATAIRES}, s'engage à restituer ce mobilier et objets dans l'état reçu, à la " +
+        "S.A. SAMADHI à la fin du bail qui le lie pour le logement sis à 7000 Mons " +
+        "{ADRESSE} bte {BOITE}",
+      plusieurs: "{LOCATAIRES}, s'engagent à restituer ce mobilier et objets dans l'état reçu, " +
+        "à la S.A. SAMADHI à la fin du bail qui les lie pour le logement sis à 7000 Mons " +
+        "{ADRESSE} bte {BOITE}",
+    },
+    indemnite: {
+      un: "Si toutefois, ce mobilier ou objets étaient dégradés, le locataire s'engage à " +
+        "indemniser la S.A. SAMADHI",
+      plusieurs: "Si toutefois, ce mobilier ou objets étaient dégradés, les locataires " +
+        "s'engagent à indemniser la S.A. SAMADHI",
+    },
+    fait: "Fait à Mons, le {DATE}",
+    signature: "Pour la S.A. SAMADHI : GERARD Julien, administrateur",
+  },
+
+  /* Puces AJOUTÉES au protocole, imprimées UNIQUEMENT quand le prêt de
+     meubles est joint. Validées par Gérard le 11/09/2026. */
+  protocole_pret: [
+    "Le preneur reconnaît avoir pris connaissance du prêt de meubles consenti à titre " +
+      "gratuit par la S.A. SAMADHI, reproduit au présent document dont il fait partie " +
+      "intégrante. Sa signature finale atteste de cette prise de connaissance et vaut " +
+      "signature de ce prêt.",
+    "GERARD Julien signe en qualité de mandataire du bailleur et d'administrateur de la " +
+      "S.A. SAMADHI, prêteur du mobilier ; sa signature vaut pour les deux.",
+  ],
 
   // --- Photos ------------------------------------------------------------
   photo: {

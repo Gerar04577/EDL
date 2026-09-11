@@ -1,4 +1,4 @@
-/* EDL — Mode d'emploi   ·   aide 2.33.2 (11/09/2026)
+/* EDL — Mode d'emploi   ·   aide 2.34.0 (11/09/2026)
 
    2.33.1 : références du bail (fin du bail aussi à l'entrée, avenant joint
    à Biche, Nimy et Petite Guirlande), civilité, confirmation de l'avenant.
@@ -107,6 +107,14 @@ var AIDE = [
       "d'énergie du 01/06 de l'année de début au 01/06 de l'année de fin, " +
       "clause internet oui ou non. À la SORTIE, il ne commande que la ligne " +
       "de référence : aucune page n'est jointe.",
+
+      "PRÊT DE MEUBLES SAMADHI — seulement à Biche, Nimy, Petite Guirlande et " +
+      "La Fermette ; ailleurs l'option n'existe pas. À l'ENTRÉE, « oui » joint " +
+      "au procès-verbal la page de prêt de la S.A. SAMADHI, après l'avenant et " +
+      "avant les signatures. Tu la signes deux fois en une : comme mandataire " +
+      "du bailleur et comme administrateur de la S.A. SAMADHI. La description " +
+      "du mobilier, à l'écran des identités, est OBLIGATOIRE. À la SORTIE, " +
+      "l'option ne joint rien.",
 
       "AUTEUR DES CONSTATATIONS — dans le bloc du bailleur, prérempli à ton " +
       "nom. Change-le si quelqu'un d'autre a fait la visite. Le décret " +
@@ -433,12 +441,15 @@ var AIDE = [
       "Bouton « Terminer la visite », puis « Passer à la signature ». Quatre étapes :",
       "IDENTITÉ — relève le numéro de la CARTE d'identité, celui du recto. Jamais le " +
       "numéro de Registre national : sa collecte est interdite au bailleur. Note aussi " +
-      "l'adresse électronique, elle sert à envoyer le document. Si l'avenant est joint, " +
+      "l'adresse électronique, elle sert à envoyer le document. Si l'avenant ou le prêt est joint, " +
       "choisis la civilité, MR ou MME, de chaque preneur : vide, elle s'imprime en pointillés. " +
-      "Les dates du bail y sont reprises et peuvent encore être complétées ou corrigées.",
+      "Les dates du bail y sont reprises et peuvent encore être complétées ou corrigées. " +
+      "Si le prêt de meubles est joint, décris-y le mobilier prêté, au clavier ou au micro : " +
+      "sans description, la lecture n'est pas accessible.",
       "LECTURE — fais défiler le document entier avec le locataire, puis coche qu'il l'a lu. " +
-      "Si l'avenant est joint, coche AUSSI qu'il en a pris connaissance : sans cette " +
-      "seconde confirmation, ni les réserves ni la signature ne sont accessibles.",
+      "Si l'avenant ou le prêt de meubles est joint, coche AUSSI qu'il en a pris " +
+      "connaissance, une confirmation pour chacun : sans elles, ni les réserves ni la " +
+      "signature ne sont accessibles.",
       "RÉSERVES — pose la question : « souhaitez-vous faire consigner des observations " +
       "ou des réserves ? » Consigne-les dans ses termes. S'il n'en a aucune, le document " +
       "le dira.",
