@@ -47,7 +47,7 @@
    Étape 3 : démarrage d'une visite. La capture arrive à l'étape suivante. */
 
 /* Marque de version : les autres fichiers doivent porter la même. */
-var VERSION_APP_JS = "2.34.2";
+var VERSION_APP_JS = "2.34.3";
 
 var E = {
   installee: false,

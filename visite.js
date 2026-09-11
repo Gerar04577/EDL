@@ -1,4 +1,7 @@
-/* EDL — Démarrage d'une visite   ·   visite 2.34.2 (11/09/2026)
+/* EDL — Démarrage d'une visite   ·   visite 2.34.3 (12/09/2026)
+
+   2.34.3 : marque de version seule, alignée sur app 2.34.3. Aucune autre
+   ligne n'est touchée.
 
    2.34.2 : marque de version seulement.
 
@@ -24,7 +27,7 @@
    du logement qu'une visite entière sans savoir où déposer les fichiers. */
 
 /* Marque de version : comparée au démarrage à celle d'app.js. */
-var VERSION_VISITE_JS = "2.34.2";
+var VERSION_VISITE_JS = "2.34.3";
 
 /* Étape 1 — le dossier de l'unité, dans le dossier de l'immeuble.
    Renvoie soit une résolution unique, soit la liste des candidats

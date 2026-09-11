@@ -1,4 +1,7 @@
-/* EDL — Procès-verbal en PDF   ·   pdf 2.34.2 (11/09/2026)
+/* EDL — Procès-verbal en PDF   ·   pdf 2.34.3 (12/09/2026)
+
+   2.34.3 : marque de version seule, alignée sur app 2.34.3. Aucune ligne de
+   fabrication du procès-verbal n'est touchée.
 
    2.34.2 : marque de version seulement.
 
@@ -37,7 +40,7 @@
 */
 
 /* Marque de version : comparée à celle d'app.js avant toute fabrication. */
-var VERSION_PDF_JS = "2.34.2";
+var VERSION_PDF_JS = "2.34.3";
 
 /* Rouge des titres d'avenant et de prêt : #c0392b, celui du bloc « Bail ». */
 var PDF_ROUGE_TITRE = [192, 57, 43];
