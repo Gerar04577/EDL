@@ -1,4 +1,6 @@
-/* EDL — Procès-verbal en PDF   ·   pdf 2.34.1 (11/09/2026)
+/* EDL — Procès-verbal en PDF   ·   pdf 2.34.2 (11/09/2026)
+
+   2.34.2 : marque de version seulement.
 
    2.34.1 : titres des pages « avenant au bail » et « prêt de meubles » en
    rouge et gras (même rouge que le bloc « Bail » de l'application). Le
@@ -35,7 +37,7 @@
 */
 
 /* Marque de version : comparée à celle d'app.js avant toute fabrication. */
-var VERSION_PDF_JS = "2.34.1";
+var VERSION_PDF_JS = "2.34.2";
 
 /* Rouge des titres d'avenant et de prêt : #c0392b, celui du bloc « Bail ». */
 var PDF_ROUGE_TITRE = [192, 57, 43];

@@ -1,4 +1,8 @@
-/* EDL — Écrans   ·   app 2.34.1 (11/09/2026)
+/* EDL — Écrans   ·   app 2.34.2 (11/09/2026)
+
+   2.34.2 : à l'écran des identités, les blocs « Avenant au bail — dates du
+   bail » et « Prêt de meubles — mobilier prêté » prennent le style rouge et
+   gras du bloc « Bail » du récapitulatif.
 
    2.34.1 : l'interrupteur du prêt de meubles passe dans le bloc rouge
    « Bail », sous l'avenant ; avertissement avant « Commencer la visite »
@@ -36,7 +40,7 @@
    Étape 3 : démarrage d'une visite. La capture arrive à l'étape suivante. */
 
 /* Marque de version : les autres fichiers doivent porter la même. */
-var VERSION_APP_JS = "2.34.1";
+var VERSION_APP_JS = "2.34.2";
 
 var E = {
   installee: false,
@@ -2291,7 +2295,7 @@ function ecranIdentites(message, alerte) {
       <p class="note">Aucune photographie de carte d'identité n'est prise ni conservée.</p>
     </div>
     ${avenantJoint
-      ? `<div class="bloc"><h2>Avenant au bail — dates du bail</h2>
+      ? `<div class="bloc bail" id="bloc-av-dates"><h2>Avenant au bail — dates du bail</h2>
           <div class="ligne"><span>Début du bail</span>
             <input type="date" id="av-debut" value="${echapper((V.bail || {}).debut || "")}"
                    style="width:auto;text-align:right"></div>
@@ -2303,11 +2307,11 @@ function ecranIdentites(message, alerte) {
         </div>`
       : ""}
     ${pretJoint
-      ? `<div class="bloc"><h2>Prêt de meubles — mobilier prêté</h2>
-          <textarea id="pm-mobilier" rows="5"
+      ? `<div class="bloc bail" id="bloc-pm-mobilier"><h2>Prêt de meubles — mobilier prêté</h2>
+          <textarea id="pm-mobilier" rows="5" style="border:2px solid #c0392b"
             placeholder="Décris le mobilier prêté — micro du clavier disponible">${
             echapper((V.pret || {}).mobilier || "")}</textarea>
-          <p class="note">Obligatoire : sans description, le document ne peut pas
+          <p class="note" style="color:#c0392b;font-weight:700">Obligatoire : sans description, le document ne peut pas
           être préparé. Les retours à la ligne sont repris tels quels.</p>
         </div>`
       : ""}

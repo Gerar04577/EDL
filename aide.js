@@ -1,4 +1,4 @@
-/* EDL — Mode d'emploi   ·   aide 2.34.1 (11/09/2026)
+/* EDL — Mode d'emploi   ·   aide 2.34.2 (11/09/2026)
 
    2.33.1 : références du bail (fin du bail aussi à l'entrée, avenant joint
    à Biche, Nimy et Petite Guirlande), civilité, confirmation de l'avenant.
