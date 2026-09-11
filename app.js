@@ -1,4 +1,10 @@
-/* EDL — Écrans   ·   app 2.33.1 (11/09/2026)
+/* EDL — Écrans   ·   app 2.33.2 (11/09/2026)
+
+   2.33.2 : les écrans de lecture, de réserves et le verrou de signature
+   attendent la fin des écritures en base avant de relire la visite — un
+   « oui » suivi aussitôt d'un bouton faisait refuser la signature à tort ;
+   dates du bail modifiables à l'écran des identités quand l'avenant est
+   joint.
 
    2.33.1 : interrupteur « Avenant au bail » réservé à Biche, Nimy et Petite
    Guirlande (les quatre autres immeubles n'ont pas d'avenant) ; signature
@@ -18,6 +24,9 @@
    format. Rien hors de la visée n'est touché.
 
    Étape 3 : démarrage d'une visite. La capture arrive à l'étape suivante. */
+
+/* Marque de version : les autres fichiers doivent porter la même. */
+var VERSION_APP_JS = "2.33.2";
 
 var E = {
   installee: false,
@@ -2181,6 +2190,15 @@ async function ecranCloture(visite) {
   $("btn-retour").onclick = () => ecranVisiteReprise(V);
 }
 
+/* RELECTURE SÛRE. Les écritures en base passent par une file (db.js). Un
+   écran ouvert juste après un choix — « oui », civilité, date — relisait
+   la base AVANT que l'écriture n'y soit : il travaillait sur l'état
+   d'avant. On attend donc que la file soit vide, puis on relit. */
+async function relireVisiteApresEcritures(visitId) {
+  await _enFile(async () => {});
+  return lireVisite(visitId);
+}
+
 // --- Identité des preneurs ----------------------------------------------
 
 function ecranIdentites(message) {
@@ -2198,6 +2216,18 @@ function ecranIdentites(message) {
       sa collecte est interdite au bailleur.</p>
       <p class="note">Aucune photographie de carte d'identité n'est prise ni conservée.</p>
     </div>
+    ${avenantJoint
+      ? `<div class="bloc"><h2>Avenant au bail — dates du bail</h2>
+          <div class="ligne"><span>Début du bail</span>
+            <input type="date" id="av-debut" value="${echapper((V.bail || {}).debut || "")}"
+                   style="width:auto;text-align:right"></div>
+          <div class="ligne"><span>Fin du bail</span>
+            <input type="date" id="av-fin" value="${echapper((V.bail || {}).fin || "")}"
+                   style="width:auto;text-align:right"></div>
+          <p class="note" id="av-note">${echapper(noteEnergie(
+            { bail_debut: (V.bail || {}).debut, bail_fin: (V.bail || {}).fin }))}</p>
+        </div>`
+      : ""}
     ${(V.parties.preneurs || []).map((x, i) => `<div class="bloc">
       <h2>Preneur ${i + 1}</h2>
       <div class="ligne"><span>Nom</span><span class="val">${echapper(x.nom_complet)}</span></div>
@@ -2256,6 +2286,23 @@ function ecranIdentites(message) {
       await ecrirePreneur(i, "numero_carte_identite", inp.value.trim() || null);
     };
   });
+  /* Dates du bail : enregistrées à la sortie du champ, sans redessin — un
+     redessin refermerait le sélecteur de date d'iOS. */
+  [["av-debut", "debut"], ["av-fin", "fin"]].forEach(([idChamp, cle]) => {
+    const e = $(idChamp);
+    if (!e) return;
+    e.onchange = async () => {
+      const n = $("av-note");
+      if (n) n.textContent = noteEnergie({ bail_debut: $("av-debut").value || null,
+                                           bail_fin: $("av-fin").value || null });
+      const valeur = e.value || null;
+      VISITE = await modifierVisite(VISITE.visit_id, v => {
+        v.bail = v.bail || {};
+        v.bail[cle] = valeur;
+      }) || VISITE;
+    };
+  });
+
   /* Civilité : enregistrée au choix, sans redessin — un redessin
      refermerait le menu d'iOS. */
   $("vue").querySelectorAll("[data-civilite]").forEach(sel => {
@@ -2297,6 +2344,10 @@ async function ecranLecture() {
   E.avenantLu = false;
   titre("Lecture du document", "Étape 2 sur 3");
   vue(`<p class="note">Préparation du document…</p>`);
+
+  /* Civilité, dates, courriel saisis à l'instant : le document doit les
+     contenir. */
+  VISITE = (await relireVisiteApresEcritures(VISITE.visit_id)) || VISITE;
 
   let doc;
   try { doc = await genererPV(VISITE); }
@@ -2356,7 +2407,13 @@ async function ecranLecture() {
       }) || VISITE;
     };
   }
-  $("btn-reserves").onclick = () => ecranReserves();
+  /* L'écran des réserves relit la base : il attend d'abord que la
+     confirmation de l'avenant y soit écrite. */
+  $("btn-reserves").onclick = async () => {
+    $("btn-reserves").disabled = true;
+    await _enFile(async () => {});
+    ecranReserves();
+  };
   $("btn-retour").onclick = () => ecranIdentites();   // vue() libère l'aperçu
 }
 
@@ -2596,19 +2653,26 @@ function majBoutonSigner(blocs) {
 
 async function signerEtDeposer(blocs) {
   const b = $("btn-signer");
+  /* Bouton désactivé AVANT toute attente : un second appui ne doit jamais
+     lancer une seconde signature. */
+  b.disabled = true; b.textContent = "Vérification…";
 
   /* Dernier verrou : un avenant joint ne se signe pas sans prise de
-     connaissance enregistrée, quel que soit le chemin suivi jusqu'ici. */
+     connaissance enregistrée, quel que soit le chemin suivi jusqu'ici.
+     Contrôlée EN BASE, une fois les écritures en file terminées. */
   let avenantJoint;
   try { avenantJoint = modeleAvenant(VISITE) !== null; }
   catch (e) { return erreurEcran(e.message, () => ecranLecture()); }
-  if (avenantJoint && !(VISITE.avenant && VISITE.avenant.prise_connaissance_le)) {
-    return erreurEcran("La prise de connaissance de l'avenant au bail n'est pas " +
-      "enregistrée. Reviens à la lecture du document et fais-la confirmer.",
-      () => ecranLecture());
+  if (avenantJoint) {
+    const enBase = await relireVisiteApresEcritures(VISITE.visit_id);
+    if (!(enBase && enBase.avenant && enBase.avenant.prise_connaissance_le)) {
+      return erreurEcran("La prise de connaissance de l'avenant au bail n'est pas " +
+        "enregistrée. Reviens à la lecture du document et fais-la confirmer.",
+        () => ecranLecture());
+    }
   }
 
-  b.disabled = true; b.textContent = "Fabrication du document…";
+  b.textContent = "Fabrication du document…";
 
   const signatures = { bailleur: null, preneurs: [] };
   blocs.forEach(x => {
@@ -5356,7 +5420,31 @@ function ecranDesignation(bloc, ligne) {
 
 // --- Démarrage -----------------------------------------------------------
 
+/* COHÉRENCE DES FICHIERS. Sur GitHub, chaque envoi est publié à part ;
+   ouverte entre deux envois, l'application peut garder un mélange d'anciens
+   et de nouveaux fichiers. Renvoie la liste des écarts, vide si tout va. */
+function controlerVersions() {
+  const lues = {
+    "config.js": (typeof CONFIG !== "undefined" && CONFIG.version_app) || "absente",
+    "visite.js": typeof VERSION_VISITE_JS !== "undefined" ? VERSION_VISITE_JS : "antérieure à 2.33.2",
+    "pdf.js": typeof VERSION_PDF_JS !== "undefined" ? VERSION_PDF_JS : "antérieure à 2.33.2",
+  };
+  return Object.keys(lues).filter(f => lues[f] !== VERSION_APP_JS)
+    .map(f => f + " : " + lues[f]);
+}
+
 async function demarrer() {
+  const ecarts = controlerVersions();
+  if (ecarts.length) {
+    titre("Mise à jour incomplète", "");
+    vue(`<div class="erreur"><strong>Les fichiers de l'application ne sont pas tous
+      de la même version</strong>Attendue : ${echapper(VERSION_APP_JS)}<br>${
+      ecarts.map(x => echapper(x)).join("<br>")}<br><br>
+      Ferme complètement l'application et rouvre-la. Si ce message reste, un
+      fichier n'a pas été remplacé sur GitHub. Les photographies et les visites
+      en cours restent en sécurité sur le téléphone.</div>`);
+    return;
+  }
   E.installee = window.navigator.standalone === true ||
     (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
 

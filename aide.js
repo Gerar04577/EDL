@@ -1,4 +1,4 @@
-/* EDL — Mode d'emploi   ·   aide 2.33.1 (11/09/2026)
+/* EDL — Mode d'emploi   ·   aide 2.33.2 (11/09/2026)
 
    2.33.1 : références du bail (fin du bail aussi à l'entrée, avenant joint
    à Biche, Nimy et Petite Guirlande), civilité, confirmation de l'avenant.
@@ -434,7 +434,8 @@ var AIDE = [
       "IDENTITÉ — relève le numéro de la CARTE d'identité, celui du recto. Jamais le " +
       "numéro de Registre national : sa collecte est interdite au bailleur. Note aussi " +
       "l'adresse électronique, elle sert à envoyer le document. Si l'avenant est joint, " +
-      "choisis la civilité, MR ou MME, de chaque preneur : vide, elle s'imprime en pointillés.",
+      "choisis la civilité, MR ou MME, de chaque preneur : vide, elle s'imprime en pointillés. " +
+      "Les dates du bail y sont reprises et peuvent encore être complétées ou corrigées.",
       "LECTURE — fais défiler le document entier avec le locataire, puis coche qu'il l'a lu. " +
       "Si l'avenant est joint, coche AUSSI qu'il en a pris connaissance : sans cette " +
       "seconde confirmation, ni les réserves ni la signature ne sont accessibles.",

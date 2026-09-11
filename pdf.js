@@ -1,4 +1,10 @@
-/* EDL — Procès-verbal en PDF   ·   pdf 2.33.0 (11/09/2026)
+/* EDL — Procès-verbal en PDF   ·   pdf 2.33.2 (11/09/2026)
+
+   2.33.2 : les blocs qui ne doivent jamais être coupés — portée, mention
+   des photographies non déposées, signatures — réservent leur place par
+   MESURE du texte réel et non plus par une hauteur estimée. Avec l'avenant
+   et une colocation, le bloc des signatures était coupé par un saut de
+   page. Le texte imprimé est inchangé.
 
    2.33.0 : page « avenant au bail » (calcul des charges) jointe au PV
    d'ENTRÉE, modèle propre à chaque immeuble ; puce du protocole, portée et
@@ -17,6 +23,9 @@
      6. Chiffrage, si activé
      7. Signatures et horodatage
 */
+
+/* Marque de version : comparée à celle d'app.js avant toute fabrication. */
+var VERSION_PDF_JS = "2.33.2";
 
 var PDF_MARGE = 18;
 var PDF_LARGEUR = 210;
@@ -245,6 +254,33 @@ function creerPlume(doc) {
   };
 }
 
+// --- Réservation de place par mesure ------------------------------------
+
+/* Limite basse utile : la même que celle de creerPlume().place(). */
+var PDF_BAS_UTILE = PDF_HAUTEUR - PDF_MARGE - 8;
+var PDF_BANDEAU = 16;          // hauteur d'un bandeau et de son espacement
+
+/* Hauteur exacte d'une suite de paragraphes, mesurée avec la même police,
+   la même taille et la même largeur que creerPlume().paragraphe. */
+function hauteurTextes(doc, elements) {
+  let h = 0;
+  elements.forEach(e => {
+    doc.setFont("helvetica", e.gras ? "bold" : "normal");
+    doc.setFontSize(e.taille || 10);
+    const largeur = PDF_LARGEUR - 2 * PDF_MARGE - (e.retrait || 0);
+    h += doc.splitTextToSize(String(e.texte == null ? "" : e.texte), largeur).length * 4.8 +
+         (e.apres || 0);
+  });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10);
+  return h;
+}
+
+/* Saute à la page suivante si le bloc mesuré ne tient pas en entier.
+   La marge de 6 mm couvre la réserve que place() prend avant chaque ligne. */
+function reserverBloc(doc, p, hauteur) {
+  if (p.y + hauteur + 6 > PDF_BAS_UTILE) { doc.addPage(); p.y = PDF_MARGE; }
+}
+
 // --- Avenant au bail ------------------------------------------------------
 
 /* Modèle d'avenant pour un immeuble, ou null. Sert aux écrans. Le modèle
@@ -351,6 +387,15 @@ function pageAvenant(doc, p, V, m) {
 }
 
 async function genererPV(visite) {
+  /* Fichiers de versions différentes (mise à jour publiée à moitié) : un
+     procès-verbal fabriqué ainsi pourrait perdre l'avenant, la civilité ou
+     la confirmation sans rien dire. On refuse. */
+  if (typeof VERSION_APP_JS === "undefined" || VERSION_APP_JS !== VERSION_PDF_JS ||
+      typeof VERSION_VISITE_JS === "undefined" || VERSION_VISITE_JS !== VERSION_PDF_JS ||
+      (typeof CONFIG !== "undefined" && CONFIG.version_app !== VERSION_PDF_JS)) {
+    throw new Error("Mise à jour incomplète : les fichiers de l'application ne sont pas " +
+      "tous de la version " + VERSION_PDF_JS + ". Ferme complètement l'application et rouvre-la.");
+  }
   const doc = nouveauDocument();
   const p = creerPlume(doc);
   const V = visite;
@@ -656,28 +701,23 @@ async function genererPV(visite) {
      bail, ce qui les rend opposables sans avenant. Réservées d'un bloc :
      coupées par un saut de page, elles seraient signées à moitié lues. */
   {
-    const hauteurPortee = (sortie ? 92 : 74) + (avenant ? 12 : 0);
-    if (p.y + hauteurPortee > PDF_HAUTEUR - PDF_MARGE) { doc.addPage(); p.y = PDF_MARGE; }
-    p.bandeauFixe(4, "Portée du présent procès-verbal");
-
-    p.paragraphe("Les constatations qui précèdent portent sur l'état apparent des " +
+    const clauses = [];
+    clauses.push("Les constatations qui précèdent portent sur l'état apparent des " +
       "lieux au jour de la visite. Elles ont été faites contradictoirement, en " +
       "présence des parties, sur ce qui était visible et accessible. Elles ne valent " +
       "ni renonciation ni quittance pour un vice ou une dégradation qui n'était ni " +
       "apparent ni accessible à ce moment, notamment sous un revêtement, derrière un " +
       "meuble ou un appareil.");
-    p.saut(2);
 
     /* La dernière phrase n'est pas une précaution de style : sans elle, la
        clause ressemblerait à une décharge des obligations de sécurité et de
        salubrité, qui sont impératives et ne peuvent être écartées. */
-    p.paragraphe("Le présent procès-verbal est un constat d'état des lieux. Il ne " +
+    clauses.push("Le présent procès-verbal est un constat d'état des lieux. Il ne " +
       "constitue ni une expertise technique, ni un diagnostic de conformité des " +
       "installations de gaz, d'électricité, d'eau ou de chauffage. Il ne modifie " +
       "aucune des obligations que la loi met à charge de l'une ou l'autre partie.");
-    p.saut(2);
 
-    p.paragraphe("La signature du présent procès-verbal porte sur les constatations " +
+    clauses.push("La signature du présent procès-verbal porte sur les constatations " +
       "matérielles qu'il contient" +
       (avenant ? " ainsi que sur l'avenant au bail relatif au calcul des charges" : "") +
       ". Elle ne vaut pas solde de tout compte. Demeurent " +
@@ -686,9 +726,8 @@ async function genererPV(visite) {
       (avenant ? ", dont les modalités sont fixées par cet avenant" : "") +
       ", les loyers, indexations, taxes et primes " +
       "d'assurance échus et impayés, ainsi que toute indemnité contractuelle.");
-    p.saut(2);
 
-    p.paragraphe("La répartition des réparations entre les parties s'opère " +
+    clauses.push("La répartition des réparations entre les parties s'opère " +
       "conformément aux articles 8 et 28, §2, du décret du 15 mars 2018 relatif au " +
       "bail d'habitation et à la liste non limitative des réparations locatives " +
       "arrêtée par le Gouvernement wallon. Aucune grille de vétusté n'est annexée au " +
@@ -701,15 +740,20 @@ async function genererPV(visite) {
        le décret exige un accord établi au plus tôt à la fin du contrat, or
        l'état des lieux de sortie se dresse avant la remise des clés. */
     if (sortie) {
-      p.saut(2);
       const auTerme = bailArriveAuTerme(V);
-      p.paragraphe("Les parties reconnaissent que la mission de constat est achevée. " +
+      clauses.push("Les parties reconnaissent que la mission de constat est achevée. " +
         "Le bailleur marque son accord sur la libération de la garantie locative" +
         (auTerme ? ", " : ", cet accord prenant effet au terme du contrat de bail, ") +
         "sous déduction des sommes dues au titre du présent procès-verbal et sous " +
         "réserve du décompte des charges visé ci-dessus, ainsi que des vices non " +
         "apparents visés au premier alinéa de la présente section.");
     }
+
+    /* Réservée d'un bloc, par mesure du texte réellement imprimé. */
+    reserverBloc(doc, p, PDF_BANDEAU +
+      hauteurTextes(doc, clauses.map((t, i) => ({ texte: t, apres: i ? 2 : 0 }))));
+    p.bandeauFixe(4, "Portée du présent procès-verbal");
+    clauses.forEach((t, i) => { if (i) p.saut(2); p.paragraphe(t); });
     p.saut(5);
   }
 
@@ -727,60 +771,70 @@ async function genererPV(visite) {
     /* Réservée d'un bloc : coupée par un saut de page, la mention perdrait
        sa force — le preneur signerait au bas d'une page en n'en ayant lu
        que la moitié. */
-    if (p.y + 56 > PDF_HAUTEUR - PDF_MARGE) { doc.addPage(); p.y = PDF_MARGE; }
-    p.bandeauFixe(4, "Photographies non déposées à ce jour");
-    p.paragraphe("À l'instant de la présente signature, " +
+    const mentions = [];
+    mentions.push("À l'instant de la présente signature, " +
       (enAttente.length + echouees.length) + " photographie(s) sur " +
       V.photos.length + " n'avaient pas été transmises au dossier informatique.");
-    p.saut(2);
-    p.paragraphe("Chacune a été prise et présentée aux parties au cours de la visite. " +
+    mentions.push("Chacune a été prise et présentée aux parties au cours de la visite. " +
       "Sa date, son heure et son empreinte SHA-256 figurent à l'annexe du présent " +
       "procès-verbal et sont donc couvertes par les signatures ci-dessous.");
-    p.saut(2);
     if (enAttente.length) {
-      p.paragraphe(enAttente.length + " photographie(s) sont en attente de " +
+      mentions.push(enAttente.length + " photographie(s) sont en attente de " +
         "transmission, faute de réseau disponible sur les lieux. Elles seront " +
         "déposées dans le dossier de la visite dès le rétablissement du réseau, " +
         "à l'adresse indiquée au présent document.");
-      p.saut(2);
     }
     if (echouees.length) {
       /* Le locataire ne les trouvera pas dans le dossier consultable : le
          dire au document plutôt que de le laisser découvrir. */
-      p.paragraphe(echouees.length + " photographie(s), identifiée(s) à l'annexe " +
+      mentions.push(echouees.length + " photographie(s), identifiée(s) à l'annexe " +
         "comme non transmises, ont été refusées par le service de stockage et ne " +
         "figureront pas dans le dossier consultable. Elles demeurent conservées par " +
         "le bailleur et peuvent être produites sur simple demande : leur empreinte " +
         "inscrite ci-après permet d'en vérifier l'intégrité.");
-      p.saut(2);
     }
-    p.paragraphe("Toute divergence entre une photographie produite ultérieurement et " +
+    mentions.push("Toute divergence entre une photographie produite ultérieurement et " +
       "l'empreinte inscrite à l'annexe se constate par simple recalcul.");
+    reserverBloc(doc, p, PDF_BANDEAU +
+      hauteurTextes(doc, mentions.map((t, i) => ({ texte: t, apres: i ? 2 : 0 }))));
+    p.bandeauFixe(4, "Photographies non déposées à ce jour");
+    mentions.forEach((t, i) => { if (i) p.saut(2); p.paragraphe(t); });
     p.saut(5);
   }
 
   const signataires = 1 + (V.parties.preneurs || []).length;
-  const hauteurBloc = 40 + Math.ceil(signataires / 2) * 34 + (avenant ? 10 : 0);
-  if (p.y + hauteurBloc > PDF_HAUTEUR - PDF_MARGE) { doc.addPage(); p.y = PDF_MARGE; }
-
-  p.bandeauFixe(0, "Signatures");
-  p.paragraphe("LU ET APPROUVÉ", { gras: true, taille: 12 });
-  p.saut(2);
-  p.paragraphe("Chaque signataire confirme avoir participé contradictoirement à l'état " +
+  const approbation = [];
+  approbation.push("Chaque signataire confirme avoir participé contradictoirement à l'état " +
     "des lieux, avoir pris connaissance du rapport qui lui est présenté ainsi que des " +
     "photographies qui en font partie" +
     (avenant ? " et de l'avenant au bail relatif au calcul des charges" : "") +
     ", et avoir eu la possibilité de faire consigner ses " +
     "observations et réserves avant sa validation.");
-  p.saut(2);
-  p.paragraphe("En apposant sa signature ci-dessous, il manifeste sa volonté de valider le " +
+  approbation.push("En apposant sa signature ci-dessous, il manifeste sa volonté de valider le " +
     "présent état des lieux" +
     (avenant ? " et d'approuver cet avenant" : "") +
     ", sous réserve des observations et réserves qui y sont " +
     "expressément consignées.");
-  p.saut(2);
-  p.paragraphe("Le présent état des lieux fait partie intégrante du bail dont il ne peut " +
+  approbation.push("Le présent état des lieux fait partie intégrante du bail dont il ne peut " +
     "être dissocié. Chaque signataire reconnaît en recevoir un exemplaire.");
+  const etabli = "Document établi le " +
+    dateFr(V.date_signature || new Date().toISOString()) + " (" + fuseau() + ")." +
+    "  Référence : " + (V.edl_id || V.visit_id) + "  —  Version : " + (V.version_doc || "V1");
+
+  /* Réservé d'un bloc, PAR MESURE : bandeau, « LU ET APPROUVÉ », les trois
+     paragraphes, toutes les rangées de signatures et la ligne d'horodatage.
+     Coupé, le bloc ferait signer une page sans le texte qu'on approuve.
+     Au-delà d'une page entière (très nombreux preneurs), il s'écoule. */
+  const hauteurSignatures = PDF_BANDEAU +
+    hauteurTextes(doc, [{ texte: "LU ET APPROUVÉ", gras: true, taille: 12, apres: 2 }]
+      .concat(approbation.map((t, i) => ({ texte: t, apres: i < approbation.length - 1 ? 2 : 0 })))) +
+    Math.ceil(signataires / 2) * 34 + 4 + hauteurTextes(doc, [{ texte: etabli, taille: 8 }]);
+  if (hauteurSignatures + 6 <= PDF_BAS_UTILE - PDF_MARGE) reserverBloc(doc, p, hauteurSignatures);
+
+  p.bandeauFixe(0, "Signatures");
+  p.paragraphe("LU ET APPROUVÉ", { gras: true, taille: 12 });
+  p.saut(2);
+  approbation.forEach((t, i) => { if (i) p.saut(2); p.paragraphe(t); });
   const blocs = [];
   blocs.push({ role: "Le bailleur",
                qualite: V.parties.bailleur_represente_par ? "Mandataire" : "Bailleur",
@@ -820,10 +874,7 @@ async function genererPV(visite) {
   p.y += 34;
 
   p.saut(4);
-  p.paragraphe("Document établi le " +
-    dateFr(V.date_signature || new Date().toISOString()) + " (" + fuseau() + ")." +
-    "  Référence : " + (V.edl_id || V.visit_id) + "  —  Version : " + (V.version_doc || "V1"),
-    { taille: 8 });
+  p.paragraphe(etabli, { taille: 8 });
 
   /* Les empreintes des photographies sont inscrites AU document : le
      SHA-256 du PDF les couvre donc, et l'on peut vérifier plus tard que

@@ -1,4 +1,6 @@
-/* EDL — Démarrage d'une visite   ·   visite 2.33.1 (11/09/2026)
+/* EDL — Démarrage d'une visite   ·   visite 2.33.2 (11/09/2026)
+
+   2.33.2 : marque de version lue au démarrage (cohérence des fichiers).
 
    2.33.1 : « avenant au bail » toujours « non » pour les quatre immeubles
    sans avenant ; une nouvelle version (V2…) doit refaire confirmer la
@@ -12,6 +14,9 @@
    Règle : l'application ne crée JAMAIS de dossier. Si le dossier attendu
    n'existe pas, la visite ne démarre pas. Mieux vaut un blocage à la porte
    du logement qu'une visite entière sans savoir où déposer les fichiers. */
+
+/* Marque de version : comparée au démarrage à celle d'app.js. */
+var VERSION_VISITE_JS = "2.33.2";
 
 /* Étape 1 — le dossier de l'unité, dans le dossier de l'immeuble.
    Renvoie soit une résolution unique, soit la liste des candidats
