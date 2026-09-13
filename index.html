@@ -1,5 +1,13 @@
 <!DOCTYPE html>
-<!-- EDL — index 2.32.2 (12/09/2026) : panneau de visée — déclencheur rond
+<!-- EDL — index 2.32.6 (14/09/2026) : cartes photo à six teintes avec badge
+     numéroté, bloc rouge de la carte d'identité et du courriel. Sélecteurs
+     portés à .constat.carte-photo et .ligne span.badge-photo : .constat et
+     .ligne span:first-child, déclarées plus bas ou plus spécifiques,
+     écrasaient sinon le rembourrage, le liseré et la couleur du badge.
+     2.32.5 : même correction pour la marge de l'étiquette « celle que tu
+     viens de garder », écrasée par .constat p { margin:0 }.
+
+     2.32.2 (12/09/2026) : panneau de visée — déclencheur rond
      remonté sous les boutons de mode, et classe « large » pour les trois
      réglages (barre pleine largeur, bouton de 34 px). Rien d'autre n'est
      touché dans ce fichier ; aucun autre curseur de l'application n'est
@@ -223,8 +231,57 @@
      Le liseré ne dure que tant qu'il reste une constatation à écrire :
      il dit ce qu'il RESTE à faire, pas ce qui a été fait. */
   .constat.a-traiter { border:2px solid #2f7d63; }
-  .etiquette-gardee { margin:0 0 8px; font-size:12px; display:inline-block;
-    background:#e6f4ec; color:#12503d; padding:3px 10px; border-radius:8px; }
+
+  /* UNE CARTE FERMÉE PAR PHOTOGRAPHIE.
+     Le trait de séparation ne suffisait pas : sur une pièce à vingt photos,
+     on ne savait plus quel champ de description allait avec quelle image.
+     Six teintes qui tournent selon le rang, jamais deux voisines pareilles,
+     et un liseré gauche épais qui tient lieu de gouttière.
+
+     SPÉCIFICITÉ : .constat est déclarée PLUS BAS dans cette feuille avec la
+     même spécificité (padding:9px 0 et border-bottom). Les règles ci-dessous
+     doivent donc porter .constat.carte-photo, sinon le rembourrage latéral
+     et l'absence de trait gris sont perdus. Même raison pour le badge, que
+     « .ligne span:first-child » colorerait en gris. */
+  .constat.carte-photo { border:2px solid #ddd9d2; border-left-width:7px;
+    border-radius:10px; padding:10px 11px; margin:0 0 12px; border-bottom-width:2px; }
+  .constat.carte-photo:last-of-type { margin-bottom:0; }
+  .ligne span.badge-photo { color:#fff; font-weight:600; font-size:12px;
+    padding:2px 9px; border-radius:7px; }
+  .carte-photo p.nom-photo { margin:6px 0 0; font-size:12px; color:#6a6a6a;
+    word-break:break-all; }
+  .constat.teinte-1 { border-color:#7b6bb0; background:#f7f5fc; }
+  .teinte-1 span.badge-photo { background:#7b6bb0; }
+  .constat.teinte-2 { border-color:#2f7d63; background:#f2f9f5; }
+  .teinte-2 span.badge-photo { background:#2f7d63; }
+  .constat.teinte-3 { border-color:#c9a227; background:#fdfaf0; }
+  .teinte-3 span.badge-photo { background:#c9a227; }
+  .constat.teinte-4 { border-color:#2d6f92; background:#f1f7fb; }
+  .teinte-4 span.badge-photo { background:#2d6f92; }
+  .constat.teinte-5 { border-color:#a8552f; background:#fdf5f1; }
+  .teinte-5 span.badge-photo { background:#a8552f; }
+  .constat.teinte-6 { border-color:#5f7a3d; background:#f5f9f0; }
+  .teinte-6 span.badge-photo { background:#5f7a3d; }
+  /* Celle qu'on vient de garder garde le vert franc, par-dessus sa teinte. */
+  .constat.carte-photo.a-traiter { border-color:#2f7d63;
+    border-left-width:7px; border-bottom-width:2px; }
+
+  /* LES DEUX CHAMPS À RELEVER SUR LA CARTE D'IDENTITÉ.
+     Même rouge que le mobilier du prêt de meubles : un seul rouge dans
+     l'application, réservé à ce qui ne peut pas être oublié. */
+  .bloc-carte { border:2px solid #c0392b; border-radius:10px;
+    background:#fdf3f2; padding:4px 11px 9px; margin:11px 0; }
+  .titre-carte { margin:7px 0 2px; color:#c0392b; font-weight:700;
+    font-size:12px; letter-spacing:.05em; text-transform:uppercase; }
+  .bloc-carte .ligne { border-bottom:0; }
+  .bloc-carte .ligne span { color:#c0392b; font-weight:700; }
+  .bloc-carte input { border:2px solid #c0392b; }
+  /* Sélecteur porté à .constat p.etiquette-gardee : « .constat p { margin:0 } »
+     est déclarée plus bas et plus spécifique, et écrasait la marge basse —
+     l'étiquette touchait le nom du fichier. */
+  .constat p.etiquette-gardee { margin:0 0 8px; font-size:12px;
+    display:inline-block; background:#e6f4ec; color:#12503d;
+    padding:3px 10px; border-radius:8px; }
   /* Celles qui sont déjà décrites reculent, sans devenir illisibles. */
   .constat.traitee { opacity:.72; }
 

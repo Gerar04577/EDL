@@ -1,4 +1,14 @@
-/* EDL — Écrans   ·   app 2.34.3 (12/09/2026)
+/* EDL — Écrans   ·   app 2.34.5 (14/09/2026)
+
+   2.34.5 : l'encadré des manques porte l'identifiant bloc-manques, pour être
+   distingué des autres blocs d'erreur de l'écran.
+
+   2.34.4 : une carte fermée par photographie, six teintes qui tournent et un
+   badge « Photo n » au-dessus du nom du fichier ; carte d'identité et courriel
+   réunis dans un bloc rouge encadré, pour TOUS les preneurs ; carte d'identité
+   en saisie libre, lettres comprises (les cartes françaises en contiennent) ;
+   « Terminer la visite » verrouillé tant qu'aucune clé n'est renseignée ou que
+   l'état général reste sans réponse. Les compteurs ne bloquent pas.
 
    2.34.3 : panneau de visée allégé. Les deux paragraphes d'explication
    (« Deux façons de lire la référence… » et l'état du zoom caméra) sont
@@ -47,7 +57,7 @@
    Étape 3 : démarrage d'une visite. La capture arrive à l'étape suivante. */
 
 /* Marque de version : les autres fichiers doivent porter la même. */
-var VERSION_APP_JS = "2.34.3";
+var VERSION_APP_JS = "2.34.5";
 
 var E = {
   installee: false,
@@ -960,6 +970,31 @@ async function lancerVisite() {
 
 var VISITE = null;
 
+/* LES SEULS MANQUES QUI BLOQUENT LA CLÔTURE.
+   Décision de Gérard : les compteurs n'en font pas partie. Un index peut
+   être illisible, un local technique fermé ; bloquer dessus imposerait un
+   second déplacement. Les clés et l'état général se répondent sur place,
+   en quelques secondes, et leur absence rend le procès-verbal muet sur
+   deux points qu'on lui demandera toujours.
+   Une seule clé suffit : toutes les unités n'ont ni portail ni jardin. */
+function manquesCloture(visite) {
+  const manques = [];
+  const cles = visite.cles || {};
+  const auMoinsUneCle = Object.keys(cles).some(k =>
+    cles[k] !== null && cles[k] !== undefined && cles[k] !== "");
+  if (!auMoinsUneCle) manques.push("Aucune clé renseignée");
+
+  const g = visite.etat_general || {};
+  if (!g.degats_locatifs || g.degats_locatifs.constate === null ||
+      g.degats_locatifs.constate === undefined)
+    manques.push("Dégâts locatifs : question sans réponse");
+  if (!g.proprete || g.proprete.propre === null ||
+      g.proprete.propre === undefined)
+    manques.push("Propreté : question sans réponse");
+
+  return manques;
+}
+
 async function ecranVisiteReprise(visite) {
   /* Changement de visite : les photographies d'entrée du logement
      précédent n'ont plus rien à faire ici. */
@@ -967,6 +1002,12 @@ async function ecranVisiteReprise(visite) {
   VISITE = visite;
   E.ecran = "visite";
   titre(visite.bien.unite_source, visite.type + " — " + visite.bien.dossier_locataire_onedrive);
+
+  /* CE QUI EMPÊCHE DE TERMINER. Les compteurs restent un simple rappel :
+     un index peut être illisible ou inaccessible le jour de la visite, et
+     bloquer dessus obligerait à repasser. Les clés et l'état général ne
+     dépendent, eux, que de trois réponses à l'écran. */
+  const manquePourCloturer = manquesCloture(visite);
 
   const parPiece = {};
   visite.photos.forEach(p => { parPiece[p.rattachement] = (parPiece[p.rattachement] || 0) + 1; });
@@ -984,8 +1025,15 @@ async function ecranVisiteReprise(visite) {
     <button class="secondaire" id="btn-releves">Compteurs, clés et état général</button>
     ${visite.type === "EDLS"
       ? `<button class="secondaire" id="btn-comparer-edl">Comparer avec l'entrée</button>` : ""}
-    <button id="btn-cloturer">Terminer la visite</button>
+    ${manquePourCloturer.length
+      ? `<div class="erreur" id="bloc-manques"><strong>Impossible de terminer</strong>
+         ${manquePourCloturer.map(m => "<br>· " + echapper(m)).join("")}
+         <br><br><button class="mini" id="btn-aller-releves"
+           >Aller aux compteurs, clés et état général</button></div>` : ""}
+    <button id="btn-cloturer"${manquePourCloturer.length ? " disabled" : ""}>Terminer la visite</button>
     <button class="secondaire" id="btn-accueil">Retour à l'accueil</button>`);
+
+  if ($("btn-aller-releves")) $("btn-aller-releves").onclick = () => ecranReleves();
 
   $("vue").querySelectorAll("[data-piece]").forEach(b =>
     b.onclick = () => ecranPiece(b.getAttribute("data-piece")));
@@ -2333,14 +2381,18 @@ function ecranIdentites(message, alerte) {
                  x.civilite === c ? " selected" : ""}>${c}</option>`).join("")}
              </select></div>`
         : ""}
-      <div class="ligne"><span>Carte d'identité</span>
-        <input class="saisie-carte" inputmode="numeric" maxlength="15"
-          placeholder="000-0000000-00" data-carte="${i}"
-          value="${echapper(x.numero_carte_identite || "")}"></div>
-      <div class="ligne"><span>Courriel</span>
-        <input class="saisie-mail" inputmode="email" data-mail="${i}"
-          placeholder="pour l'envoi du document"
-          value="${echapper(x.email || "")}"></div>
+      <div class="bloc-carte">
+        <p class="titre-carte">À relever sur la carte</p>
+        <div class="ligne"><span>Carte d'identité</span>
+          <input class="saisie-carte" inputmode="text" maxlength="30"
+            autocapitalize="characters" autocorrect="off" spellcheck="false"
+            placeholder="numéro au recto" data-carte="${i}"
+            value="${echapper(x.numero_carte_identite || "")}"></div>
+        <div class="ligne"><span>Courriel</span>
+          <input class="saisie-mail" inputmode="email" data-mail="${i}"
+            placeholder="pour l'envoi du document"
+            value="${echapper(x.email || "")}"></div>
+      </div>
       <div class="interrupteur"><span>Qualité</span><span class="segments">
         ${["Locataire", "Colocataire", "Mandataire"].map(q =>
           `<button class="seg${(x.qualite || "Locataire") === q ? " actif" : ""}"
@@ -4982,19 +5034,25 @@ function dessinerPiece(message) {
 
     <div class="bloc"><h2>${photos.length} photo${photos.length > 1 ? "s" : ""}${
         photos.length ? " — " + deposees + " enregistrée" + (deposees > 1 ? "s" : "") : ""}</h2>
-      ${photos.length ? photos.map(p => {
+      ${photos.length ? photos.map((p, rang) => {
         const brouillon = E.brouillons[p.photo_id] === undefined
           ? (p.description || "") : E.brouillons[p.photo_id];
         const dejaConstat = piece.constatations.some(c => c.photo_id === p.photo_id);
         /* Le liseré ne dure que tant qu'il reste quelque chose à faire. */
         const aTraiter = E.photoGardee === p.photo_id && !dejaConstat;
-        return `<div class="constat${aTraiter ? " a-traiter" : ""}${
+        /* UNE CARTE FERMÉE PAR PHOTOGRAPHIE. Le trait de séparation ne
+           suffisait pas : sur une pièce à vingt photos, on ne savait plus
+           quel champ de description appartenait à quelle image. Six teintes
+           qui tournent selon le rang, et un badge numéroté. */
+        return `<div class="constat carte-photo teinte-${(rang % 6) + 1}${
+          aTraiter ? " a-traiter" : ""}${
           dejaConstat ? " traitee" : ""}"${aTraiter ? ' id="photo-a-traiter"' : ""}>
-          ${aTraiter ? `<p class="etiquette-gardee">Celle que tu viens de garder</p>` : ""}
-          <div class="ligne"><span>${echapper(p.nom_fichier)}</span>
+          <div class="ligne"><span class="badge-photo">Photo ${rang + 1}</span>
           <span class="val ${p.statut_transfert === "confirme" ? "ok" : "ko"}">${
             p.statut_transfert === "confirme" ? "enregistrée"
             : p.statut_transfert === "echec" ? "refusée" : "en attente"}</span></div>
+          ${aTraiter ? `<p class="etiquette-gardee">Celle que tu viens de garder</p>` : ""}
+          <p class="nom-photo">${echapper(p.nom_fichier)}</p>
           ${p.statut_transfert === "echec"
             ? `<p class="note ko">Refusée par Microsoft : ${
                 echapper(p.motif_echec || "motif inconnu")}. Elle restera au

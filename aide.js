@@ -1,4 +1,7 @@
-/* EDL — Mode d'emploi   ·   aide 2.34.3 (12/09/2026)
+/* EDL — Mode d'emploi   ·   aide 2.34.5 (14/09/2026)
+
+   2.34.4 : blocage de la clôture sur les clés et l'état général, cartes
+   numérotées des photographies.
 
    2.34.3 : section 5 bis complétée. Les deux explications retirées de
    l'écran de visée (Cadre / Contours, et le réglage du zoom de la caméra
@@ -472,6 +475,20 @@ var AIDE = [
   {
     titre: "7. Terminer et signer",
     corps: [
+      "AVANT DE POUVOIR TERMINER. Le bouton « Terminer la visite » reste " +
+      "grisé tant qu'aucune clé n'est renseignée, ou tant que l'une des deux " +
+      "questions d'état général — dégâts locatifs, propreté — est sans réponse. " +
+      "Un encadré rouge dit ce qui manque et t'emmène directement à l'écran des " +
+      "compteurs, clés et état général. Les COMPTEURS, eux, ne bloquent jamais : " +
+      "un index peut être illisible ou un local technique fermé, et il ne faut " +
+      "pas qu'un relevé impossible t'oblige à repasser. Leur absence reste " +
+      "signalée en rappel.",
+
+      "LES PHOTOGRAPHIES D'UNE PIÈCE sont présentées une par carte, encadrée et " +
+      "numérotée — Photo 1, Photo 2 — avec six couleurs qui tournent. Le champ de " +
+      "description qui suit un badge appartient à cette photo-là et à aucune " +
+      "autre. Le nom du fichier reste affiché sous le badge.",
+
       "Bouton « Terminer la visite », puis « Passer à la signature ». Quatre étapes :",
       "IDENTITÉ — relève le numéro de la CARTE d'identité, celui du recto. Jamais le " +
       "numéro de Registre national : sa collecte est interdite au bailleur. Note aussi " +
