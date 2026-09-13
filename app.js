@@ -1,4 +1,6 @@
-/* EDL — Écrans   ·   app 2.34.5 (14/09/2026)
+/* EDL — Écrans   ·   app 2.34.6 (14/09/2026)
+
+   2.34.6 : marque de version, alignée sur la clause d'aménagement du prêt.
 
    2.34.5 : l'encadré des manques porte l'identifiant bloc-manques, pour être
    distingué des autres blocs d'erreur de l'écran.
@@ -57,7 +59,7 @@
    Étape 3 : démarrage d'une visite. La capture arrive à l'étape suivante. */
 
 /* Marque de version : les autres fichiers doivent porter la même. */
-var VERSION_APP_JS = "2.34.5";
+var VERSION_APP_JS = "2.34.6";
 
 var E = {
   installee: false,

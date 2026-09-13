@@ -1,4 +1,4 @@
-/* EDL — Configuration   ·   config 2.34.5 (14/09/2026)
+/* EDL — Configuration   ·   config 2.34.6 (14/09/2026) : clause d'aménagement du prêt de meubles
    Toutes les valeurs susceptibles de changer sont ici, et nulle part ailleurs.
    Aucune clé secrète dans ce fichier : la clé Gemini vit dans Make.
 
@@ -10,7 +10,7 @@
 
 var CONFIG = {
 
-  version_app: "2.34.5",
+  version_app: "2.34.6",
 
   /* Protocole de signature imprimé en page 1 du procès-verbal.
      TEXTE DÉFINITIF, validé par l'avocat le 25/08/2026. Toute modification
@@ -291,6 +291,36 @@ var CONFIG = {
       plusieurs: "{LOCATAIRES}, s'engagent à restituer ce mobilier et objets dans l'état reçu, " +
         "à la S.A. SAMADHI à la fin du bail qui les lie pour le logement sis à 7000 Mons " +
         "{ADRESSE} bte {BOITE}",
+    },
+    /* CLAUSE D'AMÉNAGEMENT ET DE DÉMÉNAGEMENT DU MOBILIER.
+       Validée par le service juridique du SNP le 14/09/2026. Elle ne traite
+       QUE du déplacement des meubles : leur état reste couvert par
+       « engagement » et « indemnite » ci-dessous, et il ne faut pas que les
+       deux se recoupent — deux clauses qui disent la même chose en termes
+       différents s'interprètent l'une contre l'autre.
+       « la veille » et non « le jour » de l'état des lieux de sortie :
+       exigence de Gérard, pour ne pas constater pendant un déménagement. */
+    amenagement: {
+      un: "Le preneur est autorisé à aménager le logement à sa convenance et à " +
+        "écarter tout ou partie du mobilier prêté pendant la durée du bail. Cette " +
+        "autorisation ne vaut ni cession, ni échange, ni renonciation de la " +
+        "S.A. SAMADHI à la propriété du mobilier prêté.\n" +
+        "L'enlèvement, le transport, l'entreposage et le retour du mobilier écarté " +
+        "sont à la charge exclusive du preneur, à ses frais, risques et périls. La " +
+        "S.A. SAMADHI ne l'entrepose pas et n'en assume aucune garde ; la présente " +
+        "clause ne fait naître à sa charge aucun contrat de dépôt.\n" +
+        "Le mobilier écarté est replacé dans le logement au plus tard la veille de " +
+        "l'état des lieux de sortie.",
+      plusieurs: "Les preneurs sont autorisés à aménager le logement à leur " +
+        "convenance et à écarter tout ou partie du mobilier prêté pendant la durée " +
+        "du bail. Cette autorisation ne vaut ni cession, ni échange, ni " +
+        "renonciation de la S.A. SAMADHI à la propriété du mobilier prêté.\n" +
+        "L'enlèvement, le transport, l'entreposage et le retour du mobilier écarté " +
+        "sont à la charge exclusive des preneurs, à leurs frais, risques et périls. " +
+        "La S.A. SAMADHI ne l'entrepose pas et n'en assume aucune garde ; la " +
+        "présente clause ne fait naître à sa charge aucun contrat de dépôt.\n" +
+        "Le mobilier écarté est replacé dans le logement au plus tard la veille de " +
+        "l'état des lieux de sortie.",
     },
     indemnite: {
       un: "Si toutefois, ce mobilier ou objets étaient dégradés, le locataire s'engage à " +

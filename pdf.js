@@ -1,4 +1,5 @@
-/* EDL — Procès-verbal en PDF   ·   pdf 2.34.5 (14/09/2026)
+/* EDL — Procès-verbal en PDF   ·   pdf 2.34.6 (14/09/2026) : clause d'aménagement et de
+   déménagement du mobilier imprimée sur la page de prêt, après l'indemnité.
 
    2.34.4 : marque de version seule, alignée sur app 2.34.4.
 
@@ -42,7 +43,7 @@
 */
 
 /* Marque de version : comparée à celle d'app.js avant toute fabrication. */
-var VERSION_PDF_JS = "2.34.5";
+var VERSION_PDF_JS = "2.34.6";
 
 /* Rouge des titres d'avenant et de prêt : #c0392b, celui du bloc « Bail ». */
 var PDF_ROUGE_TITRE = [192, 57, 43];
@@ -486,6 +487,11 @@ function textePret(V, c) {
     description: String(V.pret.mobilier || "").trim(),
     engagement: remplirAvenant(c.engagement[nombre], valeurs),
     indemnite: remplirAvenant(c.indemnite[nombre], valeurs),
+    /* Clause d'aménagement : absente des configurations antérieures à la
+       2.34.6. On rend une chaîne vide plutôt que de lever : un procès-verbal
+       ne doit pas échouer parce qu'une clause facultative manque. */
+    amenagement: (c.amenagement && c.amenagement[nombre])
+      ? remplirAvenant(c.amenagement[nombre], valeurs) : "",
     fait: remplirAvenant(c.fait, valeurs),
     signature: c.signature,
   };
@@ -508,6 +514,13 @@ function pagePret(doc, p, V, c) {
   p.saut(5);
   p.paragraphe(t.engagement); p.saut(3);
   p.paragraphe(t.indemnite); p.saut(4);
+  /* Aménagement et déménagement du mobilier. Chaque alinéa sur sa ligne :
+     la clause en compte trois, et les fondre en un pavé la rendrait
+     illisible sur un document signé. */
+  if (t.amenagement) {
+    t.amenagement.split(/\r?\n/).forEach(l => { p.paragraphe(l); p.saut(3); });
+    p.saut(2);
+  }
   p.paragraphe(t.fait); p.saut(6);
   p.paragraphe(t.signature);
   p.saut(8);

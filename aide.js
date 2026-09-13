@@ -1,4 +1,4 @@
-/* EDL — Mode d'emploi   ·   aide 2.34.5 (14/09/2026)
+/* EDL — Mode d'emploi   ·   aide 2.34.6 (14/09/2026)
 
    2.34.4 : blocage de la clôture sur les clés et l'état général, cartes
    numérotées des photographies.
@@ -495,6 +495,12 @@ var AIDE = [
       "l'adresse électronique, elle sert à envoyer le document. Si l'avenant ou le prêt est joint, " +
       "choisis la civilité, MR ou MME, de chaque preneur : vide, elle s'imprime en pointillés. " +
       "Les dates du bail y sont reprises et peuvent encore être complétées ou corrigées. " +
+      "La page du prêt porte aussi une clause d'aménagement : le locataire peut " +
+      "écarter le mobilier prêté et meubler à son goût, mais l'enlèvement, " +
+      "l'entreposage et le retour sont à sa charge, la S.A. SAMADHI n'entrepose " +
+      "rien, et tout doit être replacé au plus tard LA VEILLE de l'état des lieux " +
+      "de sortie. Texte validé par le service juridique du SNP.",
+
       "Si le prêt de meubles est joint, décris-y le mobilier prêté, au clavier ou au micro : " +
       "sans description, la lecture n'est pas accessible.",
       "LECTURE — fais défiler le document entier avec le locataire, puis coche qu'il l'a lu. " +
