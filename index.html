@@ -1,5 +1,16 @@
 <!DOCTYPE html>
-<!-- EDL — index 2.32.6 (14/09/2026) : cartes photo à six teintes avec badge
+<!-- EDL — index 2.34.9 (14/09/2026)
+
+     NUMÉROTATION ALIGNÉE. Ce fichier suivait son propre compteur, hérité du
+     projet : 2.32.x pendant qu'app.js était en 2.34.x. Deux compteurs pour
+     une seule application prêtaient à confusion. À partir d'ici, index.html
+     porte le MÊME numéro que les fichiers JavaScript, qu'il ait changé ou
+     non. La dernière version de l'ancien compteur était 2.32.7.
+
+     2.32.7 : le bloc de description groupée, passé dans le bloc des
+     photographies, ne doit pas former un cadre dans un cadre.
+
+     2.32.6 (14/09/2026) : cartes photo à six teintes avec badge
      numéroté, bloc rouge de la carte d'identité et du courriel. Sélecteurs
      portés à .constat.carte-photo et .ligne span.badge-photo : .constat et
      .ligne span:first-child, déclarées plus bas ou plus spécifiques,
@@ -269,6 +280,15 @@
   /* LES DEUX CHAMPS À RELEVER SUR LA CARTE D'IDENTITÉ.
      Même rouge que le mobilier du prêt de meubles : un seul rouge dans
      l'application, réservé à ce qui ne peut pas être oublié. */
+  /* LE BLOC DE DESCRIPTION GROUPÉE EST MAINTENANT DANS LE BLOC DES
+     PHOTOGRAPHIES (app 2.34.9). Sans cette règle, on obtient un cadre blanc
+     dans un cadre blanc : deux bordures, deux rembourrages de 17 px, et une
+     colonne de texte qui rétrécit d'autant sur un téléphone. On supprime le
+     cadre imbriqué et on marque la séparation par un trait franc. */
+  #zone-groupe > .bloc { border:0; border-top:2px solid #7b6bb0;
+    border-radius:0; background:transparent; padding:14px 0 0; margin:16px 0 0; }
+  #zone-groupe > .bloc h2 { color:#5a4a86; }
+
   .bloc-carte { border:2px solid #c0392b; border-radius:10px;
     background:#fdf3f2; padding:4px 11px 9px; margin:11px 0; }
   .titre-carte { margin:7px 0 2px; color:#c0392b; font-weight:700;

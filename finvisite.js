@@ -1,4 +1,6 @@
-/* EDL — Fin de visite   ·   finvisite 2.34.8 (14/09/2026)
+/* EDL — Fin de visite   ·   finvisite 2.34.9 (14/09/2026)
+
+   2.34.9 : numérotation alignée sur le lot ; contenu inchangé depuis 2.34.8.
 
    2.34.8 : une panne du journal ne fait plus croire que la récupération a
    échoué.

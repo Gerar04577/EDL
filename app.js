@@ -1,4 +1,4 @@
-/* EDL — Écrans   ·   app 2.34.8 (14/09/2026)
+/* EDL — Écrans   ·   app 2.34.9 (14/09/2026)
 
    2.34.7 : plus rien de l'application à la racine OneDrive. Un dossier EDL
    accueille la table des correspondances et un nouveau fichier de réglages,
@@ -64,7 +64,7 @@
    Étape 3 : démarrage d'une visite. La capture arrive à l'étape suivante. */
 
 /* Marque de version : les autres fichiers doivent porter la même. */
-var VERSION_APP_JS = "2.34.8";
+var VERSION_APP_JS = "2.34.9";
 
 var E = {
   installee: false,
@@ -4697,8 +4697,20 @@ function majBoutonCocher(bouton, coche) {
 function rafraichirZoneGroupe(piece, photos) {
   const zone = $("zone-groupe");
   if (!zone) return dessinerPiece();
+  const etaitVide = zone.innerHTML.trim() === "";
   zone.innerHTML = blocGroupe(piece, photos);
   brancherZoneGroupe(piece, photos);
+  /* LE BLOC VIENT D'APPARAÎTRE — deuxième photographie cochée. Il est en bas
+     de l'écran, sous la dernière photographie : sans ce défilement, on ne
+     saurait pas qu'il est là. UNE SEULE FOIS, à l'apparition : redescendre à
+     chaque nouvelle coche ferait sauter l'écran pendant qu'on parcourt la
+     liste. Même procédé que pour la photographie qu'on vient de garder. */
+  if (etaitVide && zone.innerHTML.trim() !== "") {
+    requestAnimationFrame(() => {
+      const z = $("zone-groupe");
+      if (z && z.scrollIntoView) z.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
 }
 
 /* Message passager, affiché sans reconstruire l'écran. */
@@ -5051,8 +5063,6 @@ function dessinerPiece(message) {
 
     ${VISITE.type === "EDLS" ? blocPhotosEntree() : ""}
 
-    <div id="zone-groupe">${blocGroupe(piece, photos)}</div>
-
     <div class="bloc"><h2>${photos.length} photo${photos.length > 1 ? "s" : ""}${
         photos.length ? " — " + deposees + " enregistrée" + (deposees > 1 ? "s" : "") : ""}</h2>
       ${photos.length ? photos.map((p, rang) => {
@@ -5118,6 +5128,12 @@ function dessinerPiece(message) {
               echapper(p.photo_id)}">retirer de l'état des lieux</button></p></div>`;
         }).join("")
         : `<p class="note">Aucune photo.</p>`}
+
+      <!-- LE BLOC DE GROUPE EST ICI, SOUS LA DERNIÈRE PHOTOGRAPHIE.
+           Il était en tête d'écran : sur une pièce à cent photographies, il
+           fallait remonter tout en haut après avoir coché la cinquième. -->
+      <div id="zone-groupe">${blocGroupe(piece, photos)}</div>
+
       <input type="file" accept="image/*" capture="environment" id="appareil" class="cache">
       <button id="btn-photo">Prendre une photo</button>
     </div>

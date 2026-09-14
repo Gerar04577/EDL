@@ -1,4 +1,6 @@
-/* EDL — Correspondances liste des locataires / OneDrive   ·   comparaison 2.34.8 (14/09/2026)
+/* EDL — Correspondances liste des locataires / OneDrive   ·   comparaison 2.34.9 (14/09/2026)
+
+   2.34.9 : numérotation alignée sur le lot ; contenu inchangé depuis 2.34.7.
 
    2.34.7 : la table est lue et écrite dans le dossier EDL, plus à la racine.
    Lecture de secours à l'ancien emplacement, sans suppression.

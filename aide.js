@@ -1,4 +1,6 @@
-/* EDL — Mode d'emploi   ·   aide 2.34.8 (14/09/2026)
+/* EDL — Mode d'emploi   ·   aide 2.34.9 (14/09/2026)
+
+   2.34.9 : le bloc de description groupée est sous la dernière photographie.
 
    2.34.7 : que faire quand le bouton d'envoi n'apparaît pas, et sauvegarde
    de l'adresse du scénario dans le dossier EDL de OneDrive.
