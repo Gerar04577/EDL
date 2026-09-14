@@ -1,4 +1,7 @@
-/* EDL — Mode d'emploi   ·   aide 2.34.6 (14/09/2026)
+/* EDL — Mode d'emploi   ·   aide 2.34.8 (14/09/2026)
+
+   2.34.7 : que faire quand le bouton d'envoi n'apparaît pas, et sauvegarde
+   de l'adresse du scénario dans le dossier EDL de OneDrive.
 
    2.34.4 : blocage de la clôture sur les clés et l'état général, cartes
    numérotées des photographies.
@@ -529,6 +532,19 @@ var AIDE = [
       "part au bouton « Envoyer ».",
       "Appuie ensuite sur « Rapport Word et courriel au locataire ». Laisse « Rapport " +
       "Word » sur non, et « Courriel » sur oui.",
+
+      "SI CE BOUTON N'APPARAÎT PAS et qu'un pavé orange te dit d'envoyer le PDF " +
+      "depuis OneDrive, c'est que l'adresse du scénario Make n'est pas enregistrée. " +
+      "Va à l'accueil, écran « Rapport et courriel » : le sous-titre dit « Non " +
+      "configuré ». Colle l'adresse du scénario EDL-FIN-VISITE et appuie sur " +
+      "« Enregistrer cette adresse » — coller sans appuyer n'enregistre rien.",
+
+      "DEPUIS LA 2.34.7, cette adresse est aussi sauvegardée dans OneDrive, dans le " +
+      "dossier EDL, fichier EDL-reglages.json. Si iOS vide le stockage du téléphone — " +
+      "cela arrive quand l'icône est retirée puis réinstallée — elle revient toute " +
+      "seule au démarrage suivant, dès que tu es connecté à Microsoft. Le dossier EDL " +
+      "contient aussi la table des correspondances : rien de technique ne traîne plus " +
+      "à la racine, à côté des dossiers d'immeubles.",
       "L'envoi le jour même établit que le locataire a reçu copie : cela fait partie " +
       "de la preuve.",
       "Le courriel contient aussi un lien vers les photographies, en lecture seule. " +

@@ -1,4 +1,7 @@
-/* EDL — Correspondances liste des locataires / OneDrive
+/* EDL — Correspondances liste des locataires / OneDrive   ·   comparaison 2.34.8 (14/09/2026)
+
+   2.34.7 : la table est lue et écrite dans le dossier EDL, plus à la racine.
+   Lecture de secours à l'ancien emplacement, sans suppression.
 
    Une correspondance APPROUVÉE par l'utilisateur fait foi et remplace
    définitivement le calcul automatique. Elle est enregistrée dans OneDrive,
@@ -12,7 +15,12 @@
    Contrôle à faire au bureau, jamais debout dans un logement. */
 
 /* ---- Table des correspondances approuvées -------------------------------
-   Déposée dans le dossier racine, à côté des dossiers d'immeubles. */
+   Déposée dans le dossier technique EDL, et non plus à la racine : Gérard
+   ne veut rien voir à côté des dossiers d'immeubles (14/09/2026).
+   Le fichier a été déplacé à la main dans EDL. Une lecture de secours à la
+   racine subsiste pour les appareils qui n'auraient pas encore vu le
+   déplacement ; elle ne supprime rien, et la première écriture remet tout
+   au bon endroit. */
 
 const FICHIER_CORRESPONDANCES = "EDL_correspondances.json";
 let _correspondances = null;
@@ -22,12 +30,16 @@ function cleUnite(immeubleId, designation) { return immeubleId + "|" + designati
 async function chargerCorrespondances(forcer) {
   if (_correspondances && !forcer) return _correspondances;
   try {
-    const racine = await obtenirRefRacineImmobilier();
-    const enfants = await enfantsDeRef(racine);
-    const f = enfants.find(e => (e.name || "").trim() === FICHIER_CORRESPONDANCES);
-    if (!f) { _correspondances = { version: 1, unites: {} }; return _correspondances; }
-    const ref = refDe(f, racine.driveId);
-    _correspondances = await telechargerJson(ref);
+    let lu = await lireJsonEDL(FICHIER_CORRESPONDANCES);
+    if (!lu) {
+      /* Secours : l'ancien emplacement, à la racine. Lecture seule. */
+      const racine = await obtenirRefRacineImmobilier();
+      const enfants = await enfantsDeRef(racine);
+      const f = enfants.find(e => (e.name || "").trim() === FICHIER_CORRESPONDANCES);
+      if (f) lu = await telechargerJson(refDe(f, racine.driveId));
+    }
+    if (!lu) { _correspondances = { version: 1, unites: {} }; return _correspondances; }
+    _correspondances = lu;
     if (!_correspondances.unites) _correspondances.unites = {};
   } catch (e) {
     await journaliser("correspondances_lecture_echouee", String(e && e.message));
@@ -37,16 +49,7 @@ async function chargerCorrespondances(forcer) {
 }
 
 async function enregistrerCorrespondances() {
-  const racine = await obtenirRefRacineImmobilier();
-  const chemin = racine.driveId
-    ? `/drives/${racine.driveId}/items/${racine.id}:/${FICHIER_CORRESPONDANCES}:/content`
-    : `/me/drive/items/${racine.id}:/${FICHIER_CORRESPONDANCES}:/content`;
-  const res = await appelGraph(chemin, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(_correspondances, null, 1),
-  });
-  if (!res.ok) throw new Error(`Enregistrement : ${await detailErreur(res)}`);
+  await ecrireJsonEDL(FICHIER_CORRESPONDANCES, _correspondances);
   await journaliser("correspondances_enregistrees",
     { unites: Object.keys(_correspondances.unites).length });
   return true;

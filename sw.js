@@ -1,4 +1,4 @@
-/* EDL — Copie locale de l'application   ·   sw 2.34.6 (14/09/2026)
+/* EDL — Copie locale de l'application   ·   sw 2.34.8 (14/09/2026)
 
    Sans ce fichier, l'application ne s'ouvre pas hors réseau : l'iPhone va
    chercher index.html et les scripts sur GitHub à chaque lancement. Une
@@ -15,7 +15,7 @@
    copie et les corrections ne sont jamais visibles. C'est le seul piège de
    ce mécanisme, et il est silencieux. */
 
-const VERSION = "2.34.6";   // sw 2.34.4 (14/09/2026) — cartes photo, identité, blocage
+const VERSION = "2.34.8";   // sw 2.34.4 (14/09/2026) — cartes photo, identité, blocage
 const CACHE = "edl-" + VERSION;
 
 const FICHIERS = [

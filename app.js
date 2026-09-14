@@ -1,4 +1,9 @@
-/* EDL — Écrans   ·   app 2.34.6 (14/09/2026)
+/* EDL — Écrans   ·   app 2.34.8 (14/09/2026)
+
+   2.34.7 : plus rien de l'application à la racine OneDrive. Un dossier EDL
+   accueille la table des correspondances et un nouveau fichier de réglages,
+   qui conserve l'adresse du scénario de fin de visite. Elle est relue au
+   démarrage quand iOS a vidé le stockage du téléphone.
 
    2.34.6 : marque de version, alignée sur la clause d'aménagement du prêt.
 
@@ -59,7 +64,7 @@
    Étape 3 : démarrage d'une visite. La capture arrive à l'étape suivante. */
 
 /* Marque de version : les autres fichiers doivent porter la même. */
-var VERSION_APP_JS = "2.34.6";
+var VERSION_APP_JS = "2.34.8";
 
 var E = {
   installee: false,
@@ -1853,12 +1858,26 @@ function ecranReglageFin(message) {
     <div id="resultat-fin"></div>
     <button class="secondaire" id="btn-retour">Retour à l'accueil</button>`);
 
-  $("btn-garder-fin").onclick = () => {
+  $("btn-garder-fin").onclick = async () => {
     const url = $("url-fin").value.trim();
     if (!url) return afficherFin(`<div class="erreur">Le champ est vide.</div>`);
     enregistrerAdresseFinVisite(url);
-    afficherFin(`<div class="succes">Adresse enregistrée sur cet appareil</div>`);
     titre("Rapport et courriel", "Scénario configuré");
+    /* Le téléphone d'abord — il suffit à faire marcher l'envoi tout de
+       suite. Le dépôt dans OneDrive ensuite : c'est lui qui protège du jour
+       où iOS videra le stockage du site. */
+    afficherFin(`<div class="succes">Adresse enregistrée sur cet appareil</div>`);
+    try {
+      await sauverAdresseFinVisiteDansOneDrive(url);
+      afficherFin(`<div class="succes">Adresse enregistrée sur cet appareil
+        et sauvegardée dans OneDrive (dossier EDL)</div>`);
+    } catch (e) {
+      afficherFin(`<div class="succes">Adresse enregistrée sur cet appareil</div>
+        <div class="avert"><strong>Sauvegarde OneDrive impossible</strong>
+        ${echapper(e.message)}<br><br>L'envoi fonctionne, mais l'adresse sera
+        perdue si iOS vide le stockage du site. Reviens ici une fois connecté
+        à Microsoft et appuie de nouveau sur « Enregistrer cette adresse ».</div>`);
+    }
   };
 
   $("btn-echantillon-fin").onclick = async () => {
@@ -5681,6 +5700,17 @@ async function demarrer() {
 
   await journaliser("demarrage", { version: CONFIG.version_app, installee: E.installee });
   await ecranAccueil();
+
+  /* FILET SUR L'ADRESSE DU SCÉNARIO DE FIN DE VISITE.
+     Elle ne vivait que dans le stockage du site, qu'iOS peut vider : l'écran
+     de fin n'offrait alors plus l'envoi, sans dire pourquoi. On la relit dans
+     OneDrive, en tâche de fond, seulement si le téléphone l'a oubliée.
+     Après ecranAccueil : ce filet ne doit jamais retarder l'affichage. */
+  if (E.connecte && !finVisiteDisponible()) {
+    recupererAdresseFinVisite().then(recuperee => {
+      if (recuperee && E.ecran === "accueil") ecranAccueil();
+    });
+  }
 
   /* La file se vide toute seule dès qu'il y a du réseau : c'est un filet,
      le bouton « Envoyer » de l'accueil sert à reprendre la main.

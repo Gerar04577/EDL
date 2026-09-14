@@ -1,4 +1,10 @@
-/* EDL — Microsoft Graph
+/* EDL — Microsoft Graph   ·   graph 2.34.8 (14/09/2026)
+
+   2.34.8 : création du dossier en « fail » et non « replace » — sur un
+   dossier, replace emporte le contenu. Conflit rattrapé par relecture.
+
+   2.34.7 : dossier technique EDL — recherche, création au besoin, lecture et
+   écriture de fichiers JSON dedans. Plus rien de l'application à la racine.
 
    CONTRAINTE À NE JAMAIS PERDRE
    Pour le propriétaire du OneDrive, le dossier racine est un vrai dossier
@@ -112,6 +118,88 @@ async function obtenirRefRacineImmobilier() {
   }
   _refRacineCache = refDe(trouve, null);
   return _refRacineCache;
+}
+
+/* ---- LE DOSSIER TECHNIQUE « EDL » ---------------------------------------
+
+   Décision de Gérard (14/09/2026) : plus rien de l'application ne traîne à la
+   racine « Immobilier 2025-2026 », à côté des sept dossiers d'immeubles. Tout
+   ce qui est technique — table des correspondances, réglages — vit dans un
+   dossier EDL, créé au premier besoin.
+
+   Le dossier est mis en cache : on ne le cherche qu'une fois par session. */
+const DOSSIER_EDL = "EDL";
+let _refDossierEDL = null;
+
+async function obtenirRefDossierEDL(creer) {
+  if (_refDossierEDL) return _refDossierEDL;
+  const racine = await obtenirRefRacineImmobilier();
+  const enfants = await enfantsDeRef(racine);
+  const trouve = enfants.find(e =>
+    (e.name || "").trim() === DOSSIER_EDL && (e.folder || e.remoteItem));
+  if (trouve) {
+    _refDossierEDL = refDe(trouve, racine.driveId);
+    return _refDossierEDL;
+  }
+  if (!creer) return null;
+
+  const chemin = racine.driveId
+    ? `/drives/${racine.driveId}/items/${racine.id}/children`
+    : `/me/drive/items/${racine.id}/children`;
+  /* « fail » et JAMAIS « replace » : sur un DOSSIER, replace remplace le
+     dossier existant et emporte son contenu — la table des correspondances
+     et les réglages. Il suffirait que la recherche ci-dessus échoue une
+     seule fois, pour un raccourci ou une pagination, pour tout perdre.
+     En cas de conflit, on relit et on prend le dossier déjà là. C'est le
+     même motif que la création des sous-dossiers dans photos.js. */
+  const res = await appelGraph(chemin, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: DOSSIER_EDL, folder: {},
+      "@microsoft.graph.conflictBehavior": "fail",
+    }),
+  });
+  if (res.ok) {
+    const cree = await res.json();
+    _refDossierEDL = refDe(cree, racine.driveId);
+    return _refDossierEDL;
+  }
+  if (res.status === 409) {
+    const relu = (await enfantsDeRef(racine))
+      .find(e => (e.name || "").trim() === DOSSIER_EDL && (e.folder || e.remoteItem));
+    if (relu) {
+      _refDossierEDL = refDe(relu, racine.driveId);
+      return _refDossierEDL;
+    }
+  }
+  throw new Error(`Création du dossier EDL : ${await detailErreur(res)}`);
+}
+
+/* Lit un fichier JSON du dossier EDL. Renvoie null s'il n'y est pas :
+   l'absence n'est pas une erreur, c'est le cas du premier lancement. */
+async function lireJsonEDL(nom) {
+  const dossier = await obtenirRefDossierEDL(false);
+  if (!dossier) return null;
+  const enfants = await enfantsDeRef(dossier);
+  const f = enfants.find(e => (e.name || "").trim() === nom);
+  if (!f) return null;
+  return telechargerJson(refDe(f, dossier.driveId));
+}
+
+/* Écrit un fichier JSON dans le dossier EDL, en le créant au besoin. */
+async function ecrireJsonEDL(nom, objet) {
+  const dossier = await obtenirRefDossierEDL(true);
+  const chemin = dossier.driveId
+    ? `/drives/${dossier.driveId}/items/${dossier.id}:/${encodeURIComponent(nom)}:/content`
+    : `/me/drive/items/${dossier.id}:/${encodeURIComponent(nom)}:/content`;
+  const res = await appelGraph(chemin, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(objet, null, 1),
+  });
+  if (!res.ok) throw new Error(`Écriture ${nom} : ${await detailErreur(res)}`);
+  return true;
 }
 
 const _cacheRefImmeuble = {};

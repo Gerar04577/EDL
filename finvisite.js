@@ -1,4 +1,10 @@
-/* EDL — Fin de visite
+/* EDL — Fin de visite   ·   finvisite 2.34.8 (14/09/2026)
+
+   2.34.8 : une panne du journal ne fait plus croire que la récupération a
+   échoué.
+
+   2.34.7 : l'adresse du scénario est sauvegardée dans EDL/EDL-reglages.json
+   et relue au démarrage quand le stockage du téléphone a été vidé par iOS.
 
    Deux livrables, après la signature :
      — un rapport Word, modifiable, pour les corrections de forme
@@ -31,6 +37,52 @@ function enregistrerAdresseFinVisite(url) {
 
 function finVisiteDisponible() {
   return adresseFinVisite().length > 0;
+}
+
+/* ---- SAUVEGARDE DE L'ADRESSE DANS ONEDRIVE ------------------------------
+
+   L'adresse ne vivait que dans le localStorage de l'iPhone. iOS l'efface —
+   retrait de l'icône, effacement des données de site — et l'écran de fin
+   n'offrait alors plus l'envoi, sans dire pourquoi. Constaté le 14/09/2026.
+
+   Elle est désormais déposée aussi dans EDL/EDL-reglages.json, et relue au
+   démarrage quand le téléphone l'a oubliée. Ordre inchangé : téléphone
+   d'abord, OneDrive ensuite, config.js en dernier.
+
+   Rien ici n'est bloquant : sans réseau ou sans connexion Microsoft, le
+   réglage local continue de servir. */
+var FICHIER_REGLAGES = "EDL-reglages.json";
+
+async function sauverAdresseFinVisiteDansOneDrive(url) {
+  let reglages = null;
+  try { reglages = await lireJsonEDL(FICHIER_REGLAGES); } catch (_) {}
+  reglages = reglages || { version: 1 };
+  reglages.webhook_fin_visite = String(url || "").trim();
+  await ecrireJsonEDL(FICHIER_REGLAGES, reglages);
+  return true;
+}
+
+/* Appelée au démarrage. Ne fait rien si le téléphone a déjà l'adresse, et
+   n'échoue jamais bruyamment : c'est un filet, pas une étape obligatoire. */
+async function recupererAdresseFinVisite() {
+  try {
+    if (finVisiteDisponible()) return false;
+    const reglages = await lireJsonEDL(FICHIER_REGLAGES);
+    const url = reglages && String(reglages.webhook_fin_visite || "").trim();
+    if (!url) return false;
+    enregistrerAdresseFinVisite(url);
+    /* Le journal a son propre filet : il passe par IndexedDB, qui peut
+       échouer. Une panne de journal ne doit pas faire croire que la
+       récupération n'a pas eu lieu — l'accueil ne se redessinerait pas et
+       continuerait d'afficher « non configuré » alors que tout est en
+       place. */
+    try {
+      await journaliser("adresse_fin_visite_recuperee", { source: "onedrive" });
+    } catch (_) {}
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 /* Résumé transmis à Make. Volontairement plat : les modules de Make
