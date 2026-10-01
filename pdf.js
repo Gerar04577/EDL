@@ -1,4 +1,12 @@
-/* EDL — Procès-verbal en PDF   ·   pdf 2.34.13 (01/10/2026) : clause d'aménagement et de
+/* EDL — Procès-verbal en PDF   ·   pdf 2.34.17 (01/10/2026) : clause d'aménagement et de
+   2.34.17 : version alignée. Aucun changement de comportement.
+
+   2.34.16 : version alignée. Aucun changement de comportement.
+
+   2.34.15 : version alignée. Aucun changement de comportement.
+
+   2.34.14 : version alignée sur app.js. Aucun changement de comportement.
+
    déménagement du mobilier imprimée sur la page de prêt, après l'indemnité.
 
    2.34.4 : marque de version seule, alignée sur app 2.34.4.
@@ -43,7 +51,7 @@
 */
 
 /* Marque de version : comparée à celle d'app.js avant toute fabrication. */
-var VERSION_PDF_JS = "2.34.13";
+var VERSION_PDF_JS = "2.34.17";
 
 /* Rouge des titres d'avenant et de prêt : #c0392b, celui du bloc « Bail ». */
 var PDF_ROUGE_TITRE = [192, 57, 43];

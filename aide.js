@@ -1,4 +1,15 @@
-/* EDL — Mode d'emploi   ·   aide 2.34.13 (01/10/2026)
+/* EDL — Mode d'emploi   ·   aide 2.34.17 (01/10/2026)
+
+   2.34.17 : version alignée. Aucun changement de comportement.
+
+   2.34.16 : rétablissement de la note de version 2.34.10, effacée par
+   erreur lors d'un changement de numéro.
+
+   2.34.15 : version alignée. Aucun changement de comportement.
+
+   2.34.14 : version alignée sur app.js. Aucun changement de comportement.
+
+   2.34.10 : numéros de compteur avec lettres.
 
    2.34.9 : le bloc de description groupée est sous la dernière photographie.
 

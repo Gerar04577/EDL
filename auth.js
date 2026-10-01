@@ -1,4 +1,38 @@
-/* EDL — Authentification Microsoft   ·   auth 2.34.13 (01/10/2026)
+/* EDL — Authentification Microsoft   ·   auth 2.34.17 (01/10/2026)
+
+   2.34.17 : consigner au journal ne peut plus casser le flux. journaliser
+   écrit dans la base locale et peut échouer — base pleine, stockage refusé
+   par iOS. Attendue telle quelle, son erreur REMPLAÇAIT l'erreur réelle :
+   « timed_out » disparaissait, la reconnexion ne se déclenchait plus, et
+   l'opérateur voyait une panne de journal au lieu d'une reconnexion. Or le
+   cas où elle échoue est justement le cas dégradé où tout le reste doit
+   continuer de fonctionner.
+
+   2.34.16 : le texte d'une erreur est lu EN ENTIER, et non par son seul
+   code. « e.errorCode || e.message » écartait le message dès qu'un code
+   existait — or c'est le message qui porte AADSTS50011, la seule preuve
+   qu'il s'agit bien de l'adresse du pont. Il ne restait que
+   « invalid_request », que Microsoft renvoie pour quantité d'autres
+   raisons : le premier accroc venu aurait écarté le pont pour toute la
+   session, en silence, et la correction aurait été perdue sans que rien
+   ne le signale. Le motif exige désormais une preuve.
+
+   2.34.15 : version alignée. Aucun changement de comportement.
+
+   2.34.14 : LE RENOUVELLEMENT SILENCIEUX PASSE PAR blank.html.
+   MSAL v5 ne lit plus l'adresse de l'iframe : la page de redirection doit
+   renvoyer la réponse par un canal BroadcastChannel, au moyen de
+   broadcastResponseToMainFrame(). Notre adresse de redirection étant
+   l'application elle-même, qui n'appelle jamais cette fonction, le
+   renouvellement par iframe NE POUVAIT PAS aboutir — dix secondes
+   d'attente, puis « timed_out ». L'écran sans issue de Julien venait de
+   là, et non d'un réseau lent. La connexion interactive, elle, garde
+   l'adresse actuelle : rien ne change à l'ouverture de session.
+   Les options iframeHashTimeout, loadFrameTimeout et windowHashTimeout
+   réglées en 2.34.11 portaient des noms de MSAL v2 : la v5 les ignorait,
+   ce réglage n'a jamais rien fait. La bonne option est iframeBridgeTimeout.
+   Si Entra ne connaît pas encore l'adresse du pont, l'application repasse
+   d'elle-même à l'ancien comportement pour le reste de la session.
 
    2.34.13 : une reconnexion déjà lancée fait échouer les appels suivants
    IMMÉDIATEMENT, sans solliciter Microsoft. Chacun tentait d'abord un
@@ -35,6 +69,53 @@ let _reconnexionLancee = null;
    réessayer d'elle-même plutôt que d'exiger un redémarrage. */
 const DELAI_RECONNEXION = 20000;
 
+/* LE PONT DE REDIRECTION DU RENOUVELLEMENT SILENCIEUX.
+   MSAL v5 ne lit plus l'adresse de l'iframe : la page de redirection doit
+   RENVOYER la réponse par un canal BroadcastChannel, au moyen de
+   broadcastResponseToMainFrame(). Tant que cette adresse était celle de
+   l'application, personne n'appelait cette fonction, et le renouvellement
+   par iframe ne pouvait PAS aboutir — dix secondes d'attente, puis
+   « timed_out ». C'est l'écran sans issue de Julien.
+   blank.html ne charge que le pont officiel de Microsoft, et l'appelle.
+   Elle doit être déclarée à l'identique dans Entra. */
+const PONT_SILENCIEUX = location.origin
+  + location.pathname.replace(/[^/]*$/, "") + "blank.html";
+
+/* Si Entra ne connaît pas encore l'adresse du pont, Microsoft la refuse.
+   On le constate une fois, on repasse à l'ancien comportement pour le
+   reste de la session, et la visite continue : la déclaration dans Entra
+   peut ainsi se faire avant ou après le déploiement, sans que l'ordre
+   n'ait de conséquence. */
+let _pontRefuse = false;
+
+/* TOUT LE TEXTE DE L'ERREUR, et pas seulement son code.
+   Le code écrit « e.errorCode || e.message » : dès qu'un code existe, le
+   message n'était JAMAIS regardé. Or c'est le message qui porte
+   « AADSTS50011 », la seule preuve qu'il s'agit bien de l'adresse ; le
+   code, lui, ne dit que « invalid_request ». On rassemble donc les quatre
+   parties que MSAL remplit. */
+const texteErreur = (e) => [
+  e && e.errorCode, e && e.subError, e && e.errorMessage, e && e.message,
+].filter(Boolean).map(String).join(" | ");
+
+/* ET ON EXIGE UNE PREUVE QU'IL S'AGIT DE L'ADRESSE.
+   « invalid_request » seul ne suffit pas : Microsoft le renvoie pour
+   quantité de raisons. S'en contenter aurait écarté le pont
+   DÉFINITIVEMENT et EN SILENCE au premier accroc venu, et nous aurions
+   perdu la correction sans jamais le savoir. */
+const ADRESSE_REFUSEE = /AADSTS50011|redirect[_ ]uri/i;
+
+/* CONSIGNER NE DOIT JAMAIS CASSER LE FLUX.
+   journaliser écrit dans la base locale, et peut échouer — base pleine,
+   stockage refusé par iOS. Attendue telle quelle, son erreur REMPLACE
+   l'erreur réelle : « timed_out » disparaît, la reconnexion qui suit ne se
+   déclenche plus, et l'opérateur se retrouve devant une panne de journal
+   au lieu d'une reconnexion. Or le cas où elle échoue est justement le cas
+   dégradé où tout le reste doit continuer de fonctionner. */
+const tracer = async (quoi, detail) => {
+  try { await journaliser(quoi, detail); } catch (_) { /* sans importance */ }
+};
+
 const MSG_RECONNEXION = "Reconnexion à Microsoft en cours — l'écran va se " +
   "recharger. Si rien ne se passe, ferme complètement l'application et rouvre-la.";
 
@@ -51,20 +132,17 @@ async function initAuth() {
       cacheLocation: "localStorage",
       storeAuthStateInCookie: false,
     },
-    /* DÉLAIS DU RENOUVELLEMENT SILENCIEUX.
-       MSAL renouvelle le jeton dans une iframe cachée et abandonne au bout
-       de six secondes par défaut. Or l'URI de redirection est la page
-       COMPLÈTE de l'application : l'iframe recharge les seize scripts et
-       ouvre IndexedDB avant que MSAL puisse lire la réponse. Sur un iPhone
-       en 5G, six secondes ne suffisent pas — c'est l'erreur « timed_out »
-       rencontrée le 30/09/2026 chez Julien, en pleine visite.
-       Dix secondes laissent le temps à la page de se charger. La solution
-       de fond reste une page blanche dédiée comme URI de redirection des
-       appels silencieux, qui demande une déclaration dans Entra. */
+    /* DÉLAI DU RENOUVELLEMENT SILENCIEUX.
+       ATTENTION AU NOM DE L'OPTION. La 2.34.11 réglait iframeHashTimeout,
+       loadFrameTimeout et windowHashTimeout : ce sont les noms de MSAL v2
+       et v3. La v5 embarquée ici ne les connaît pas — ils n'apparaissent
+       nulle part dans msal-browser.min.js — et les ignorait en silence.
+       Le réglage livré ce jour-là n'a donc jamais rien changé.
+       En v5, l'option s'appelle iframeBridgeTimeout, et vaut dix secondes
+       par défaut. On la pose explicitement, pour que la valeur soit lisible
+       ici et ne dépende pas d'une bibliothèque qui pourrait la changer. */
     system: {
-      iframeHashTimeout: 10000,
-      loadFrameTimeout: 10000,
-      windowHashTimeout: 10000,
+      iframeBridgeTimeout: 10000,
     },
   });
 
@@ -100,6 +178,27 @@ async function seDeconnecter() {
   await _msal.logoutRedirect({ account: _compte });
 }
 
+/* Demande le jeton à MSAL, en faisant passer le renouvellement par iframe
+   par le pont plutôt que par l'application entière. Si Microsoft refuse
+   l'adresse — déclaration manquante dans Entra — on retente une seule fois
+   sans elle, et on n'y revient plus de la session. */
+async function renouvellementSilencieux() {
+  const demande = { scopes: CONFIG.microsoft.scopes, account: _compte };
+  if (!_pontRefuse) {
+    try {
+      const r = await _msal.acquireTokenSilent({ ...demande, redirectUri: PONT_SILENCIEUX });
+      return r.accessToken;
+    } catch (e) {
+      const texte = texteErreur(e);
+      if (!ADRESSE_REFUSEE.test(texte)) throw e;
+      _pontRefuse = true;
+      await tracer("pont_redirection_refuse", texte.slice(0, 200));
+    }
+  }
+  const r = await _msal.acquireTokenSilent(demande);
+  return r.accessToken;
+}
+
 /* Renvoie un jeton valide. Renouvelle silencieusement si nécessaire.
    Si le renouvellement silencieux échoue — jeton de rafraîchissement
    expiré, mot de passe changé — on redemande une connexion explicite
@@ -129,13 +228,9 @@ async function obtenirJeton() {
   }
 
   try {
-    const r = await _msal.acquireTokenSilent({
-      scopes: CONFIG.microsoft.scopes,
-      account: _compte,
-    });
-    return r.accessToken;
+    return await renouvellementSilencieux();
   } catch (e) {
-    await journaliser("jeton_silencieux_echoue", String(e && e.message));
+    await tracer("jeton_silencieux_echoue", String((e && e.message) || e));
 
     /* DEUX FAÇONS D'ÉCHOUER, UNE SEULE ISSUE : redemander la connexion.
        InteractionRequiredAuthError, c'est Microsoft qui réclame une action
@@ -145,7 +240,7 @@ async function obtenirJeton() {
        « Liste indisponible — timed_out », sans autre issue que Retour.
        Une visite s'arrêtait là. Dans les deux cas, une reconnexion
        explicite règle le problème, alors on la déclenche. */
-    const code = String((e && (e.errorCode || e.message)) || "");
+    const code = texteErreur(e);
     const iframeExpiree = /timed_out|monitor_window_timeout/.test(code);
 
     if (e instanceof msal.InteractionRequiredAuthError || iframeExpiree) {

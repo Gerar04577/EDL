@@ -1,4 +1,12 @@
-/* EDL — Configuration   ·   config 2.34.13 (01/10/2026) : clause d'aménagement du prêt de meubles
+/* EDL — Configuration   ·   config 2.34.17 (01/10/2026) : clause d'aménagement du prêt de meubles
+   2.34.17 : version alignée. Aucun changement de comportement.
+
+   2.34.16 : version alignée. Aucun changement de comportement.
+
+   2.34.15 : version alignée. Aucun changement de comportement.
+
+   2.34.14 : version alignée sur app.js. Aucun changement de comportement.
+
    Toutes les valeurs susceptibles de changer sont ici, et nulle part ailleurs.
    Aucune clé secrète dans ce fichier : la clé Gemini vit dans Make.
 
@@ -10,7 +18,7 @@
 
 var CONFIG = {
 
-  version_app: "2.34.13",
+  version_app: "2.34.17",
 
   /* Protocole de signature imprimé en page 1 du procès-verbal.
      TEXTE DÉFINITIF, validé par l'avocat le 25/08/2026. Toute modification

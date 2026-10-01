@@ -1,4 +1,16 @@
-/* EDL — Écrans   ·   app 2.34.13 (01/10/2026)
+/* EDL — Écrans   ·   app 2.34.17 (01/10/2026)
+
+   2.34.17 : version alignée. Aucun changement de comportement.
+
+   2.34.16 : le filet contre les écritures perdues ne se nourrit plus de
+   lui-même. Il consigne au journal par une fonction ASYNCHRONE : appelée
+   sans .catch, son propre échec produisait une nouvelle promesse
+   abandonnée, qui rappelait le filet. Et le cas où elle échoue — base
+   locale pleine — est précisément celui pour lequel ce filet existe.
+
+   2.34.15 : version alignée. Aucun changement de comportement.
+
+   2.34.14 : version alignée sur app.js. Aucun changement de comportement.
 
    2.34.13 : filet contre les écritures perdues. Vingt-huit traitements
    enregistraient sans rattraper leurs erreurs : une opération qui n'aboutit
@@ -70,7 +82,7 @@
    Étape 3 : démarrage d'une visite. La capture arrive à l'étape suivante. */
 
 /* Marque de version : les autres fichiers doivent porter la même. */
-var VERSION_APP_JS = "2.34.13";
+var VERSION_APP_JS = "2.34.17";
 
 var E = {
   installee: false,
@@ -5790,8 +5802,14 @@ async function demarrer() {
 window.addEventListener("unhandledrejection", (e) => {
   const message = String((e && e.reason && e.reason.message) || e.reason || "");
   if (/Reconnexion à Microsoft/.test(message)) return;
+  /* journaliser EST ASYNCHRONE. Appelée sans .catch, son propre échec
+     produit une nouvelle promesse abandonnée, qui rappelle ce filet, qui
+     rappelle journaliser : le filet se nourrit de lui-même. Et le cas où
+     elle échoue est précisément celui pour lequel ce filet existe — une
+     base locale pleine. Un try/catch ordinaire n'y suffit pas. */
   try {
-    journaliser("promesse_abandonnee", message.slice(0, 300));
+    const trace = journaliser("promesse_abandonnee", message.slice(0, 300));
+    if (trace && typeof trace.catch === "function") trace.catch(() => {});
   } catch (_) {}
   /* La zone « avertissement » existe depuis l'origine, juste sous le
      titre, au-dessus de la vue : elle survit aux redessins d'écran. */

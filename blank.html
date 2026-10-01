@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<!-- EDL — pont de redirection Microsoft   ·   blank 2.34.17 (01/10/2026)
+
+     CETTE PAGE NE S'AFFICHE JAMAIS. Elle est chargée dans une iframe
+     invisible, par MSAL, quand le jeton Microsoft doit être renouvelé
+     sans déranger l'opérateur en pleine visite.
+
+     POURQUOI ELLE EXISTE.
+     Jusqu'en 2.34.13, l'adresse de redirection du renouvellement
+     silencieux était l'application ELLE-MÊME. Deux conséquences, et la
+     seconde est fatale :
+
+       — l'iframe rechargeait les seize scripts, jspdf, MSAL et ouvrait
+         IndexedDB, pour rien ;
+
+       — surtout, MSAL v5 ne lit plus l'adresse de l'iframe comme le
+         faisaient les versions précédentes. La page de redirection doit
+         RENVOYER la réponse à la fenêtre principale par un canal
+         BroadcastChannel, au moyen de broadcastResponseToMainFrame().
+         L'application ne l'appelait jamais. Le renouvellement ne pouvait
+         donc PAS aboutir : MSAL attendait dix secondes, puis rendait
+         « timed_out ». C'est l'écran sans issue rencontré par Julien le
+         30 septembre 2026, en pleine visite.
+
+     Le pont est la version officielle de Microsoft, copiée dans le dépôt
+     comme MSAL lui-même — jamais chargée depuis un CDN : une visite se
+     fait souvent en cave, et une dépendance extérieure y serait un point
+     de panne de plus.
+
+     ELLE DOIT ÊTRE DÉCLARÉE DANS ENTRA, à l'identique :
+     https://gerar04577.github.io/EDL/blank.html
+     Sans cette déclaration, Microsoft refuse l'adresse. L'application
+     retombe alors sur l'ancien comportement au lieu d'échouer plus
+     durement — voir auth.js. -->
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Authentification Microsoft</title>
+  <style>
+    /* Rien à voir ici : la page vit dans une iframe de zéro pixel. Le
+       strict minimum, au cas où elle serait ouverte à la main. */
+    body { font: 15px -apple-system, system-ui, sans-serif; color: #444;
+           margin: 0; padding: 24px; background: #fff; }
+  </style>
+</head>
+<body>
+  <p>Page technique de l'application EDL. Elle sert au renouvellement de
+     l'autorisation Microsoft et n'a rien à afficher.</p>
+
+  <script src="msal-redirect-bridge.min.js"></script>
+  <script>
+    /* broadcastResponseToMainFrame lit la réponse dans l'adresse, la
+       poste sur le canal que la fenêtre principale écoute, puis nettoie
+       l'adresse. Ouverte à la main, sans réponse à transmettre, elle
+       échoue : on l'absorbe, il n'y a rien à signaler.
+
+       ELLE EST ASYNCHRONE. Un try/catch ordinaire ne rattraperait pas
+       son rejet : il faut un .catch, sinon la page laisse une promesse
+       abandonnée derrière elle. */
+    (function () {
+      var pont = window.msalRedirectBridge;
+      if (!pont || typeof pont.broadcastResponseToMainFrame !== "function") return;
+      try {
+        var p = pont.broadcastResponseToMainFrame();
+        if (p && typeof p.catch === "function") p.catch(function () {});
+      } catch (e) {
+        /* page ouverte hors de son contexte : sans objet */
+      }
+    })();
+  </script>
+</body>
+</html>

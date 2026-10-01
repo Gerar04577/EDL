@@ -1,4 +1,21 @@
-/* EDL — Copie locale de l'application   ·   sw 2.34.13 (01/10/2026)
+/* EDL — Copie locale de l'application   ·   sw 2.34.17 (01/10/2026)
+
+   2.34.17 : version alignée. Aucun changement de comportement.
+
+   2.34.16 : version alignée. Aucun changement de comportement.
+
+   2.34.15 : la page du pont n'est plus jamais interceptée. Microsoft
+   demande qu'une page de pont soit servie sans mise en cache ; surtout, la
+   règle de repli servait index.html — l'application entière — à l'iframe
+   de renouvellement hors réseau, c'est-à-dire exactement ce que blank.html
+   existe pour éviter. La bibliothèque du pont, elle, reste en copie
+   locale : c'est un fichier statique.
+
+   2.34.14 : le pont de redirection entre dans la copie locale, mais PAS
+   la page blank.html : Microsoft demande qu'une page de pont soit servie
+   sans mise en cache. Elle n'est donc jamais interceptée — ce qui la
+   soustrait aussi à la règle de repli, qui servirait sinon l'application
+   entière à l'iframe de renouvellement.
 
    Sans ce fichier, l'application ne s'ouvre pas hors réseau : l'iPhone va
    chercher index.html et les scripts sur GitHub à chaque lancement. Une
@@ -15,12 +32,21 @@
    copie et les corrections ne sont jamais visibles. C'est le seul piège de
    ce mécanisme, et il est silencieux. */
 
-const VERSION = "2.34.13";  // sw 2.34.13 (01/10/2026) — index finis
+const VERSION = "2.34.17";  // sw 2.34.17 (01/10/2026) — pont jamais intercepté
 const CACHE = "edl-" + VERSION;
 
 const FICHIERS = [
   "./",
   "./index.html",
+  /* LE PONT DE REDIRECTION — la bibliothèque seulement.
+     blank.html, elle, N'EST PAS gardée en copie : Microsoft demande qu'une
+     page de pont soit servie sans mise en cache (Cache-Control: no-store).
+     On ne maîtrise pas les en-têtes de GitHub Pages, mais on maîtrise ce
+     fichier-ci : la règle plus bas la laisse passer sans jamais
+     l'intercepter. Deux raisons de s'y tenir — ne pas servir un pont
+     périmé après une mise à jour de MSAL, et ne rien garder d'un échange
+     d'authentification. */
+  "./msal-redirect-bridge.min.js",
   "./manifest.json",
   "./config.js",
   "./db.js",
@@ -74,6 +100,17 @@ self.addEventListener("fetch", (e) => {
      Servir une réponse gardée en copie ferait croire à un dépôt réussi. */
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+
+  /* LA PAGE DU PONT N'EST JAMAIS INTERCEPTÉE.
+     Deux raisons, et la seconde est la plus grave. D'abord Microsoft
+     demande qu'elle soit servie sans mise en cache. Ensuite, et surtout :
+     la règle de repli tout en bas renvoie index.html pour toute navigation
+     hors réseau non gardée. Sans ce retour anticipé, une iframe de
+     renouvellement sans réseau recevrait L'APPLICATION ENTIÈRE — seize
+     scripts, IndexedDB, MSAL — c'est-à-dire exactement ce que blank.html
+     existe pour éviter. Hors réseau le renouvellement ne peut de toute
+     façon pas aboutir : qu'il échoue franchement. */
+  if (url.pathname.endsWith("/blank.html")) return;
 
   e.respondWith((async () => {
     const enCopie = await caches.match(req, { ignoreSearch: true });
