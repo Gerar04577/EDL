@@ -1,4 +1,10 @@
-/* EDL — Écrans   ·   app 2.34.9 (14/09/2026)
+/* EDL — Écrans   ·   app 2.34.13 (01/10/2026)
+
+   2.34.13 : filet contre les écritures perdues. Vingt-huit traitements
+   enregistraient sans rattraper leurs erreurs : une opération qui n'aboutit
+   pas affiche désormais un bandeau qui invite à vérifier la saisie, au lieu
+   d'échouer en silence. Le fil d'Ariane ne peut plus afficher « undefined »
+   si le type de visite manque.
 
    2.34.7 : plus rien de l'application à la racine OneDrive. Un dossier EDL
    accueille la table des correspondances et un nouveau fichier de réglages,
@@ -64,7 +70,7 @@
    Étape 3 : démarrage d'une visite. La capture arrive à l'étape suivante. */
 
 /* Marque de version : les autres fichiers doivent porter la même. */
-var VERSION_APP_JS = "2.34.9";
+var VERSION_APP_JS = "2.34.13";
 
 var E = {
   installee: false,
@@ -438,12 +444,21 @@ async function ecranImmeuble() {
   try {
     E.liste = await chargerLocataires();
   } catch (e) {
-    vue(`<div class="erreur"><strong>Liste indisponible</strong>${echapper(e.message)}</div>
+    /* Une reconnexion Microsoft en cours n'est pas une panne : la page va
+       se recharger d'elle-même. Afficher « Liste indisponible » avec un
+       bouton Retour donnait l'impression d'un cul-de-sac, et le repeint
+       pouvait couper la navigation. On dit ce qui se passe, sans bouton. */
+    const msg = String((e && e.message) || "");
+    if (/Reconnexion à Microsoft/.test(msg)) {
+      vue(`<div class="avert"><strong>Reconnexion à Microsoft</strong>${echapper(msg)}</div>`);
+      return;
+    }
+    vue(`<div class="erreur"><strong>Liste indisponible</strong>${echapper(msg)}</div>
          <button class="secondaire" id="btn-retour">Retour</button>`);
     $("btn-retour").onclick = () => ecranAccueil();
     return;
   }
-  vue(`<p class="fil">${E.brouillon.type}</p><div class="bloc">${
+  vue(`<p class="fil">${echapper(E.brouillon.type || "")}</p><div class="bloc">${
     boutonsChoix(E.liste.immeubles.map(i => ({
       valeur: i.immeuble_id, libelle: i.nom, droite: i.unites.length + " unités",
     })))}</div><button class="secondaire" id="btn-retour">Retour</button>`);
@@ -457,7 +472,7 @@ function ecranUnite(immeubleId) {
   E.brouillon.immeuble_id = immeubleId;
   E.brouillon.immeuble_nom = imm.nom;
   titre("Unité", "Étape 2 sur 5 — " + imm.nom);
-  vue(`<p class="fil">${E.brouillon.type} · ${echapper(imm.nom)}</p><div class="bloc">${
+  vue(`<p class="fil">${echapper(E.brouillon.type || "")} · ${echapper(imm.nom)}</p><div class="bloc">${
     boutonsChoix(imm.unites.map(u => ({
       valeur: u.designation,
       libelle: u.designation,
@@ -534,7 +549,7 @@ async function suiteDossier(nomUnite, refUnite) {
 
   titre("Dossier locataire", "Étape 3 sur 5 — " + nomUnite);
   const attendu = (E.brouillon.preneurs || []).join(" & ");
-  vue(`<p class="fil">${E.brouillon.type} · ${echapper(E.brouillon.immeuble_nom)} · ${echapper(nomUnite)}</p>
+  vue(`<p class="fil">${echapper(E.brouillon.type || "")} · ${echapper(E.brouillon.immeuble_nom)} · ${echapper(nomUnite)}</p>
     ${attendu ? `<div class="bloc"><h2>Locataire attendu</h2>
        <p class="note">D'après Gestion Loyers : <strong>${echapper(attendu)}</strong>.
        Les dossiers changent à chaque nouveau bail — choisis celui de cette visite.</p></div>` : ""}
@@ -1255,12 +1270,24 @@ function dessinerReleves(message) {
   const V = VISITE, c = V.compteurs;
   const sortie = V.type === "EDLS";
 
-  const champ = (id, valeur, rappel) =>
-    `<div class="ligne"><span>${id.libelle}${
+  /* NUMÉRO DE COMPTEUR ou INDEX : deux champs de nature différente.
+     Le NUMÉRO gravé sur l'appareil contient souvent des lettres. Il est
+     conservé tel quel, en texte, et doit donc ouvrir le clavier complet —
+     avec inputmode numeric, l'iPhone n'offrait que le pavé chiffres.
+     L'INDEX reste strictement numérique : il est converti en nombre au
+     moment d'écrire, et sert à la comparaison entrée/sortie ainsi qu'aux
+     décomptes de charges. En texte, « 9 » passerait devant « 10 ».
+     Décision de Gérard, 30/09/2026 : les lettres, sur les numéros SEULEMENT. */
+  const champ = (id, valeur, rappel) => {
+    const estNumero = /\.numero$/.test(id.chemin);
+    return `<div class="ligne"><span>${id.libelle}${
       rappel !== undefined && rappel !== null
         ? ` <span class="gris">(entrée : ${echapper(String(rappel))})</span>` : ""}</span>
-      <input class="saisie-index" inputmode="numeric" data-releve="${id.chemin}"
+      <input class="saisie-index" data-releve="${id.chemin}"${estNumero
+        ? ` inputmode="text" autocapitalize="characters" autocorrect="off" spellcheck="false"`
+        : ` inputmode="numeric"`}
         value="${valeur === null || valeur === undefined ? "" : echapper(String(valeur))}"></div>`;
+  };
 
   const photoDe = (r) => {
     const p = photoCompteur(V, r);
@@ -1429,7 +1456,13 @@ function brancherReleves() {
       let v = brut === "" ? null : brut;
       if (v !== null && /index/.test(chemin)) {
         const n = Number(String(v).replace(",", "."));
-        v = isNaN(n) ? null : n;
+        /* isFinite et non isNaN : « 1e400 », ou un doigt resté appuyé sur
+           le pavé, donnent Infinity, que isNaN laisse passer. Or
+           JSON.stringify(Infinity) vaut null : l'index disparaîtrait
+           sans un mot du fichier déposé dans OneDrive, et la comparaison
+           entrée/sortie n'aurait plus aucun sens. Un index est un nombre
+           FINI, ou rien. */
+        v = isFinite(n) ? n : null;
       }
       await ecrire(chemin, v);
       programmerDepot();
@@ -5736,5 +5769,39 @@ async function demarrer() {
   setInterval(() => traiterFile(), 120000);
   lancerFile();
 }
+
+/* ---- FILET CONTRE LES ÉCRITURES PERDUES EN SILENCE ----------------------
+
+   Vingt-huit gestionnaires écrivent dans la base sans try/catch : c'est le
+   motif d'origine de l'application, et le réécrire partout serait un
+   chantier risqué pour un gain nul dans la vie courante. Mais si l'écriture
+   échoue — quota IndexedDB atteint après deux cents photographies, stockage
+   purgé par iOS, transaction refermée par Safari — alors :
+     · la valeur n'est pas enregistrée,
+     · l'écran ne se redessine pas, donc le champ garde ce qui a été tapé,
+     · et RIEN n'est dit. Julien croit avoir saisi son index.
+
+   Un seul point d'écoute attrape toutes ces promesses abandonnées et
+   affiche un bandeau. Il ne change aucun gestionnaire, ne peut rien casser,
+   et transforme une perte silencieuse en avertissement visible.
+
+   Les reconnexions Microsoft sont écartées : la page va se recharger, et
+   l'écran concerné a déjà son propre message. */
+window.addEventListener("unhandledrejection", (e) => {
+  const message = String((e && e.reason && e.reason.message) || e.reason || "");
+  if (/Reconnexion à Microsoft/.test(message)) return;
+  try {
+    journaliser("promesse_abandonnee", message.slice(0, 300));
+  } catch (_) {}
+  /* La zone « avertissement » existe depuis l'origine, juste sous le
+     titre, au-dessus de la vue : elle survit aux redessins d'écran. */
+  const zone = document.getElementById("avertissement");
+  if (!zone) return;
+  zone.innerHTML = `<div class="erreur" id="bandeau-ecriture-perdue">
+    <strong>Une opération n'a pas abouti</strong>${echapper(message || "cause inconnue")}
+    <br><br>Vérifie ce que tu viens de saisir : il se peut que ce ne soit pas
+    enregistré. Si cela se répète, ferme complètement l'application et
+    rouvre-la.</div>`;
+});
 
 document.addEventListener("DOMContentLoaded", demarrer);

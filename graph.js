@@ -1,4 +1,4 @@
-/* EDL — Microsoft Graph   ·   graph 2.34.9 (14/09/2026)
+/* EDL — Microsoft Graph   ·   graph 2.34.13 (01/10/2026)
 
    2.34.9 : numérotation alignée sur le lot ; contenu inchangé depuis 2.34.8.
 

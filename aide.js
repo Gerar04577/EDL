@@ -1,4 +1,4 @@
-/* EDL — Mode d'emploi   ·   aide 2.34.9 (14/09/2026)
+/* EDL — Mode d'emploi   ·   aide 2.34.13 (01/10/2026)
 
    2.34.9 : le bloc de description groupée est sous la dernière photographie.
 
