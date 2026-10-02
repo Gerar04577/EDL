@@ -1,4 +1,17 @@
-/* EDL — Copie locale de l'application   ·   sw 2.34.19 (01/10/2026)
+/* EDL — Copie locale de l'application   ·   sw 2.34.24 (02/10/2026)
+
+   2.34.24 : numéro de cache seul.
+
+   2.34.23 : numéro de cache seul.
+
+   2.34.22 : numéro de cache seul.
+
+   2.34.21 : numéro de cache seul.
+
+   2.34.20 : numéro de cache seul. C'est lui qui force le téléphone à
+   reprendre app.js et index.html : sans ce changement, l'aperçu de la
+   photographie ne serait jamais visible, la copie locale restant celle
+   de la veille.
 
    2.34.19 : version alignée. Aucun changement de comportement.
 
@@ -36,7 +49,7 @@
    copie et les corrections ne sont jamais visibles. C'est le seul piège de
    ce mécanisme, et il est silencieux. */
 
-const VERSION = "2.34.19";  // sw 2.34.19 (02/10/2026) — pont jamais intercepté
+const VERSION = "2.34.24";  // sw 2.34.24 (02/10/2026) — commentaires rectifiés
 const CACHE = "edl-" + VERSION;
 
 const FICHIERS = [

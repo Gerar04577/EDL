@@ -1,4 +1,14 @@
-/* EDL — Démarrage d'une visite   ·   visite 2.34.19 (01/10/2026)
+/* EDL — Démarrage d'une visite   ·   visite 2.34.24 (02/10/2026)
+
+   2.34.24 : version alignée. Aucun changement de comportement.
+
+   2.34.23 : version alignée. Aucun changement de comportement.
+
+   2.34.22 : version alignée. Aucun changement de comportement.
+
+   2.34.21 : version alignée. Aucun changement de comportement.
+
+   2.34.20 : version alignée. Aucun changement de comportement.
 
    2.34.19 : une forme COURTE par face, pour la vignette de visée. Les
    vignettes sont sur trois colonnes — une centaine de pixels sur un
@@ -52,7 +62,7 @@
    du logement qu'une visite entière sans savoir où déposer les fichiers. */
 
 /* Marque de version : comparée au démarrage à celle d'app.js. */
-var VERSION_VISITE_JS = "2.34.19";
+var VERSION_VISITE_JS = "2.34.24";
 
 /* Étape 1 — le dossier de l'unité, dans le dossier de l'immeuble.
    Renvoie soit une résolution unique, soit la liste des candidats

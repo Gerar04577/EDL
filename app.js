@@ -1,4 +1,83 @@
-/* EDL — Écrans   ·   app 2.34.19 (01/10/2026)
+/* EDL — Écrans   ·   app 2.34.24 (02/10/2026)
+
+   2.34.24 : UN ÉCHEC DE RETRAIT POUVAIT RESTER MUET, et un compte de
+   plus était faux.
+
+   LE SILENCE. La croix n'est pas désactivée pendant le retrait — un
+   écran dont on ne peut pas sortir, en cave, en pleine visite, serait
+   pire que tout. Elle peut donc refermer l'aperçu AVANT que le retrait
+   n'échoue, et le message était alors écrit dans un élément détaché du
+   document : jamais vu, la photographie restant au procès-verbal sans un
+   mot. Il va désormais là où il sera vu — dans l'aperçu s'il est encore
+   ouvert, dans le bandeau de la page s'il a été refermé, puisque le
+   voile ne le masque plus. Trouvé en auditant les chemins d'exécution,
+   non les commentaires.
+
+   LE COMPTE. « retirerPhotoEtConstat fait trois écritures de suite » :
+   il en fait quatre — la file d'attente, la visite, les constatations,
+   le journal. Treizième énoncé faux de la journée, et le deuxième écrit
+   APRÈS avoir posé la règle. Le nombre disparaît donc, et le banc 36 ne
+   surveille plus les seuls comptes auxquels je pense : il relève TOUT
+   nombre écrit en prose dans ces commentaires, et exige que chacun soit
+   vérifié ou explicitement toléré.
+
+   2.34.23 : UN ONZIÈME ÉNONCÉ FAUX, de la famille même que les dix
+   précédents. « Ils viennent tous les trois du même gabarit, écrit six
+   lignes plus haut » : il est vingt-quatre lignes plus haut. La 2.34.22
+   venait de poser la règle — plus de nombre en prose là où rien ne le
+   contrôle — et l'enfreignait dans le commentaire qu'elle réécrivait.
+
+   La distance est retirée : elle n'apprenait rien que le lecteur n'ait
+   sous les yeux. Et les DEUX nombres qui restent dans ces blocs — le
+   compte des éléments tenus, la valeur du z-index du voile — passent
+   sous la surveillance du banc 36, où se trouvait déjà le compte des
+   décisions. Poser une règle ne suffit pas ; il faut qu'une machine la
+   tienne.
+
+   2.34.22 : DIX ÉNONCÉS FAUX DANS LA DOCUMENTATION DU CODE, trouvés en
+   la relisant à la demande de Jean-Marc. Des comptes qui ne tombaient
+   pas juste, une raison attribuée à la mauvaise cause, une fréquence et
+   un numéro de version inventés, des tournures au passé décrivant des
+   pannes que personne n'a vécues — déduites de la documentation de
+   WebKit, ou corrigées avant toute livraison — et une garde qui faisait
+   mentir le commentaire d'à côté.
+
+   Dans cette application le commentaire EST la documentation, et un
+   commentaire faux coûte au lecteur suivant. Les blocs fautifs sont donc
+   réécrits en entier et non rapiécés : une numérotation recousue à la
+   main est précisément ce qui a produit la première de ces erreurs.
+
+   LEÇON RETENUE, et c'est la seule qui vaille : plus de nombre écrit en
+   prose là où rien ne le contrôle. « Les quatre mêmes gestes » est
+   tombé faux au premier geste ajouté, « trois décisions » au premier
+   remaniement. Le code et les bancs tiennent les comptes ; les
+   commentaires disent le pourquoi.
+
+   Les gardes « if (zone) » de apercuPhoto disparaissent au passage :
+   elles protégeaient un élément dont les deux voisins ne l'étaient pas,
+   et faisaient donc mentir le commentaire d'à côté. C'est le seul
+   changement de comportement de cette version, et il ne porte que sur
+   un cas impossible.
+
+   2.34.21 : la phrase de l'aperçu sur OneDrive est retirée. Elle ne
+   s'affichait que si Microsoft avait DÉJÀ confirmé le dépôt — or
+   l'envoi part à l'instant de la prise et l'aperçu s'ouvre une
+   fraction de seconde plus tard : la condition était presque toujours
+   fausse, alors que le fichier partait bel et bien. La rendre
+   inconditionnelle faisait un paragraphe à lire sous chaque
+   photographie, en pleine visite, pour une information qui ne change
+   pas le geste : ratée, on la refait de toute façon. Elle est donc
+   passée au mode d'emploi, et l'aperçu ne porte plus que la
+   photographie, sa face, son nom, la croix et « Refaire ».
+
+   2.34.20 : LA PHOTOGRAPHIE PRISE S'AFFICHE. L'écran d'une pièce ne
+   montrait jamais l'image — le nom du fichier, l'état du transfert, le
+   champ de description, mais pas la photographie. Un cliché flou ne se
+   découvrait qu'au procès-verbal, la visite terminée et le logement
+   rendu. L'aperçu s'ouvre donc à la prise et reste jusqu'à la croix ;
+   « Refaire » retire le mauvais cliché et ramène l'écran de la pièce,
+   prêt pour le suivant. Voir apercuPhoto pour les quatre contraintes
+   qui en fixent la forme.
 
    2.34.19 : version alignée. Aucun changement de comportement.
 
@@ -92,7 +171,7 @@
    Étape 3 : démarrage d'une visite. La capture arrive à l'étape suivante. */
 
 /* Marque de version : les autres fichiers doivent porter la même. */
-var VERSION_APP_JS = "2.34.19";
+var VERSION_APP_JS = "2.34.24";
 
 var E = {
   installee: false,
@@ -5025,6 +5104,195 @@ function allerAPhotoGardee() {
   });
 }
 
+/* ---- L'APERÇU DE LA PHOTOGRAPHIE PRISE --------------------------------
+
+   Jusqu'en 2.34.19, l'écran d'une pièce n'affichait JAMAIS l'image. Le
+   nom du fichier, l'état du transfert, le champ de description — mais pas
+   la photographie. On prenait vingt clichés d'affilée sans jamais voir ce
+   qu'on avait pris, et un cliché flou ou cadré à côté ne se découvrait
+   qu'au procès-verbal, la visite terminée, le logement rendu.
+
+   L'aperçu s'affiche donc dès la prise, et il RESTE : seule la croix
+   l'efface. Demande de Jean-Marc, 02/10/2026.
+
+   QUATRE DÉCISIONS, chacune imposée par une contrainte vérifiée.
+
+   1. C'EST LE FICHIER D'ORIGINE QUI EST MONTRÉ, pas la version réduite
+      qui sera déposée. ajouterPhoto ne rend pas cette dernière : il
+      faudrait la relire dans la file d'attente, d'où l'envoi peut l'avoir
+      déjà retirée. L'aperçu serait alors vide de façon imprévisible, au
+      gré du réseau — le pire des défauts, celui qui ne se reproduit pas.
+      Le fichier d'origine, lui, est toujours là, et ce qu'on juge — le
+      cadrage, le flou — se juge aussi bien sur l'un que sur l'autre.
+
+   2. L'APERÇU GÈRE SON PROPRE URL D'OBJET, hors du mécanisme à deux
+      générations de libererApercus(). Celui-ci révoque au DEUXIÈME
+      redessin, ce qui convient à une image posée dans #vue, dont la vie
+      est celle d'un écran. Or prevenirEcran() redessine la pièce à chaque
+      photographie confirmée par Microsoft : deux confirmations pendant
+      que l'aperçu est ouvert suffiraient à vider l'image.
+
+   3. « REFAIRE » N'OUVRE PAS L'APPAREIL LUI-MÊME. Il retire la
+      photographie, puis ramène l'écran de la pièce avec un mot : c'est
+      l'opérateur qui reprend le cliché, d'un second appui.
+
+      La première écriture de cette version faisait l'inverse — un seul
+      appui, l'appareil s'ouvrait et le retrait partait en tâche de fond.
+      Elle a été jetée avant toute livraison, pour une raison qui ne se
+      voit qu'en relisant : l'écran de la pièce n'était alors PAS
+      redessiné, puisqu'on ne pouvait pas attendre le retrait sans perdre
+      le geste. Il aurait donc continué d'afficher une photographie qui
+      n'existe plus, et l'opérateur qui referme l'appareil sans
+      photographier — un appel suffit — aurait trouvé une carte fantôme,
+      dont « Décrire » porterait sur un identifiant disparu.
+
+      Ouvrir l'appareil depuis le code imposait cet ordre. WebKit n'ouvre
+      un sélecteur de fichier que « as a direct result of a user action »,
+      et cette activation expire pendant les attentes, d'une durée que la
+      spécification laisse délibérément non observable :
+      https://webkit.org/blog/13862/the-user-activation-api/
+      Avec un seul await avant l'ouverture, plus rien ne garantit que
+      l'appareil s'ouvre — et le jour où il ne s'ouvrirait pas, ce serait
+      sans message, sur l'iPhone seulement, donc hors de portée de tout
+      banc tournant sur un ordinateur. Rien n'a été observé de tel : c'est
+      la documentation de WebKit qui l'annonce, et cela suffit à ne pas en
+      dépendre.
+
+      Le second appui coûte un geste, sur les rares clichés à refaire. Il
+      rend en échange un retrait attendu, un écran juste, et plus aucune
+      dépendance à une règle que le code ne peut pas vérifier lui-même.
+
+   4. UN ÉCHEC DE RETRAIT S'ÉCRIT LÀ OÙ IL SERA VU. Cette décision n'a
+      rien à voir avec la précédente : il ne s'agit pas d'ordre, mais de
+      ce qui est visible. avert() écrit dans #avertissement, qui se trouve
+      dans le flux de la page — donc SOUS le voile, dont le z-index est
+      50. Le message y serait invisible tant que l'aperçu est ouvert, et
+      l'opérateur verrait un bouton qui ne fait rien. Tant que l'aperçu
+      est ouvert, le message s'écrit donc dedans, là où ses yeux sont
+      déjà.
+
+      MAIS L'APERÇU PEUT AVOIR ÉTÉ REFERMÉ. La croix reste utilisable
+      pendant le retrait, et doit le rester : un écran dont on ne peut pas
+      sortir, en cave, en pleine visite, serait pire que tout. Si elle est
+      touchée avant que le retrait n'échoue, écrire dans l'aperçu revient
+      à écrire dans un élément détaché du document — le message n'est
+      jamais vu, et la photographie reste au procès-verbal sans un mot.
+      C'est pourquoi la destination se décide à l'instant de l'échec, sur
+      fond.isConnected, et non à l'écriture du code.
+
+   L'APERÇU NE PORTE AUCUN AVERTISSEMENT SUR ONEDRIVE. La 2.34.20 en avait
+   un, conditionné au statut du transfert, et il se taisait au moment où il
+   aurait dû parler : l'envoi part avant que l'aperçu s'ouvre, et le statut
+   lu vaut encore « en_attente » quand le fichier est déjà en route. Le
+   rendre inconditionnel donnait un paragraphe à lire sous chaque
+   photographie, pour une information qui ne change pas le geste — ratée,
+   on la refait quand même. Elle est au mode d'emploi, section 4.
+
+   L'aperçu ne vaut QUE pour la prise en pièce. L'écran des relevés a son
+   propre chemin, qui remplace déjà la photographie du compteur et dont le
+   bouton dit déjà « Reprendre la photo ». La visée comparée a son propre
+   écran de contrôle — dessinerControleVisee — et l'aperçu y ferait
+   doublon. */
+function apercuPhoto(photo, fichier) {
+  if (!photo || !fichier) return;
+  let url = null;
+  try { url = URL.createObjectURL(fichier); } catch (_) { return; }
+
+  const m = (typeof MURS !== "undefined")
+    ? MURS.find(x => x.cle === (photo.mur || "DIV")) : null;
+
+  const fond = document.createElement("div");
+  fond.className = "voile";
+  fond.innerHTML = `<div class="apercu">
+    <button class="croix" id="apercu-fermer" aria-label="Fermer l'aperçu">×</button>
+    <img src="${echapper(url)}" alt="La photographie que tu viens de prendre">
+    <p class="apercu-face">${echapper(m ? m.libelle : "Autre")}</p>
+    <p class="apercu-nom">${echapper(photo.nom_fichier || "")}</p>
+    <p class="apercu-erreur" id="apercu-erreur"></p>
+    <button class="secondaire" id="apercu-refaire">Refaire</button>
+  </div>`;
+
+  /* Le voile ne se ferme QUE par la croix. Une fermeture au doigt posé
+     n'importe où s'obtiendrait en reposant le téléphone sur une table. */
+  const fermer = () => {
+    fond.remove();
+    try { URL.revokeObjectURL(url); } catch (_) {}
+  };
+
+  document.body.appendChild(fond);
+
+  /* Les trois éléments sont tenus une fois, au lieu d'être ré-interrogés
+     à chaque geste, et AUCUN n'est protégé par un « if » : ils viennent
+     tous du même gabarit, écrit plus haut dans cette fonction. Si
+     l'un manquait, le gabarit serait faux, et mieux vaut que cela
+     éclate ici, à l'ouverture de l'aperçu, qu'au milieu d'un retrait.
+     Protéger le seul « zone » laissait croire à un doute qui n'existe
+     pas. */
+  const bFermer = fond.querySelector("#apercu-fermer");
+  const bRefaire = fond.querySelector("#apercu-refaire");
+  const zone = fond.querySelector("#apercu-erreur");
+
+  bFermer.onclick = fermer;
+  bRefaire.onclick = async () => {
+    zone.innerHTML = "";
+    bRefaire.disabled = true; bRefaire.textContent = "Retrait…";
+    try {
+      await retirerPhotoEtConstat(photo.photo_id, "photo_refaite");
+    } catch (e) {
+      /* LE MESSAGE NE DIT PAS OÙ EST LA PHOTOGRAPHIE, car on ne le sait
+         pas. retirerPhotoEtConstat enchaîne plusieurs écritures, et rien
+         ne les rend solidaires : si la première aboutit et qu'une suivante
+         échoue, la photographie a bel et bien quitté la visite. « Elle est
+         restée » serait alors faux, au moment précis où l'exactitude
+         compte le plus. Il dit donc où regarder. */
+      const tete = `<strong>Retrait inabouti</strong><br>${
+        echapper((e && e.message) || e)}<br>`;
+      const ouRegarder = "Regarde la liste des photographies de la pièce : "
+        + "si celle-ci y figure encore, retire-la à la main.";
+      /* LA DESTINATION SE DÉCIDE MAINTENANT, pas à l'écriture du code —
+         décision 4. L'aperçu encore ouvert garde son voile : le refermer
+         sur un retrait qui n'a pas abouti donnerait à croire qu'il a eu
+         lieu. Refermé par la croix pendant le retrait, il est détaché du
+         document, et y écrire ne se verrait jamais : c'est le bandeau de
+         la page qui prend le relais, visible justement parce que le voile
+         n'est plus là. */
+      if (fond.isConnected) {
+        bRefaire.disabled = false; bRefaire.textContent = "Refaire";
+        zone.innerHTML = tete + "Ferme l'aperçu. " + ouRegarder;
+      } else {
+        avert(`<div class="erreur">${tete}${ouRegarder}</div>`);
+      }
+      return;
+    }
+    fermer();
+    dessinerPiece("Photographie retirée. Reprends-la quand tu veux.");
+  };
+}
+
+/* Retire une photographie de la visite, de la file d'envoi et des
+   constatations qui s'y rattachent.
+
+   Le bouton de suppression, sous chaque carte, fait la même chose en
+   ligne depuis longtemps et n'est pas touché : il demande d'abord
+   confirmation, ce qui n'a pas de sens ici — on vient de toucher
+   « Refaire » en regardant le cliché. Les deux chemins doivent faire les
+   MÊMES gestes, et le banc 36 les compare un à un pour qu'ils ne
+   divergent pas en silence. Leur nombre n'est pas écrit ici : il l'était,
+   il est tombé faux au premier geste ajouté, et c'est le banc qui tient
+   le compte. */
+async function retirerPhotoEtConstat(photoId, quoi) {
+  VISITE = (await retirerPhoto(VISITE.visit_id, photoId)) || VISITE;
+  VISITE = (await modifierVisite(VISITE.visit_id, v => {
+    v.pieces.forEach(pc => {
+      pc.constatations = pc.constatations.filter(c => c.photo_id !== photoId);
+    });
+  })) || VISITE;
+  if (E.photoGardee === photoId) E.photoGardee = null;
+  if (E.brouillons) delete E.brouillons[photoId];
+  await journaliser(quoi || "photo_retiree", { photo_id: photoId });
+  programmerDepot();
+}
+
 /* ---- LA BARRE DES MURS -------------------------------------------------
 
    Cinq boutons dans l'ordre du géomètre : Gauche, En face, Droite, Entrée,
@@ -5529,12 +5797,27 @@ function dessinerPiece(message) {
     });
     $("btn-photo").disabled = true;
     $("btn-photo").textContent = "Enregistrement…";
+    /* L'IDENTIFIANT EST RECUEILLI — il était jeté jusqu'ici. C'est lui qui
+       permet à l'aperçu de retrouver la photographie, donc sa face et son
+       nom de fichier, et à « Refaire » de la retirer. L'enregistrement
+       garde exactement le comportement qu'il avait : seule l'affectation
+       est neuve, et l'aperçu vient APRÈS, sans rien pouvoir lui faire
+       perdre. */
+    let photoId = null;
     try {
-      await ajouterPhoto(VISITE, E.piece, fichier, { mur: murCourant(E.piece) });
+      photoId = await ajouterPhoto(VISITE, E.piece, fichier, { mur: murCourant(E.piece) });
     } catch (e) {
       avert(`<div class="erreur"><strong>Photo non enregistrée</strong>${echapper(e.message)}</div>`);
     }
     VISITE = (await lireVisite(VISITE.visit_id)) || VISITE;
+    /* L'aperçu est posé AVANT le redessin : l'URL d'objet est alors prise
+       sur un fichier dont l'élément <input> existe encore, et le doute ne
+       se pose pas. Le voile vit sur document.body, que vue() ne touche
+       pas — il survit donc au redessin qui suit, et à ceux que la file
+       d'envoi déclenchera pendant qu'il est ouvert. */
+    if (photoId) {
+      apercuPhoto((VISITE.photos || []).find(p => p.photo_id === photoId), fichier);
+    }
     dessinerPiece();
   };
 

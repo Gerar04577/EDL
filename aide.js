@@ -1,4 +1,16 @@
-/* EDL — Mode d'emploi   ·   aide 2.34.19 (01/10/2026)
+/* EDL — Mode d'emploi   ·   aide 2.34.24 (02/10/2026)
+
+   2.34.24 : version alignée. Aucun changement de comportement.
+
+   2.34.23 : version alignée. Aucun changement de comportement.
+
+   2.34.22 : une durée d'envoi inventée — « deux ou trois secondes » —
+   remplacée par ce qu'on sait : quelques secondes.
+
+   2.34.21 : ce qu'une photographie refaite laisse derrière elle dans
+   OneDrive. C'était un avertissement dans l'aperçu ; sa place est ici.
+
+   2.34.20 : l'aperçu de la photographie prise, la croix et « Refaire ».
 
    2.34.19 : version alignée. Aucun changement de comportement.
 
@@ -172,6 +184,22 @@ var AIDE = [
     corps: [
       "Ouvre une pièce et prends les photos. Convention : depuis l'entrée, mur de face, " +
       "de gauche, de droite, arrière.",
+      "LA PHOTOGRAPHIE S'AFFICHE DÈS QU'ELLE EST PRISE, avec la face sous " +
+      "laquelle elle est classée et son nom de fichier. Elle reste à l'écran " +
+      "tant que tu ne touches pas la croix, en haut à droite : rien ne " +
+      "t'oblige à juger vite. Elle est DÉJÀ enregistrée quand elle " +
+      "s'affiche — la croix ferme l'aperçu, elle ne jette rien.",
+      "« REFAIRE » retire la photographie que tu viens de voir, puis te " +
+      "ramène à la pièce : touche « Prendre une photo » pour la reprendre. " +
+      "La reprise porte le NUMÉRO SUIVANT : rien n'est jamais écrasé.",
+      "CE QU'UNE PHOTOGRAPHIE REFAITE LAISSE DERRIÈRE ELLE. L'envoi dans " +
+      "OneDrive part dès la prise, en quelques secondes : une " +
+      "photographie ratée y est donc presque toujours déjà déposée quand tu " +
+      "touches « Refaire ». Elle quitte bien l'état des lieux et le " +
+      "procès-verbal, qui ne la citent plus, mais le fichier image reste " +
+      "dans le dossier. Efface-le à la main si cela te gêne : " +
+      "l'application ne supprime jamais rien chez Microsoft. Hors réseau, " +
+      "en cave, rien n'est encore parti et « Refaire » ne laisse rien.",
       "La barre en haut d'écran indique où en sont les photos. Verte, tout est déposé " +
       "dans OneDrive ; orange, il en reste à envoyer.",
       "Sous chaque photo enregistrée, le bouton « Décrire cette photo » propose deux ou " +
