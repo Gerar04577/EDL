@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- EDL — index 2.34.17 (01/10/2026)
+<!-- EDL — index 2.34.19 (01/10/2026)
 
      NUMÉROTATION ALIGNÉE. Ce fichier suivait son propre compteur, hérité du
      projet : 2.32.x pendant qu'app.js était en 2.34.x. Deux compteurs pour
@@ -102,7 +102,11 @@
   .bloc.bail input { font-size:16px; font-weight:600; color:#c0392b; }
 
   .vig-num { font-weight:600; color:#5a5a5a; }
-  .vig-mur { font-size:11px; color:#9a9a9a; text-transform:lowercase; }
+  /* HAUTEUR RÉSERVÉE : « sol en face » tient sur une ligne, « plafond en
+     face » sur deux. Sans cette réserve, les vignettes d'une même rangée
+     n'auraient pas la même hauteur et la grille se désalignerait. */
+  .vig-mur { font-size:11px; color:#9a9a9a; text-transform:lowercase;
+    line-height:1.25; min-height:2.5em; }
   /* Le mur actif : le premier groupe de la grille se repère d'un coup
      d'œil, sans lire chaque mot. Vert pâle, jamais criard — la vignette
      reste ce qu'on regarde. */
@@ -313,6 +317,19 @@
     font-weight:600; border-radius:9px;
     background:#f0eeea; border:1px solid #ddd8d0; color:#6b6b6b; }
   .murs .mur.actif { background:#2f7d63; border-color:#2f7d63; color:#fff; }
+  /* DEUX RANGÉES : surface au-dessus, orientation en dessous. La seconde
+     se colle à la première, pour qu'on les lise comme un seul bloc. */
+  .murs + .murs { margin-top:-2px; }
+  /* « Autre » rend l'orientation sans objet : on l'éteint plutôt que de la
+     retirer, pour que la barre ne change pas de hauteur sous le pouce. */
+  .murs .mur.eteint { opacity:.35; }
+  /* La face courante, en toutes lettres : deux boutons verts ne disent pas
+     « sol côté entrée » aussi clairement qu'un mot. */
+  .face-active { margin:6px 0 2px; font-weight:700; color:#2f7d63; }
+
+  /* « RETOUR AUX PIÈCES » EN HAUT — plus compact que celui du bas : il
+     doit être atteignable sans occuper la première moitié de l'écran. */
+  .retour-haut { margin:0 0 12px; padding:9px 12px; font-size:14px; }
   .comptes { font-variant-numeric:tabular-nums; letter-spacing:.02em; }
   .comptes .vide { color:#b03a2e; font-weight:700; }
   /* Trois filtres au lieu de deux : les étiquettes sont plus courtes. */

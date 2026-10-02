@@ -1,4 +1,9 @@
-/* EDL — Procès-verbal en PDF   ·   pdf 2.34.17 (01/10/2026) : clause d'aménagement et de
+/* EDL — Procès-verbal en PDF   ·   pdf 2.34.19 (01/10/2026) : clause d'aménagement et de
+   2.34.19 : version alignée. Aucun changement de comportement.
+
+   2.34.18 : l'annexe inscrit la face en toutes lettres à côté du nom du
+   fichier. « -SG- » ne dit rien à qui reçoit le document.
+
    2.34.17 : version alignée. Aucun changement de comportement.
 
    2.34.16 : version alignée. Aucun changement de comportement.
@@ -51,7 +56,7 @@
 */
 
 /* Marque de version : comparée à celle d'app.js avant toute fabrication. */
-var VERSION_PDF_JS = "2.34.17";
+var VERSION_PDF_JS = "2.34.19";
 
 /* Rouge des titres d'avenant et de prêt : #c0392b, celui du bloc « Bail ». */
 var PDF_ROUGE_TITRE = [192, 57, 43];
@@ -1107,8 +1112,15 @@ function ligneAnnexe(p, photo) {
   const quand = d && !isNaN(d.getTime())
     ? d.toLocaleDateString("fr-BE") + " à " + d.toLocaleTimeString("fr-BE")
     : "date non enregistrée";
+  /* LA FACE EN TOUTES LETTRES.
+     Le nom du fichier porte la face sous forme de clé — « -SG- ». Tant
+     qu'il n'y avait que G, F, D et E, le mode d'emploi suffisait à la
+     lire. Avec le sol et le plafond, « SG » ne dit plus rien à qui reçoit
+     le document. On l'écrit donc en clair, à côté du nom. */
+  const face = (typeof MURS !== "undefined" && photo.mur)
+    ? (MURS.find(m => m.cle === photo.mur) || {}).libelle : null;
   p.paragraphe(numeroPhoto(photo) + "  —  " + (photo.nom_fichier || "sans nom") +
-    "  —  " + quand, { retrait: 2, taille: 8 });
+    (face ? "  —  " + face : "") + "  —  " + quand, { retrait: 2, taille: 8 });
   p.paragraphe(photo.empreinte_sha256
     ? "SHA-256 " + photo.empreinte_sha256
     : "empreinte non calculée pour cette photographie",

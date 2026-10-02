@@ -1,4 +1,8 @@
-/* EDL — Authentification Microsoft   ·   auth 2.34.17 (01/10/2026)
+/* EDL — Authentification Microsoft   ·   auth 2.34.19 (01/10/2026)
+
+   2.34.19 : version alignée. Aucun changement de comportement.
+
+   2.34.18 : version alignée. Aucun changement de comportement.
 
    2.34.17 : consigner au journal ne peut plus casser le flux. journaliser
    écrit dans la base locale et peut échouer — base pleine, stockage refusé

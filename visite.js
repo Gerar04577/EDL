@@ -1,4 +1,19 @@
-/* EDL — Démarrage d'une visite   ·   visite 2.34.17 (01/10/2026)
+/* EDL — Démarrage d'une visite   ·   visite 2.34.19 (01/10/2026)
+
+   2.34.19 : une forme COURTE par face, pour la vignette de visée. Les
+   vignettes sont sur trois colonnes — une centaine de pixels sur un
+   iPhone — et « Plafond côté entrée » y débordait, désalignant la grille.
+   Les murs gardent exactement le mot d'avant : gauche, en face, droite,
+   entrée.
+
+   2.34.18 : les faces d'une pièce prennent deux niveaux. Surface — mur,
+   sol, plafond — puis orientation — gauche, en face, droite, entrée. Les
+   QUATRE CLÉS DE MUR NE CHANGENT PAS, délibérément : la clé est inscrite
+   dans le nom du fichier déposé dans OneDrive, et un état des lieux de
+   sortie relit les photographies de l'entrée par leur nom. Renommer les
+   murs aurait fait retomber en « autre » toutes les photographies des
+   états des lieux déjà faits. Le sol et le plafond, eux, sont nouveaux :
+   leurs clés portent un préfixe — SG, PF…
 
    2.34.17 : version alignée. Aucun changement de comportement.
 
@@ -37,7 +52,7 @@
    du logement qu'une visite entière sans savoir où déposer les fichiers. */
 
 /* Marque de version : comparée au démarrage à celle d'app.js. */
-var VERSION_VISITE_JS = "2.34.17";
+var VERSION_VISITE_JS = "2.34.19";
 
 /* Étape 1 — le dossier de l'unité, dans le dossier de l'immeuble.
    Renvoie soit une résolution unique, soit la liste des candidats
@@ -320,13 +335,89 @@ function abregerPiece(libelle) {
    fait le tour. GAUCHE ET DROITE S'ENTENDENT DEPUIS L'EMBRASURE, dos à la
    porte, en regardant vers l'intérieur — c'est la seule définition qui ne
    dépende pas d'où l'on se trouve dans la pièce. */
-const MURS = [
-  { cle: "G",   libelle: "Gauche" },
-  { cle: "F",   libelle: "En face" },
-  { cle: "D",   libelle: "Droite" },
-  { cle: "E",   libelle: "Entrée" },
-  { cle: "DIV", libelle: "Autre" },
+/* LES FACES D'UNE PIÈCE — DEUX NIVEAUX.
+
+   Niveau 1, la SURFACE : mur, sol, plafond.
+   Niveau 2, l'ORIENTATION : gauche, en face, droite, entrée.
+   Les deux se combinent : « sol en face », « plafond côté entrée ».
+
+   LES QUATRE CLÉS DE MUR NE CHANGENT PAS — G, F, D, E — et c'est
+   délibéré. La clé est inscrite dans le nom du fichier déposé dans
+   OneDrive (« EDLS_CH1-G_2026-10-02_012_ab12.jpg »), et un état des lieux
+   de SORTIE relit les photographies de l'ENTRÉE par leur nom. Renommer
+   les murs ferait retomber en « autre » toutes les photographies des
+   états des lieux déjà faits : la visée guidée perdrait son groupement
+   par mur sur chaque unité entrée avant aujourd'hui. On étend, on ne
+   renomme pas. Le sol et le plafond, eux, sont nouveaux : leurs clés
+   portent donc un préfixe. */
+const SURFACES = [
+  { cle: "M", libelle: "Mur" },
+  { cle: "S", libelle: "Sol" },
+  { cle: "P", libelle: "Plafond" },
 ];
+
+const ORIENTATIONS = [
+  { cle: "G", libelle: "Gauche" },
+  { cle: "F", libelle: "En face" },
+  { cle: "D", libelle: "Droite" },
+  { cle: "E", libelle: "Entrée" },
+];
+
+/* La clé d'une face : l'orientation seule pour un mur — c'est ce qui
+   assure la compatibilité — préfixée de la surface pour le reste. */
+function cleFace(surface, orientation) {
+  return (surface === "M" ? "" : surface) + orientation;
+}
+
+/* Et la lecture inverse, pour retrouver les deux niveaux depuis une clé
+   déjà inscrite dans un nom de fichier. */
+function surfaceDeCle(cle) {
+  const c = String(cle || "");
+  if (c === "DIV" || !c) return null;
+  return (c.length > 1) ? c[0] : "M";
+}
+function orientationDeCle(cle) {
+  const c = String(cle || "");
+  if (c === "DIV" || !c) return null;
+  return c[c.length - 1];
+}
+
+/* Les libellés sont écrits en toutes lettres, un par un : composés par
+   calcul, ils donnaient « Sol droite » et « Plafond entrée ». Ces
+   libellés n'apparaissent jamais sur un bouton — les boutons ne portent
+   que « Mur » ou « Gauche » — mais sur les vignettes et au procès-verbal,
+   où la langue doit être juste. */
+/* ET UNE FORME COURTE, pour la vignette de visée.
+   Les vignettes sont sur trois colonnes : une centaine de pixels de large
+   sur un iPhone. « Plafond côté entrée » y déborde et désaligne la
+   grille. Le mur n'a pas besoin de se nommer — c'est le cas ordinaire —
+   et « côté » disparaît. */
+const COURTS_FACE = {
+  G: "gauche",          F: "en face",
+  D: "droite",          E: "entrée",
+  SG: "sol gauche",     SF: "sol en face",
+  SD: "sol droite",     SE: "sol entrée",
+  PG: "plafond gauche", PF: "plafond en face",
+  PD: "plafond droite", PE: "plafond entrée",
+  DIV: "autre",
+};
+
+const LIBELLES_FACE = {
+  G: "Mur gauche",            F: "Mur en face",
+  D: "Mur droit",             E: "Mur d'entrée",
+  SG: "Sol côté gauche",      SF: "Sol en face",
+  SD: "Sol côté droit",       SE: "Sol côté entrée",
+  PG: "Plafond côté gauche",  PF: "Plafond en face",
+  PD: "Plafond côté droit",   PE: "Plafond côté entrée",
+  DIV: "Autre",
+};
+
+const MURS = SURFACES.flatMap(s => ORIENTATIONS.map(o => {
+  const cle = cleFace(s.cle, o.cle);
+  return { cle, libelle: LIBELLES_FACE[cle], court: COURTS_FACE[cle],
+           surface: s.cle, orientation: o.cle };
+})).concat([{ cle: "DIV", libelle: LIBELLES_FACE.DIV, court: COURTS_FACE.DIV,
+              surface: null, orientation: null }]);
 
 /* Les WC n'ont pas quatre murs qui vaillent la peine d'être distingués. */
 function pieceSansMurs(libelle) {

@@ -1,4 +1,8 @@
-/* EDL — Configuration   ·   config 2.34.17 (01/10/2026) : clause d'aménagement du prêt de meubles
+/* EDL — Configuration   ·   config 2.34.19 (01/10/2026) : clause d'aménagement du prêt de meubles
+   2.34.19 : version alignée. Aucun changement de comportement.
+
+   2.34.18 : version alignée. Aucun changement de comportement.
+
    2.34.17 : version alignée. Aucun changement de comportement.
 
    2.34.16 : version alignée. Aucun changement de comportement.
@@ -18,7 +22,7 @@
 
 var CONFIG = {
 
-  version_app: "2.34.17",
+  version_app: "2.34.19",
 
   /* Protocole de signature imprimé en page 1 du procès-verbal.
      TEXTE DÉFINITIF, validé par l'avocat le 25/08/2026. Toute modification

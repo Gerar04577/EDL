@@ -1,4 +1,14 @@
-/* EDL — Écrans   ·   app 2.34.17 (01/10/2026)
+/* EDL — Écrans   ·   app 2.34.19 (01/10/2026)
+
+   2.34.19 : version alignée. Aucun changement de comportement.
+
+   2.34.18 : la barre des faces passe à deux rangées — surface au-dessus,
+   orientation en dessous — et change de surface sans quitter le côté de
+   la pièce. Trois compteurs au lieu de douze : ce qu'il sert à voir,
+   c'est qu'aucun plafond n'a été photographié. « Retour aux pièces »
+   figure aussi EN HAUT des cinq écrans ; celui du haut CLIQUE celui du
+   bas, pour qu'il n'y ait jamais deux logiques de retour ni deux boutons
+   de même identifiant.
 
    2.34.17 : version alignée. Aucun changement de comportement.
 
@@ -82,7 +92,7 @@
    Étape 3 : démarrage d'une visite. La capture arrive à l'étape suivante. */
 
 /* Marque de version : les autres fichiers doivent porter la même. */
-var VERSION_APP_JS = "2.34.17";
+var VERSION_APP_JS = "2.34.19";
 
 var E = {
   installee: false,
@@ -122,6 +132,31 @@ function libererApercus() {
    On conserve donc la position quand le MÊME écran se redessine. Un
    changement d'écran, lui, doit bien repartir du haut. */
 var _ecranAffiche = null;
+
+/* « RETOUR AUX PIÈCES », EN HAUT AUSSI.
+
+   Le bouton n'existait qu'en bas. Dans une pièce chargée de
+   photographies et de constatations, il fallait dérouler tout l'écran
+   pour en sortir.
+
+   CELUI DU HAUT CLIQUE CELUI DU BAS, au lieu de refaire son travail.
+   Deux boutons portant le même identifiant auraient été pires que rien :
+   $("btn-retour") n'en renvoie qu'un, et l'autre perdrait son action
+   sans que rien ne le signale. Ici il n'y a qu'une seule logique de
+   retour, et elle ne peut pas diverger — à chaque écran, quelle que soit
+   la destination choisie par cet écran-là. */
+function retourEnHaut() {
+  return `<button class="secondaire retour-haut" data-retour-haut
+    >Retour aux pièces</button>`;
+}
+
+document.addEventListener("click", (e) => {
+  const cible = e && e.target;
+  if (!cible || typeof cible.closest !== "function") return;
+  if (!cible.closest("[data-retour-haut]")) return;
+  const bas = document.getElementById("btn-retour");
+  if (bas) bas.click();
+});
 
 function vue(html, memeEcran) {
   /* La clé inclut la pièce : passer du séjour à la cuisine reste l'écran
@@ -1313,7 +1348,7 @@ function dessinerReleves(message) {
   const rappelElec = c.electricite.index_entree_rappel || {};
   const rappelEau = (c.eau.index_entree_rappel || {}).index;
 
-  let html = `<div class="barre" id="barre-attente">…</div>
+  let html = retourEnHaut() + `<div class="barre" id="barre-attente">…</div>
     ${message ? `<div class="succes">${echapper(message)}</div>` : ""}`;
 
   if (sortie) {
@@ -2113,7 +2148,7 @@ function ecranComparaisonAvant(message) {
   const V = VISITE;
   const constats = V.pieces.reduce((n, p) => n + p.constatations.length, 0);
 
-  vue(`${message ? `<div class="succes">${echapper(message)}</div>` : ""}
+  vue(retourEnHaut() + `${message ? `<div class="succes">${echapper(message)}</div>` : ""}
     <div class="bloc"><h2>Avant de comparer</h2>
       <p class="note">L'état des lieux d'entrée est resté fermé pendant ta visite,
       volontairement : rédiger en l'ayant sous les yeux conduit à recopier, et un
@@ -2171,7 +2206,7 @@ async function lancerComparaison() {
       echapper(r.message || "erreur inconnue")}</div>`;
   }
 
-  vue(html + `<button class="secondaire" id="btn-retour">Retour aux pièces</button>`);
+  vue(retourEnHaut() + html + `<button class="secondaire" id="btn-retour">Retour aux pièces</button>`);
   $("btn-retour").onclick = () => ecranVisiteReprise(VISITE);
 }
 
@@ -2184,7 +2219,7 @@ function dessinerComparaisonEDL(message) {
 
   titre("Comparaison entrée / sortie", V.bien.unite_source);
 
-  let html = `${message ? `<div class="succes">${echapper(message)}</div>` : ""}
+  let html = retourEnHaut() + `${message ? `<div class="succes">${echapper(message)}</div>` : ""}
     <div class="bloc"><h2>Bilan</h2>
       <div class="ligne"><span>État des lieux d'entrée</span><span class="val">${
         comp.edle_date ? new Date(comp.edle_date).toLocaleDateString("fr-BE") : "—"}</span></div>
@@ -3135,6 +3170,8 @@ function rappelMurs(piece, rang, total) {
       <p class="rappel-ordre">GAUCHE<br>EN FACE<br>DROITE<br>ENTRÉE</p>
       <p class="rappel-regle">Gauche et droite se comptent depuis l'embrasure,
       dos à la porte, en regardant vers l'intérieur de la pièce.</p>
+      <p class="rappel-regle"><strong>Et pour chacune : le mur, le sol,
+      le plafond.</strong></p>
       <button id="rappel-ok">J'ai compris</button>
     </div>`;
     document.body.appendChild(fond);
@@ -3594,7 +3631,8 @@ function libelleVignette(p) {
 function murVignette(p) {
   const cle = (p && p.mur) || "DIV";
   const m = (typeof MURS !== "undefined" ? MURS : []).find(x => x.cle === cle);
-  return (m ? m.libelle : "Autre").toLowerCase();
+  /* La forme COURTE : la vignette fait une centaine de pixels de large. */
+  return (m ? (m.court || m.libelle) : "Autre").toLowerCase();
 }
 
 /* La légende est fabriquée ici et NULLE PART AILLEURS : elle est posée à
@@ -5009,8 +5047,52 @@ function allerAPhotoGardee() {
    carrés n'apprennent rien à personne. */
 function murCourant(pieceId) {
   E.murs = E.murs || {};
-  if (!E.murs[pieceId]) E.murs[pieceId] = "G";   /* Gauche par défaut */
+  if (!E.murs[pieceId]) E.murs[pieceId] = "G";   /* Mur gauche par défaut */
   return E.murs[pieceId];
+}
+
+/* LES DEUX NIVEAUX, DÉRIVÉS DE LA CLÉ COURANTE.
+   On ne garde qu'un seul état par pièce — la clé — et on en déduit la
+   surface et l'orientation. Deux états séparés pourraient diverger de la
+   clé réellement écrite sur les photographies ; un seul ne le peut pas. */
+function surfaceCourante(pieceId) {
+  return surfaceDeCle(murCourant(pieceId)) || "M";
+}
+function orientationCourante(pieceId) {
+  return orientationDeCle(murCourant(pieceId)) || "G";
+}
+
+/* Changer de surface ou d'orientation garde l'autre niveau tel quel :
+   l'opérateur qui passe du mur au sol reste du même côté de la pièce. */
+function choisirSurface(pieceId, surface) {
+  E.murs = E.murs || {};
+  E.murs[pieceId] = (surface === "DIV")
+    ? "DIV" : cleFace(surface, orientationCourante(pieceId));
+}
+function choisirOrientation(pieceId, orientation) {
+  E.murs = E.murs || {};
+  /* Si « Autre » était actif, choisir une orientation ramène au mur. */
+  const s = (murCourant(pieceId) === "DIV") ? "M" : surfaceCourante(pieceId);
+  E.murs[pieceId] = cleFace(s, orientation);
+}
+
+/* LES COMPTES PAR SURFACE — trois, et non douze.
+   Douze compteurs sur un iPhone ne se lisent pas. Ce que le compteur sert
+   à voir, c'est qu'on n'a photographié AUCUN plafond dans cette pièce ;
+   l'orientation reste enregistrée sur chaque photographie et figure au
+   procès-verbal. */
+function comptesParSurface(pieceId) {
+  const c = {};
+  SURFACES.forEach(s => { c[s.cle] = 0; });
+  c.DIV = 0;
+  (VISITE.photos || []).forEach(p => {
+    if (p.rattachement !== pieceId) return;
+    const cle = p.mur || "DIV";
+    const s = surfaceDeCle(cle);
+    if (s && c[s] !== undefined) c[s]++;
+    else c.DIV++;
+  });
+  return c;
 }
 
 function comptesParMur(pieceId) {
@@ -5026,16 +5108,39 @@ function comptesParMur(pieceId) {
 
 function barreMurs(piece) {
   if (pieceSansMurs(piece.libelle)) return "";
-  const actif = murCourant(piece.piece_id);
-  const c = comptesParMur(piece.piece_id);
-  return `<div class="bloc" id="bloc-murs"><h2>Mur photographié</h2>
+  const id = piece.piece_id;
+  const cle = murCourant(id);
+  const autre = (cle === "DIV");
+  const surf = surfaceCourante(id);
+  const orient = orientationCourante(id);
+  const c = comptesParSurface(id);
+
+  /* DEUX RANGÉES. La première dit QUOI — mur, sol, plafond — la seconde
+     dit OÙ — gauche, en face, droite, entrée. Sept boutons larges valent
+     mieux que douze étroits : sur un iPhone, un bouton de quatre
+     centimètres se touche sans regarder, un bouton de deux ne se touche
+     pas du tout avec des gants de chantier.
+     « Autre » ferme la première rangée : quand il est actif, l'orientation
+     n'a plus de sens et la seconde rangée s'éteint. */
+  const rangeeSurface = SURFACES.map(x =>
+    `<button class="mur${!autre && x.cle === surf ? " actif" : ""}"
+      data-surface="${x.cle}">${echapper(x.libelle)}</button>`).join("")
+    + `<button class="mur${autre ? " actif" : ""}" data-surface="DIV">Autre</button>`;
+
+  const rangeeOrientation = ORIENTATIONS.map(x =>
+    `<button class="mur${!autre && x.cle === orient ? " actif" : ""}${autre ? " eteint" : ""}"
+      data-orientation="${x.cle}">${echapper(x.libelle)}</button>`).join("");
+
+  return `<div class="bloc" id="bloc-murs"><h2>Face photographiée</h2>
     <p class="note">Gauche et droite se comptent depuis l'embrasure, dos à la
     porte, en regardant vers l'intérieur.</p>
-    <div class="murs">${MURS.map(m =>
-      `<button class="mur${m.cle === actif ? " actif" : ""}" data-mur="${m.cle}"
-        >${echapper(m.libelle)}</button>`).join("")}</div>
-    <p class="note comptes">${MURS.filter(m => m.cle !== "DIV")
-      .map(m => `<span class="${c[m.cle] ? "" : "vide"}">${m.cle} ${c[m.cle]}</span>`)
+    <div class="murs">${rangeeSurface}</div>
+    <div class="murs">${rangeeOrientation}</div>
+    <p class="note face-active">${echapper(
+      (MURS.find(m => m.cle === cle) || {}).libelle || "Autre")}</p>
+    <p class="note comptes">${SURFACES
+      .map(x => `<span class="${c[x.cle] ? "" : "vide"}">${
+        echapper(x.libelle.toLowerCase())} ${c[x.cle]}</span>`)
       .join(" · ")}${c.DIV ? ` · <span>autre ${c.DIV}</span>` : ""}</p>
   </div>`;
 }
@@ -5048,8 +5153,10 @@ function mursOublies(pieceId) {
      reproche rien. */
   const total = (VISITE.photos || []).filter(p => p.rattachement === pieceId).length;
   if (!total) return [];
-  const c = comptesParMur(pieceId);
-  return MURS.filter(m => m.cle !== "DIV" && !c[m.cle]).map(m => m.libelle);
+  /* Par SURFACE, comme les compteurs : reprocher douze faces manquantes
+     ferait un avertissement que personne ne lit. */
+  const c = comptesParSurface(pieceId);
+  return SURFACES.filter(s => !c[s.cle]).map(s => s.libelle.toLowerCase());
 }
 
 function dessinerPiece(message) {
@@ -5072,7 +5179,7 @@ function dessinerPiece(message) {
     `<button class="seg${actif === v ? " actif" : ""}" data-${cle}="${v}">${
       v.replace(/_/g, " ")}</button>`).join("")}</div>`;
 
-  vue(`<div class="barre" id="barre-attente">…</div>
+  vue(retourEnHaut() + `<div class="barre" id="barre-attente">…</div>
     ${message ? `<div class="succes">${echapper(message)}</div>` : ""}
 
     <div class="bloc"><h2>État général de la pièce</h2>
@@ -5250,9 +5357,13 @@ function dessinerPiece(message) {
 
   // --- ajouter au constat ---
   /* Les boutons de mur : le choix vaut pour toutes les prises suivantes. */
-  $("vue").querySelectorAll("[data-mur]").forEach(b => b.onclick = () => {
-    E.murs = E.murs || {};
-    E.murs[E.piece] = b.getAttribute("data-mur");
+  $("vue").querySelectorAll("[data-surface]").forEach(b => b.onclick = () => {
+    choisirSurface(E.piece, b.getAttribute("data-surface"));
+    dessinerPiece();
+  });
+
+  $("vue").querySelectorAll("[data-orientation]").forEach(b => b.onclick = () => {
+    choisirOrientation(E.piece, b.getAttribute("data-orientation"));
     dessinerPiece();
   });
 

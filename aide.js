@@ -1,4 +1,9 @@
-/* EDL — Mode d'emploi   ·   aide 2.34.17 (01/10/2026)
+/* EDL — Mode d'emploi   ·   aide 2.34.19 (01/10/2026)
+
+   2.34.19 : version alignée. Aucun changement de comportement.
+
+   2.34.18 : la barre à deux rangées, les nouvelles lettres de face, et
+   pourquoi les murs gardent les leurs.
 
    2.34.17 : version alignée. Aucun changement de comportement.
 
@@ -244,8 +249,26 @@ var AIDE = [
       "document se lit dans l'ordre où tu as marché, ce qui est plus " +
       "difficile à contester qu'une liste au hasard.",
 
-      "L'ORDRE DES MURS, dans chaque pièce : GAUCHE, EN FACE, DROITE, " +
-      "ENTRÉE. Toujours le même, pour ne rien oublier.",
+      "L'ORDRE DES FACES, dans chaque pièce : GAUCHE, EN FACE, DROITE, " +
+      "ENTRÉE. Toujours le même, pour ne rien oublier. Et pour chacune de " +
+      "ces quatre orientations, trois surfaces : le MUR, le SOL et le " +
+      "PLAFOND.",
+
+      "LA BARRE A DEUX RANGÉES. Au-dessus, ce que tu photographies : Mur, " +
+      "Sol, Plafond — ou Autre, pour ce qui n'est ni l'un ni l'autre : une " +
+      "fenêtre, un radiateur, une porte. En dessous, de quel côté : Gauche, " +
+      "En face, Droite, Entrée. La face retenue s'écrit en toutes lettres " +
+      "sous les boutons — « sol côté entrée » — et c'est elle qui sera " +
+      "inscrite sur la photographie.",
+
+      "CHANGER DE SURFACE GARDE LE CÔTÉ. Si tu photographies le mur gauche " +
+      "et que tu touches « Sol », tu passes au sol côté gauche : tu restes " +
+      "au même endroit de la pièce. L'inverse est vrai aussi.",
+
+      "LE COMPTEUR MONTRE TROIS NOMBRES — mur, sol, plafond — et non douze : " +
+      "ce qu'il sert à voir, c'est que tu n'as photographié aucun plafond. " +
+      "Le côté, lui, reste inscrit sur chaque photographie et figure au " +
+      "procès-verbal.",
 
       "GAUCHE ET DROITE SE COMPTENT DEPUIS L'EMBRASURE. Tiens-toi dans " +
       "l'encadrement de la porte, dos au couloir, en regardant vers " +
@@ -293,11 +316,21 @@ var AIDE = [
       "CAV cave · GRE grenier · TER terrasse ou jardin · GAR garage. Le " +
       "chiffre suit quand il y en a plusieurs : CH1, CH2, WC2.",
 
-      "MURS — G gauche · F en face · D droite · E entrée · DIV autre.",
+      "FACES — les murs gardent leurs lettres d'origine : G gauche · F en " +
+      "face · D droite · E entrée. Le sol et le plafond les reprennent avec " +
+      "une lettre devant : SG sol côté gauche · SF sol en face · SD sol côté " +
+      "droit · SE sol côté entrée · PG, PF, PD, PE pour le plafond. " +
+      "DIV autre.",
+
+      "POURQUOI LES MURS N'ONT PAS CHANGÉ DE LETTRE : un état des lieux de " +
+      "SORTIE relit les photographies de l'ENTRÉE dans OneDrive, par leur " +
+      "nom. Renommer les murs aurait fait perdre le groupement par mur sur " +
+      "tous les états des lieux déjà faits.",
 
       "EXEMPLE — EDLS_CH1-G_2026-08-30_012_ab12.jpg se lit : état des lieux " +
       "de sortie, chambre 1, mur de gauche, 30 août 2026, douzième " +
-      "photographie de la pièce.",
+      "photographie de la pièce. EDLS_CH1-PE_… serait le plafond, côté " +
+      "entrée.",
     ],
   },
 

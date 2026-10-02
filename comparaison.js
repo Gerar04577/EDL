@@ -1,4 +1,8 @@
-/* EDL — Correspondances liste des locataires / OneDrive   ·   comparaison 2.34.17 (01/10/2026)
+/* EDL — Correspondances liste des locataires / OneDrive   ·   comparaison 2.34.19 (01/10/2026)
+
+   2.34.19 : version alignée. Aucun changement de comportement.
+
+   2.34.18 : version alignée. Aucun changement de comportement.
 
    2.34.17 : version alignée. Aucun changement de comportement.
 
